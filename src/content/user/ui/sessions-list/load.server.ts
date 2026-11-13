@@ -23,6 +23,7 @@ import {
   SESSIONS_STATES,
   sessionsCountryCodes,
   sessionsSnapshot,
+  sessionsTargetFrom,
 } from './source.js'
 
 const num = (raw: string | null, fallback: number, min: number, max: number): number => {
@@ -66,8 +67,7 @@ export async function loadSessionsRouteData(
       snapshot: null,
       fact: 'auth.disabled',
       enabled: false,
-      uid,
-      journal,
+      target: sessionsTargetFrom(uid, journal),
       canReadOthers: false,
       countries: [],
       notice,
@@ -113,8 +113,7 @@ export async function loadSessionsRouteData(
       snapshot: null,
       fact: r.fact.code,
       enabled: true,
-      uid,
-      journal,
+      target: sessionsTargetFrom(uid, journal),
       canReadOthers: false,
       countries: [],
       notice,
@@ -141,8 +140,7 @@ export async function loadSessionsRouteData(
     }),
     fact: null,
     enabled: true,
-    uid,
-    journal,
+    target: sessionsTargetFrom(uid, journal),
     canReadOthers: r.value.canReadOthers,
     countries: r.value.countries,
     notice,

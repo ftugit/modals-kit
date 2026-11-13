@@ -10,6 +10,7 @@
 
   let { data }: PageProps = $props()
   const asModalLink = useModalLink()
+  const uid = $derived(data.target.kind === 'account' ? data.target.uid : null)
 
   useHeadSeo({
     subTitle: 'Сессии пользователя',
@@ -23,16 +24,16 @@
     <Acl
       status={data.fact}
       enabled={data.enabled}
-      backHref={data.uid ? `/user/${data.uid}` : '/'}
+      backHref={uid ? `/user/${uid}` : '/'}
     />
   {:else}
     <div class="mb-3">
-      <Button {...asModalLink('user.profile', { id: data.uid ?? '' })} variant="ghost" size="sm">
+      <Button {...asModalLink('user.profile', { id: uid ?? '' })} variant="ghost" size="sm">
         ← К профилю
       </Button>
     </div>
-    {#key data.uid}
-      <SessionsList uid={data.uid} initial={data} variant="card" sidebar="middle" />
+    {#key uid}
+      <SessionsList target={data.target} initial={data} variant="card" sidebar="middle" />
     {/key}
   {/if}
 </div>

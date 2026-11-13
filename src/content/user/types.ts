@@ -169,13 +169,17 @@ export type LogoutRouteData = {
   canRevoke: boolean
 }
 
+/** Цель списка сессий: один источник истины, без пары `uid`+`journal`. */
+export type SessionsTarget =
+  | { kind: 'own' }
+  | { kind: 'account'; uid: string }
+  | { kind: 'journal' }
+
 export type SessionsRouteData = {
   enabled: boolean
   fact: AuthErrorCode | null
-  /** Аккаунт из пути (`/user/<uuid>/sessions`); `null` — свои устройства. */
-  uid: string | null
-  /** Общий журнал (`/sessions`): все сессии, которые зритель вправе читать. */
-  journal: boolean
+  /** Цель среза: свои устройства, аккаунт или общий журнал. */
+  target: SessionsTarget
   /** Читает ли зритель чужие устройства — вход в журнал и в чужие карточки. */
   canReadOthers: boolean
   snapshot: import('#lib/paginate/index.js').PaginatorState<SessionDeviceView> | null

@@ -19,6 +19,6 @@
   {#if data.fact || data.enabled === false}
     <Acl status={data.fact} enabled={data.enabled} backHref="/" />
   {:else}
-    <SessionsList journal initial={data} variant="card" sidebar="middle" />
+    <SessionsList target={data.target} initial={data} variant="card" sidebar="middle" />
   {/if}
 </div>

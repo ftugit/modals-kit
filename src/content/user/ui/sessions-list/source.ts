@@ -23,7 +23,7 @@ import {
 } from '#lib/paginate/index.js'
 import { AUTH_MESSAGES } from '../../messages.js'
 import { sessionsJournalRoute } from '../../routes.js'
-import { SESSIONS_COUNTRY_NONE, type SessionDeviceView, type SessionsPage, type SessionsState } from '../../types.js'
+import { SESSIONS_COUNTRY_NONE, type SessionDeviceView, type SessionsPage, type SessionsState, type SessionsTarget } from '../../types.js'
 
 export const SESSIONS_NAME = 'user-sessions'
 export const SESSIONS_PAGE_SIZE = 30
@@ -215,25 +215,20 @@ export function sessionsSnapshot(p: SessionsPage, extra?: SessionsSnapshotExtra)
   }
 }
 
+/** Цель списка из явных параметров: журнал, аккаунт или свои устройства. */
+export function sessionsTargetFrom(uid: string | null, journal: boolean): SessionsTarget {
+  if (journal) return { kind: 'journal' }
+  const id = uid?.trim().toLowerCase() || null
+  return id ? { kind: 'account', uid: id } : { kind: 'own' }
+}
+
 /**
- * Цель среза страницы фильтров: из адреса носителя, а не из query.
- *
- * Общий журнал (`/sessions`) — срез по всем сессиям без `authId`; чужие
- * устройства (`/user/<uuid>/sessions`) — по аккаунту из пути; свои — без цели.
- * Раньше эта тройка была инлайном в `load`, из-за чего «фильтр журнала»
- * проверять было нечем.
+ * Цель среза страницы фильтров — явные параметры пары (`uid`, `journal`), а не
+ * адрес носителя. Модалка журнала поверх чужой страницы иначе получила бы срез
+ * «свои»: `from` там — адрес носителя, из него цель не разобрать.
  */
-export function sessionsFiltersTarget(from: string): { journal: boolean; uid: string | null } {
-  // Абсолютный адрес носителем не бывает: иначе `https://зло.example/sessions`
-  // открыл бы срез по всем сессиям. `load` отсекает его раньше (`localPath`),
-  // но разбор не должен надеяться на вызывающего.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(from.trim()) || from.trim().startsWith('//')) {
-    return { journal: false, uid: null }
-  }
-  const url = new URL(from, 'http://local.invalid')
-  if (/^\/sessions(?:\/|$)/.test(url.pathname)) return { journal: true, uid: null }
-  const match = /^\/user\/([0-9a-f-]{36})\/sessions(?:\/|$)/i.exec(url.pathname)
-  return { journal: false, uid: match ? match[1]!.toLowerCase() : null }
+export function sessionsFiltersTarget(uid: string | null, journal: boolean): SessionsTarget {
+  return sessionsTargetFrom(uid, journal)
 }
 
 /** Код страны из адреса: `none` — «без страны», иначе код из справочника. */

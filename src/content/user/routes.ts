@@ -171,10 +171,12 @@ export interface BlocksFiltersSearchOutput extends ListFiltersSearchOutput {
 
 export interface SessionsFiltersSearchInput extends ListFiltersSearchInput {
   uid?: string | null
+  journal?: string | null
 }
 
 export interface SessionsFiltersSearchOutput extends ListFiltersSearchOutput {
   uid: string | null
+  journal: boolean
 }
 
 /**
@@ -197,10 +199,11 @@ export const userListFiltersRoute = kitRoute('/users/filters', {
  */
 export const userSessionsFiltersRoute = kitRoute('/user/sessions/filters', {
   owner: 'user.filters',
-  keys: ['from', 'uid'],
+  keys: ['from', 'uid', 'journal'],
   search: querySchema<SessionsFiltersSearchInput, SessionsFiltersSearchOutput>((raw) => ({
     from: localPath(typeof raw.from === 'string' ? raw.from : null),
     uid: typeof raw.uid === 'string' && raw.uid ? raw.uid : null,
+    journal: raw.journal === '1' || raw.journal === 'true',
   })),
 })
 

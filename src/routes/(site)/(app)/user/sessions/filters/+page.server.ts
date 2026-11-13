@@ -67,17 +67,19 @@ export const load: PageServerLoad = async (event): Promise<SessionsFiltersPageDa
   const rest = new URLSearchParams(hiddenFields.map((h) => [h.name, h.value] as [string, string]))
   const resetHref = rest.size ? `${fromUrl.pathname}?${rest}` : fromUrl.pathname
 
-  // Срез стран — того же аккаунта, что и список: цель берём из `uid`, если он
-  // передан явно, иначе из пути носителя `/user/<uuid>/sessions` (как у фильтров
-  // блокировок). Отдельного query-ключа списка нет.
-  const uidParam = sp.get('uid')?.trim() || fromSp.get('uid')?.trim() || null
-  // Носитель решает цель среза: журнал (`/sessions`) — все сессии без цели,
-  // путь `/user/<uuid>/sessions` — чужой аккаунт. Явный `uid` перекрывает путь.
-  const target = sessionsFiltersTarget(from)
-  const journal = target.journal
-  const uid = uidParam ?? target.uid
+  // Цель среза — явные параметры пары (`uid`, `journal`), а не адрес носителя:
+  // модалка журнала может стоять поверх `/users` или чужого профиля, и `from`
+  // там не описывает список, который фильтруют.
+  const uidParam = sp.get('uid')?.trim() || null
+  const journalParam = sp.get('journal') === '1' || sp.get('journal') === 'true'
+  const target = sessionsFiltersTarget(uidParam, journalParam)
   const u = auth(event)
-  const r = await u.listSessionsPage({ authId: journal ? null : uid, journal, page: 1, pageSize: 1 })
+  const r = await u.listSessionsPage({
+    authId: target.kind === 'account' ? target.uid : null,
+    journal: target.kind === 'journal',
+    page: 1,
+    pageSize: 1,
+  })
 
   return {
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,

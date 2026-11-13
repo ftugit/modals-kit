@@ -29,7 +29,7 @@
     userSessionsRoute,
   } from '../routes.js'
   import { vault } from '../vault.svelte.js'
-  import type { SessionDeviceView, SessionsRouteData } from '../types.js'
+  import type { SessionDeviceView, SessionsRouteData, SessionsTarget } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SessionRow from './SessionRow.svelte'
   import ExitSteps from './sessions-list/ExitSteps.svelte'
@@ -45,13 +45,8 @@
   } from './sessions-list/source.js'
 
   interface Props {
-    /**
-     * Целевой аккаунт — отдельный проп, как у `BlocksList`: `null` — свои
-     * устройства (`/user/sessions`), uuid — чужие (`/user/<uuid>/sessions`).
-     */
-    uid?: string | null
-    /** Общий журнал (`/sessions`): без аккаунта, все читаемые сессии. */
-    journal?: boolean
+    /** Цель списка: свои устройства, аккаунт или общий журнал. Один источник истины. */
+    target?: SessionsTarget
     /** Носитель: страница — шаг в URL, модалка — локальный хост шагов. */
     mode?: 'page' | 'modal'
     /** Данные `load` роута от носителя (страница/модалка). */
@@ -69,8 +64,7 @@
   }
 
   let {
-    uid = null,
-    journal = false,
+    target = { kind: 'own' },
     mode = 'page',
     initial = null,
     scope = null,
@@ -86,7 +80,8 @@
 
   // Цель списка: адрес `load` и адрес экшенов собираются из пропа, а не из
   // query. `_uid` для догрузки порций едет в `extra` снапшота (см. `source.ts`).
-  const fixedUid = $derived(uid?.trim() || null)
+  const fixedUid = $derived(target.kind === 'account' ? target.uid : null)
+  const journal = $derived(target.kind === 'journal')
   const route = $derived(
     journal
       ? sessionsJournalRoute.href()
@@ -282,8 +277,8 @@
     path: userSessionsFiltersRoute.href(),
     // Цель среза — параметром: в модалке `from` равен адресу страницы-
     // носителя (`/user/<uuid>`), из него цель не разобрать.
-    query: fixedUid ? { uid: fixedUid } : undefined,
-    params: fixedUid ? { uid: fixedUid } : {},
+    query: fixedUid ? { uid: fixedUid } : journal ? { journal: '1' } : undefined,
+    params: fixedUid ? { uid: fixedUid } : journal ? { journal: '1' } : {},
     keys: SESSIONS_FILTER_KEYS,
     defaults: SESSIONS_EXTRA_DEFAULTS,
     pageSize: SESSIONS_PAGE_SIZE,

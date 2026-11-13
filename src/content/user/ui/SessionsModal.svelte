@@ -8,20 +8,24 @@
    */
   import { useLoader, useModal } from '#lib/modals/svelte/index.js'
   import { Surface } from '#components/ui/index.js'
-  import type { SessionsRouteData } from '../types.js'
+  import type { SessionsRouteData, SessionsTarget } from '../types.js'
   import Acl from './Acl.svelte'
   import SessionsList from './SessionsList.svelte'
 
   const modal = useModal<{ id?: string }>()
   const ldr = useLoader<SessionsRouteData>()
-  // Цель списка — `id` модалки, а не только данные `load`: ответ мог задержаться,
-  // а экшены и адреса порций собираются из пропа. Без `id` — свои устройства.
-  const uid = $derived(modal.params?.id ?? ldr.data?.uid ?? null)
-  // Данные `load` — только своей цели: чужой срез (ещё не сменённый `uid`) не
-  // должен на один тик показать устройства другого аккаунта. Так же в
-  // `BlocksModal`.
+  // Цель списка — `id` модалки, а не адрес носителя. Без `id` — свои устройства.
+  const target = $derived<SessionsTarget>(
+    modal.params?.id ? { kind: 'account', uid: String(modal.params.id) } : { kind: 'own' },
+  )
+  // Данные `load` — только своей цели: чужой срез не должен на один тик показать
+  // устройства другого аккаунта.
   const initial = $derived(
-    ldr.data && (ldr.data.uid ?? null) === (uid ?? null) ? ldr.data : null,
+    ldr.data &&
+      ldr.data.target.kind === target.kind &&
+      (target.kind !== 'account' || (ldr.data.target.kind === 'account' && ldr.data.target.uid === target.uid))
+      ? ldr.data
+      : null,
   )
 </script>
 
@@ -29,8 +33,8 @@
   {#if ldr.data?.enabled === false || ldr.data?.fact}
     <Acl status={ldr.data?.fact} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
-    {#key uid}
-      <SessionsList {uid} {initial} mode="modal" variant="plain" class="min-h-0 flex-1" />
+    {#key target.kind === 'account' ? target.uid : target.kind}
+      <SessionsList {target} {initial} mode="modal" variant="plain" class="min-h-0 flex-1" />
     {/key}
   {/if}
 </Surface>

@@ -1,15 +1,15 @@
 /**
- * Гейт «адрес журнала — из реестра, путь журнала разбирает одна функция».
+ * Гейт «адрес журнала — из реестра, цель фильтров — явные параметры пары».
  *
- * Зачем: путь `/sessions` объявлен в реестре (`sessionsJournalRoute`), а признак
- * журнала в адресе носителя разбирает `sessionsFiltersTarget`. Пока литерал
+ * Зачем: путь `/sessions` объявлен в реестре (`sessionsJournalRoute`), а цель
+ * фильтров задают явные параметры пары (`uid`, `journal`), не адрес носителя. Пока литерал
  * вшит в разметку, а регулярка продублирована в `load`, правка роута расходится
  * с кодом: форма фильтров уедет не на тот срез, а кнопка — не на ту страницу.
  * Обе ошибки молчаливые: адрес валидный, просто не тот.
  *
  * Как действовать при срабатывании:
  *   • литерал `'/sessions'` → `sessionsJournalRoute.href()`;
- *   • распознавание журнала по пути → `sessionsFiltersTarget(from)`.
+ *   • цель фильтров → явный `journal` и `sessionsFiltersTarget(uid, journal)`.
  * Отключение по месту — комментарием в той же строке: `// journal-path-ok: причина`.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -47,7 +47,7 @@ export function checkSource(source, file) {
     }
     if (INLINE_RE.test(line)) {
       problems.push(
-        `${file}:${i + 1}: путь журнала разбирается на месте — вызывайте sessionsFiltersTarget(from) ` +
+        `${file}:${i + 1}: цель журнала разбирается на месте — берите явный параметр journal и sessionsFiltersTarget(uid, journal) ` +
           '(`src/content/user/ui/sessions-list/source.ts`), иначе признак журнала живёт в двух местах',
       )
     }

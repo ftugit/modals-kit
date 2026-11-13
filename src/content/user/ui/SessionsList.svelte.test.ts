@@ -56,7 +56,7 @@ function routeData(items: SessionDeviceView[]): SessionsRouteData {
       canReadOthers: false, state: 'active', countries: ['RU'], canSeeDeleted: false,
       canRename: true, canRevoke: true, canHardDelete: false,
     }),
-    fact: null, enabled: true, uid: null, journal: false, canReadOthers: false, countries: ['RU'],
+    fact: null, enabled: true, target: { kind: 'own' }, canReadOthers: false, countries: ['RU'],
     notice: null, canSeeDeleted: false, canRename: true, canRevoke: true, canHardDelete: false,
   }
 }

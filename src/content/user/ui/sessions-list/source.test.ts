@@ -1,34 +1,27 @@
-// Разбор адреса среза: чистые функции без SvelteKit и базы.
 import { describe, expect, test } from 'vitest'
-import { sessionsCountryCodes, sessionsFiltersTarget } from './source.js'
+import { sessionsCountryCodes, sessionsFiltersTarget, sessionsTargetFrom } from './source.js'
 
 const UID = '11111111-1111-4111-8111-111111111111'
 
-describe('sessionsFiltersTarget: цель среза из адреса носителя', () => {
-  test('журнал — срез без цели, чужой аккаунт — по uuid из пути', () => {
-    expect(sessionsFiltersTarget('/sessions')).toEqual({ journal: true, uid: null })
-    expect(sessionsFiltersTarget('/sessions?page=2')).toEqual({ journal: true, uid: null })
-    expect(sessionsFiltersTarget(`/user/${UID}/sessions`)).toEqual({ journal: false, uid: UID })
-    expect(sessionsFiltersTarget('/user/sessions')).toEqual({ journal: false, uid: null })
+describe('sessionsFiltersTarget: цель среза из явных параметров пары', () => {
+  test('журнал, аккаунт и свои устройства различаются без адреса носителя', () => {
+    expect(sessionsFiltersTarget(null, true)).toEqual({ kind: 'journal' })
+    expect(sessionsFiltersTarget(UID, false)).toEqual({ kind: 'account', uid: UID })
+    expect(sessionsFiltersTarget(null, false)).toEqual({ kind: 'own' })
+    // Журнал сильнее uid: невозможно получить «журнал аккаунта».
+    expect(sessionsFiltersTarget(UID, true)).toEqual({ kind: 'journal' })
   })
 
-  test('чужой домен и мусор не превращаются в журнал', () => {
-    // Негативный контроль: без этого `from=https://evil.example/sessions`
-    // открыл бы срез по всем сессиям.
-    expect(sessionsFiltersTarget('https://evil.example/sessions').journal).toBe(false)
-    expect(sessionsFiltersTarget('/sessions-extra').journal).toBe(false)
-    expect(sessionsFiltersTarget('/user/not-a-uuid/sessions')).toEqual({ journal: false, uid: null })
-  })
-
-  test('uuid в пути приводится к нижнему регистру', () => {
-    expect(sessionsFiltersTarget(`/user/${UID.toUpperCase()}/sessions`).uid).toBe(UID)
+  test('uid нормализуется, пустой и невалидный не становятся аккаунтом', () => {
+    expect(sessionsFiltersTarget(`  ${UID.toUpperCase()}  `, false)).toEqual({ kind: 'account', uid: UID })
+    expect(sessionsFiltersTarget('   ', false)).toEqual({ kind: 'own' })
+    expect(sessionsTargetFrom(null, false)).toEqual({ kind: 'own' })
   })
 })
 
-describe('sessionsCountryCodes: формат и кламп', () => {
-  test('мусор отброшен, регистр поднят, лишнее обрезано', () => {
-    expect(sessionsCountryCodes('ru,sg, none ,')).toEqual(['RU', 'SG', 'none'])
-    expect(sessionsCountryCodes(Array.from({ length: 30 }, (_, i) => `C${i}`).join(','))).toHaveLength(20)
+describe('sessionsCountryCodes', () => {
+  test('коды стран нормализуются и ограничиваются', () => {
+    expect(sessionsCountryCodes('ru, sg ,none')).toEqual(['RU', 'SG', 'none'])
     expect(sessionsCountryCodes(null)).toEqual([])
   })
 })

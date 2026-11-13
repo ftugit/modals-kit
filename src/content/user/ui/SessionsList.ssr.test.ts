@@ -31,7 +31,7 @@ vi.mock('#hooks/links/index.js', async (importOriginal) => {
   return {
     ...actual,
     // В SSR-тесте хост модалок не смонтирован: ссылки получают адрес страницы.
-    useModalLink: () => (name: string, params: { id?: string; uid?: string } = {}) => {
+    useModalLink: () => (name: string, params: { id?: string; uid?: string; journal?: string } = {}) => {
       links.calls.push({ name, params })
       if (name === 'user.session') {
         return {
@@ -49,10 +49,12 @@ vi.mock('#hooks/links/index.js', async (importOriginal) => {
       if (name === 'user.sessions') {
         return { href: routes.userSessionsRoute.href(), 'data-modal-link': '' }
       }
+      const fq = new URLSearchParams()
+      if (params.uid) fq.set('uid', String(params.uid))
+      if (params.journal) fq.set('journal', String(params.journal))
+      const fqs = fq.toString()
       return {
-        href: params.uid
-          ? `${routes.userSessionsFiltersRoute.href()}?uid=${encodeURIComponent(params.uid)}`
-          : routes.userSessionsFiltersRoute.href(),
+        href: fqs ? `${routes.userSessionsFiltersRoute.href()}?${fqs}` : routes.userSessionsFiltersRoute.href(),
         'data-modal-link': '',
       }
     },
@@ -108,8 +110,7 @@ function routeData(items: SessionDeviceView[], overrides: Partial<SessionsRouteD
     }),
     fact: null,
     enabled: true,
-    uid: null,
-    journal: false,
+    target: { kind: 'own' },
     canReadOthers: false,
     countries: ['RU'],
     notice: null,
@@ -144,8 +145,8 @@ describe('SessionsList', () => {
   test('журнал: без «Заблокировать остальные», с входом в свои устройства', () => {
     const journal = render(SessionsList, {
       props: {
-        journal: true,
-        initial: routeData([device, other], { journal: true, canReadOthers: true }),
+        target: { kind: 'journal' },
+        initial: routeData([device, other], { target: { kind: 'journal' }, canReadOthers: true }),
       },
     })
     expect(journal.body).toContain('data-testid="session-row"')
@@ -201,7 +202,7 @@ describe('SessionsList', () => {
     links.calls.length = 0
     const uid = device.authId
     const { body } = render(SessionsList, {
-      props: { uid, initial: routeData([device], { uid }) },
+      props: { target: { kind: 'account', uid }, initial: routeData([device], { target: { kind: 'account', uid } }) },
     })
     const session = links.calls.find((c) => c.name === 'user.session')
     expect(session?.params).toEqual({ id: device.id, uid })
@@ -233,7 +234,7 @@ describe('SessionsList', () => {
     // Внутри журнала входа в журнал нет, а возврат к своим — тоже модалкой.
     links.calls.length = 0
     const { body: journalBody } = render(SessionsList, {
-      props: { journal: true, initial: routeData([device, other], { journal: true, canReadOthers: true }) },
+      props: { target: { kind: 'journal' }, initial: routeData([device, other], { target: { kind: 'journal' }, canReadOthers: true }) },
     })
     expect(journalBody).not.toContain('sessions-journal-open')
     expect(links.calls.some((c) => c.name === 'user.sessions.journal')).toBe(false)
@@ -251,7 +252,7 @@ describe('SessionsList', () => {
     expect(own.body).not.toContain('href="/sessions"')
 
     const journal = render(SessionsList, {
-      props: { journal: true, initial: routeData([device, other], { journal: true }) },
+      props: { target: { kind: 'journal' }, initial: routeData([device, other], { target: { kind: 'journal' } }) },
     })
     expect(journal.body).not.toContain('data-testid="sessions-journal-open"')
 
@@ -278,5 +279,16 @@ describe('SessionsList', () => {
     expect(body).not.toContain('data-testid="bulk-exit"')
     expect(body).not.toContain('/users?sessions-exit')
     addr.url = new URL('http://localhost/user/sessions')
+  })
+
+  test('журнал: фильтры несут явный признак журнала, а не адрес носителя', () => {
+    links.calls.length = 0
+    const { body } = render(SessionsList, {
+      props: { target: { kind: 'journal' }, initial: routeData([device, other], { target: { kind: 'journal' }, canReadOthers: true }) },
+    })
+    const filters = links.calls.find((c) => c.name === 'user.sessions.filters')
+    expect(filters?.params).toEqual({ journal: '1' })
+    expect(body).toContain('href="/user/sessions/filters?journal=1"')
+    expect(body).not.toContain('uid=')
   })
 })

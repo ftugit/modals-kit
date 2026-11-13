@@ -79,8 +79,12 @@ registerModal({
 registerModal({
   name: 'user.sessions.filters',
   component: lazy(() => import('./ui/SessionsFiltersModal.svelte')),
-  defaultParams: { uid: '' },
-  route: (p: { uid?: string }) => userSessionsFiltersRoute.href({ uid: p?.uid ? String(p.uid) : null }),
+  defaultParams: { uid: '', journal: '' },
+  route: (p: { uid?: string; journal?: string }) =>
+    userSessionsFiltersRoute.href({
+      uid: p?.uid ? String(p.uid) : null,
+      journal: p?.journal === '1' || p?.journal === 'true' ? '1' : null,
+    }),
   size: { width: 440, height: 600 },
 })
 // Карточка устройства (переименование и отзыв). Пара «модалка + роут»:
