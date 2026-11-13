@@ -19,7 +19,6 @@
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
     import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
-  import { sessionsJournalRoute } from '../routes.js'
   import type { AuthErrorCode } from '../error.js'
   import { useGrants } from '../grants.svelte.js'
   import { auth as authResource, profile as profileResource } from '../schema.js'
@@ -82,8 +81,6 @@
   // (круг журнала). Право смотрит та же модель, что и сам экран.
   const gSession = grants(sessionResource)
   const readSessionsGrant = useGrants(gSession.select)
-  // Адрес журнала — из реестра: вшитая строка расходится с роутом при его правке.
-  const journalHref = $derived(sessionsJournalRoute.href())
 
   // До гидратации право берётся из `load` (как `canSeeDeleted`/`canSeeNickname`),
   // после — уточняется реактивным `useGrants`. Без этого SSR/no-JS не рисовал вход.
