@@ -9,7 +9,7 @@
   import { Surface } from '#components/ui/index.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SessionDetail } from '../types.js'
-  import { userAccountSessionsRoute, userSessionsRoute } from '../routes.js'
+  import { userAccountSessionRoute, userAccountSessionsRoute, userSessionRoute, userSessionsRoute } from '../routes.js'
   import Acl from './Acl.svelte'
   import SessionCard from './SessionCard.svelte'
 
@@ -26,6 +26,14 @@
   // `/user/[id]/sessions`, а не в свой список.
   const uid = $derived(modal.params?.uid ? String(modal.params.uid) : null)
   const backHref = $derived(uid ? userAccountSessionsRoute.href({ id: uid }) : userSessionsRoute.href())
+  const sessionId = $derived(modal.params?.id ? String(modal.params.id) : (ldr.data?.detail?.session.id ?? ''))
+  const actionHref = $derived(
+    uid && sessionId
+      ? `${userAccountSessionRoute.href({ id: uid, sessionId })}?/rename`
+      : sessionId
+        ? `${userSessionRoute.href({ id: sessionId })}?/rename`
+        : undefined,
+  )
 </script>
 
 <Surface variant="plain" class="w-full p-6" title="Устройство">
@@ -36,6 +44,7 @@
       detail={ldr.data.detail}
       notice={ldr.data.notice}
       {backHref}
+      {actionHref}
       mode="modal"
     />
   {/if}

@@ -16,7 +16,7 @@
   import { Badge, Button, TimeAgo } from '#components/ui/index.js'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import { sessionRenameForm } from '../sessions.form.js'
-  import { userAccountSessionRoute, userSessionRoute } from '../routes.js'
+  import { userAccountSessionRoute, userAccountSessionsRoute, userSessionRoute, userSessionsRoute } from '../routes.js'
   import type { SessionDetail } from '../types.js'
   import { vault } from '../vault.svelte.js'
   import ExitSteps from './sessions-list/ExitSteps.svelte'
@@ -31,9 +31,11 @@
     backHref?: string
     /** Носитель: страница — шаг в URL, модалка — локальный хост шагов. */
     mode?: 'page' | 'modal'
+    /** Абсолютный POST-адрес переименования своей единицы; по умолчанию — из реестра по аккаунту строки. */
+    actionHref?: string
   }
 
-  let { detail, notice = null, now = Date.now(), backHref = '/user/sessions', mode = 'page' }: Props = $props()
+  let { detail, notice = null, now = Date.now(), backHref = '/user/sessions', mode = 'page', actionHref }: Props = $props()
 
   const session = $derived(detail.session)
   const status = $derived(
@@ -72,13 +74,20 @@
   const closable = $derived(detail.canRevoke && session.deletedAt == null && !session.current)
   // Цель отзыва — аккаунт строки, а не зрителя: чужая сессия закрывается
   // экшеном чужого списка, иначе набор не найдёт её в своём аккаунте.
+  const foreign = $derived(Boolean(session.authId && session.authId !== vault.principal))
   const exitAction = $derived(
-    session.authId && session.authId !== vault.principal
-      ? `/user/${encodeURIComponent(session.authId)}/sessions?/others`
-      : '/user/sessions?/others',
+    foreign ? `${userAccountSessionsRoute.href({ id: session.authId! })}?/others` : `${userSessionsRoute.href()}?/others`,
+  )
+  // Переименование уходит на экшен своей единицы: чужая строка — на чужой
+  // роут, поэтому `actions.rename` чужой страницы достижим и не удаляется.
+  const renameAction = $derived(
+    actionHref ??
+      (foreign
+        ? `${userAccountSessionRoute.href({ id: session.authId!, sessionId: id })}?/rename`
+        : `${userSessionRoute.href({ id })}?/rename`),
   )
   const form = bind(forms, sessionRenameForm(id), {
-    action: `/user/sessions/${id}?/rename`,
+    action: untrack(() => renameAction),
     intercept: false,
   })
 </script>

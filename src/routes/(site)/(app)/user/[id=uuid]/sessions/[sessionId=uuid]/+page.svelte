@@ -3,13 +3,16 @@
   // с целью. Возврат ведёт в список устройств того же аккаунта, поэтому
   // адрес берётся из реестра, а не собирается из сегментов.
   import { useHeadSeo } from '#components/shell/index.js'
-  import { userAccountSessionsRoute } from '#content/user/routes.js'
+  import { userAccountSessionRoute, userAccountSessionsRoute } from '#content/user/routes.js'
   import Acl from '#content/user/ui/Acl.svelte'
   import SessionCard from '#content/user/ui/SessionCard.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
   const backHref = $derived(userAccountSessionsRoute.href({ id: data.uid }))
+  const renameAction = $derived(
+    data.detail ? `${userAccountSessionRoute.href({ id: data.uid, sessionId: data.detail.session.id })}?/rename` : undefined,
+  )
 
   useHeadSeo({
     subTitle: 'Устройство аккаунта',
@@ -24,7 +27,7 @@
   {:else if data.detail}
     <div class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
       <h1 class="mb-4 text-lg font-semibold leading-tight tracking-tight">Устройство аккаунта</h1>
-      <SessionCard detail={data.detail} notice={data.notice} {backHref} />
+      <SessionCard detail={data.detail} notice={data.notice} {backHref} actionHref={renameAction} />
     </div>
   {:else}
     <Acl status="auth.session-unknown" {backHref} />

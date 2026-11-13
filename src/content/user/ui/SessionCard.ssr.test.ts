@@ -120,6 +120,33 @@ describe('SessionCard', () => {
       props: { detail: { ...other, session: { ...other.session, authId: '99999999-9999-4999-8999-999999999999' } } },
     })
     expect(foreign.body).toContain('action="/user/99999999-9999-4999-8999-999999999999/sessions?/others"')
+    // Переименование тоже уходит на чужой роут: экшен чужой страницы достижим.
+    expect(foreign.body).toContain(
+      'action="/user/99999999-9999-4999-8999-999999999999/sessions/11111111-1111-4111-8111-111111111111?/rename"',
+    )
+    addr.url = new URL(`http://localhost/user/sessions/${device.id}`)
+  })
+
+  test('action абсолютен и равен роуту своей единицы поверх любого носителя', () => {
+    const foreignDetail: SessionDetail = {
+      ...other,
+      session: { ...other.session, authId: '99999999-9999-4999-8999-999999999999' },
+    }
+    for (const base of ['http://localhost/users', 'http://localhost/user/menu', 'http://localhost/']) {
+      // Шаг подтверждения открываем URL-ключом страницы: action всё равно обязан
+      // остаться адресом своей единицы, а не носителя.
+      addr.url = new URL(`${base}?session.exit=confirm`)
+      const own = render(SessionCard, { props: { detail: other } })
+      expect(own.body, `own rename on ${base}`).toContain(`action="/user/sessions/${device.id}?/rename"`)
+      expect(own.body, `own exit on ${base}`).toContain('action="/user/sessions?/others"')
+      const foreign = render(SessionCard, { props: { detail: foreignDetail } })
+      expect(foreign.body, `foreign rename on ${base}`).toContain(
+        'action="/user/99999999-9999-4999-8999-999999999999/sessions/11111111-1111-4111-8111-111111111111?/rename"',
+      )
+      expect(foreign.body, `foreign exit on ${base}`).toContain(
+        'action="/user/99999999-9999-4999-8999-999999999999/sessions?/others"',
+      )
+    }
     addr.url = new URL(`http://localhost/user/sessions/${device.id}`)
   })
 
