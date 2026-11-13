@@ -21,6 +21,6 @@
   {#if ldr.data?.enabled === false || ldr.data?.fact}
     <Acl status={ldr.data?.fact} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
-    <SessionsList target={{ kind: 'journal' }} initial={ldr.data} mode="modal" variant="plain" class="min-h-0 flex-1" />
+    <SessionsList target={{ kind: 'journal' }} initial={ldr.data} mode="modal" url={false} variant="plain" class="min-h-0 flex-1" />
   {/if}
 </Surface>

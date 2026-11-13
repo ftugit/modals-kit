@@ -4,7 +4,8 @@
 // отзыва оба берут из пути, а не из тела формы.
 import { redirect } from '@sveltejs/kit'
 import { auth } from '#content/user/gateway.server.js'
-import { sessionRevokeForm, sessionRevokeOthersForm } from '#content/user/sessions.form.js'
+import { sessionBulkExitForm } from '#content/user/sessions.form.js'
+import { runBulkExit } from '#content/user/sessions-exit.server.js'
 import { loadSessionsRouteData, sessionsListHref, sessionsTargetOf } from '#content/user/ui/sessions-list/load.server.js'
 import type { FormError } from '#lib/form/index.js'
 import { createFormHandler } from '#lib/form/server.js'
@@ -25,39 +26,24 @@ const error = (code: string, message: string, path?: string): FormError => ({
 export const load: PageServerLoad = async (event) => loadSessionsRouteData(event, event.params.id)
 
 export const actions: Actions = {
-  revoke: async (event) => {
-    const list = sessionsListHref(sessionsTargetOf(event))
-    const handled = await createFormHandler({
-      description: sessionRevokeForm(''),
-      order: SECURITY_LAYERS,
-      throttle: revokeThrottle,
-      async execute({ values, commit, fail }) {
-        const id = String(values.id ?? '').trim()
-        const r = await auth(event).revokeSessionById(id)
-        if (!r.ok) return fail([error('auth.revoke', 'Не удалось заблокировать сессию', 'id')])
-        commit()
-        return { redirect: r.value.current ? '/user/auth' : list }
-      },
-    })(event.request, 'action', event)
-    redirect(
-      303,
-      handled.result.ok && handled.result.redirect?.startsWith('/')
-        ? handled.result.redirect
-        : `${list}?notice=revoke-failed`,
-    )
-  },
   others: async (event) => {
     const target = sessionsTargetOf(event)
     const list = sessionsListHref(target)
     const handled = await createFormHandler({
-      description: sessionRevokeOthersForm(),
+      description: sessionBulkExitForm(),
       order: SECURITY_LAYERS,
       throttle: revokeThrottle,
-      async execute({ commit, fail }) {
-        const r = await auth(event).revokeBulkSessions({ scope: 'others', authId: target })
-        if (!r.ok) return fail([error('auth.revoke', 'Не удалось заблокировать остальные сессии')])
+      async execute({ values, commit, fail }) {
+        // Набор собирает форма, а не имя экшена: цель — аккаунт из пути.
+        const r = await runBulkExit(
+          event,
+          values,
+          { authId: target, selfHref: list, doneHref: '/user/auth' },
+          (message) => error('auth.revoke', message),
+        )
+        if (!r.ok) return fail([r.error ?? error('auth.revoke', 'Не удалось завершить сессии')])
         commit()
-        return { redirect: r.value.current ? '/user/auth' : list }
+        return { redirect: r.redirect }
       },
     })(event.request, 'action', event)
     redirect(
