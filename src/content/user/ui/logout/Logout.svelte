@@ -15,6 +15,7 @@
   import { Form, formTask } from '#lib/form/svelte/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { visibleAddress } from '#lib/address/sveltekit.js'
+  import { useSteps } from '#components/steps/index.js'
   import { forms } from '#components/form/forms.config.js'
   import { Button } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
@@ -40,6 +41,8 @@
     localAction?: string
     /** Адрес возврата из подтверждения. */
     backHref?: string
+    /** Носитель: страница — шаг в URL, модалка — локальный хост шагов. */
+    mode?: 'page' | 'modal'
     holdSeconds?: number
     variant?: UserSurfaceVariant
     class?: string
@@ -52,22 +55,36 @@
     action,
     localAction,
     backHref,
+    mode = 'page',
     holdSeconds = 2,
     variant = 'plain',
     class: className,
   }: Props = $props()
 
-  // Шаг — в адресе: без JS «Далее» обычная ссылка, а «назад» не теряет
-  // состояние чекбокса, потому что он стоит на том же экране, что и отправка.
+  // Шаг: на странице — URL-ключ, в модалке — локальный хост шагов. Адрес
+  // носителя в модалке не читается и не пишется; no-JS fallback ведёт на
+  // страницу выхода, а не на страницу, поверх которой открыт слой.
+  const stepsMode = untrack(() => mode)
   const stepKey = 'logout.step'
-  const step = $derived(
-    visibleAddress().url.searchParams.get(stepKey) === 'confirm' ? 'confirm' : 'summary',
-  )
-  const confirmHref = $derived.by(() => {
-    const url = new URL(visibleAddress().url)
-    url.searchParams.set(stepKey, 'confirm')
-    return `${url.pathname}${url.search}`
+  const stepHost = useSteps({
+    owner: 'user-logout',
+    key: stepKey,
+    mode: stepsMode === 'modal' ? 'local' : 'url',
+    steps: () => [
+      { key: 'summary', label: 'Сводка', filled: true },
+      { key: 'confirm', label: 'Подтверждение', filled: true },
+    ],
+    current: () =>
+      stepsMode === 'modal'
+        ? 'summary'
+        : visibleAddress().url.searchParams.get(stepKey) === 'confirm'
+          ? 'confirm'
+          : 'summary',
   })
+  const step = $derived(stepHost.currentKey === 'confirm' ? 'confirm' : 'summary')
+  const confirmHref = $derived(
+    stepsMode === 'modal' ? `${userLogoutRoute.href()}?${stepKey}=confirm` : stepHost.href('confirm'),
+  )
 
   const local = bindComponentForm(forms, logoutLocalForm, {
     action: untrack(() => localAction) ?? `${userLogoutRoute.href()}?/local`,
@@ -118,7 +135,9 @@
       spread
       {step}
       {confirmHref}
-      {backHref}
+      backHref={stepsMode === 'modal' ? undefined : backHref}
+      onNext={stepsMode === 'modal' ? () => stepHost.set('confirm') : undefined}
+      onBack={stepsMode === 'modal' ? () => stepHost.set('summary') : undefined}
       action={exitAction}
       {holdSeconds}
       heading={step === 'confirm' ? 'Подтверждение выхода' : 'Выход'}

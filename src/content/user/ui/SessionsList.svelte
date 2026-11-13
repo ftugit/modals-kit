@@ -16,6 +16,7 @@
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing, ListingRow } from '#components/listing/index.js'
+  import { useSteps } from '#components/steps/index.js'
   import { Button } from '#components/ui/index.js'
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
@@ -51,6 +52,8 @@
     uid?: string | null
     /** Общий журнал (`/sessions`): без аккаунта, все читаемые сессии. */
     journal?: boolean
+    /** Носитель: страница — шаг в URL, модалка — локальный хост шагов. */
+    mode?: 'page' | 'modal'
     /** Данные `load` роута от носителя (страница/модалка). */
     initial?: SessionsRouteData | null
     /** Явный ключ изолированной области пагинатора (для немодальных стендов). */
@@ -68,6 +71,7 @@
   let {
     uid = null,
     journal = false,
+    mode = 'page',
     initial = null,
     scope = null,
     url = undefined,
@@ -202,18 +206,33 @@
   const exitIds = $derived(exitRows.map((row) => row.id))
   const currentId = $derived(exitRows.find((row) => row.current)?.id ?? null)
 
-  // Шаг подтверждения — в адресе: без JS «Далее» обычная ссылка, а чекбокс и
-  // отправка стоят на одном экране, поэтому состояние не теряется.
-  const exitKey = 'sessions.exit'
-  const exitStep = $derived(
-    visibleAddress().url.searchParams.get(exitKey) === 'confirm' ? 'confirm' : 'summary',
-  )
-  const exitToggleHref = $derived.by(() => {
-    const url = new URL(listFrom, 'http://local.invalid')
-    if (exitStep === 'confirm') url.searchParams.delete(exitKey)
-    else url.searchParams.set(exitKey, 'confirm')
-    return `${url.pathname}${url.search}`
+  // Шаг подтверждения: на странице — URL-ключ (без JS «Далее» обычная ссылка),
+  // в модалке — локальный хост шагов. Адрес носителя в модалке не читается и не
+  // пишется: закрытие слоя не оставляет ключ, следующая карточка стартует со сводки.
+  const stepsMode = untrack(() => mode)
+  const exitKey = 'sessions-exit'
+  const exitHost = useSteps({
+    owner: 'user-sessions-exit',
+    key: exitKey,
+    mode: stepsMode === 'modal' ? 'local' : 'url',
+    steps: () => [
+      { key: 'summary', label: 'Сводка', filled: true },
+      { key: 'confirm', label: 'Подтверждение', filled: true },
+    ],
+    current: () =>
+      stepsMode === 'modal'
+        ? 'summary'
+        : visibleAddress().url.searchParams.get(exitKey) === 'confirm'
+          ? 'confirm'
+          : 'summary',
   })
+  const exitStep = $derived(exitHost.currentKey === 'confirm' ? 'confirm' : 'summary')
+  // Fallback без JS ведёт на страницу той же единицы, а не на адрес носителя.
+  const exitNextHref = $derived(stepsMode === 'modal' ? `${route}?${exitKey}=confirm` : exitHost.href('confirm'))
+  const exitBackHref = $derived(stepsMode === 'modal' ? route : exitHost.blankHref())
+  function toggleExit() {
+    exitHost.set(exitStep === 'confirm' ? 'summary' : 'confirm')
+  }
 
   function othersOf(data: SessionsRouteData): boolean {
     const snap = data.snapshot
@@ -231,7 +250,8 @@
       {currentId}
       total={exitRows.length}
       step="confirm"
-      backHref={exitToggleHref}
+      backHref={exitBackHref}
+      onBack={stepsMode === 'modal' ? () => exitHost.set('summary') : undefined}
       action={`${route}?/others`}
       heading="Завершение сессий"
       summary="Будут завершены все устройства, показанные в этом списке — с учётом фильтра."
@@ -315,9 +335,15 @@
       </Button>
     {/if}
     {#if !journal && view.canRevoke && othersOf(view)}
-      <Button href={exitToggleHref} variant="outline" size="sm" data-testid="sessions-revoke-others">
-        {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
-      </Button>
+      {#if stepsMode === 'modal'}
+        <Button type="button" onclick={toggleExit} variant="outline" size="sm" data-testid="sessions-revoke-others">
+          {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
+        </Button>
+      {:else}
+        <Button href={exitStep === 'confirm' ? exitBackHref : exitNextHref} variant="outline" size="sm" data-testid="sessions-revoke-others">
+          {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
+        </Button>
+      {/if}
     {/if}
   {/snippet}
   {#snippet row(item)}

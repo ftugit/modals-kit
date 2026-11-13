@@ -9,12 +9,14 @@
    */
   import { untrack } from 'svelte'
   import { visibleAddress } from '#lib/address/sveltekit.js'
+  import { useSteps } from '#components/steps/index.js'
   import { asLink } from '#hooks/links/index.js'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
   import { Badge, Button, TimeAgo } from '#components/ui/index.js'
   import { bind, Form } from '#lib/form/svelte/index.js'
   import { sessionRenameForm } from '../sessions.form.js'
+  import { userAccountSessionRoute, userSessionRoute } from '../routes.js'
   import type { SessionDetail } from '../types.js'
   import { vault } from '../vault.svelte.js'
   import ExitSteps from './sessions-list/ExitSteps.svelte'
@@ -27,9 +29,11 @@
     now?: number
     /** Куда вернуться без JS после успеха/отказа. */
     backHref?: string
+    /** Носитель: страница — шаг в URL, модалка — локальный хост шагов. */
+    mode?: 'page' | 'modal'
   }
 
-  let { detail, notice = null, now = Date.now(), backHref = '/user/sessions' }: Props = $props()
+  let { detail, notice = null, now = Date.now(), backHref = '/user/sessions', mode = 'page' }: Props = $props()
 
   const session = $derived(detail.session)
   const status = $derived(
@@ -40,16 +44,31 @@
   // Закрыть карточку — тот же набор, что и в списке: `only ids=[эта строка]`.
   // Свою текущую сессию здесь не закрывают вовсе: для неё есть выход в меню,
   // а две кнопки с одним смыслом в разных местах расходятся поведением.
+  const stepsMode = untrack(() => mode)
   const exitKey = 'session.exit'
-  const exitStep = $derived(
-    visibleAddress().url.searchParams.get(exitKey) === 'confirm' ? 'confirm' : 'summary',
-  )
-  const exitHref = $derived.by(() => {
-    const url = new URL(visibleAddress().url)
-    if (exitStep === 'confirm') url.searchParams.delete(exitKey)
-    else url.searchParams.set(exitKey, 'confirm')
-    return `${url.pathname}${url.search}`
+  const exitHost = useSteps({
+    owner: 'user-session-exit',
+    key: exitKey,
+    mode: stepsMode === 'modal' ? 'local' : 'url',
+    steps: () => [
+      { key: 'summary', label: 'Сводка', filled: true },
+      { key: 'confirm', label: 'Подтверждение', filled: true },
+    ],
+    current: () =>
+      stepsMode === 'modal'
+        ? 'summary'
+        : visibleAddress().url.searchParams.get(exitKey) === 'confirm'
+          ? 'confirm'
+          : 'summary',
   })
+  const exitStep = $derived(exitHost.currentKey === 'confirm' ? 'confirm' : 'summary')
+  const cardRoute = $derived(
+    session.authId && session.authId !== vault.principal
+      ? userAccountSessionRoute.href({ id: session.authId, sessionId: id })
+      : userSessionRoute.href({ id }),
+  )
+  const exitNextHref = $derived(stepsMode === 'modal' ? `${cardRoute}?${exitKey}=confirm` : exitHost.href('confirm'))
+  const exitBackHref = $derived(stepsMode === 'modal' ? cardRoute : exitHost.blankHref())
   const closable = $derived(detail.canRevoke && session.deletedAt == null && !session.current)
   // Цель отзыва — аккаунт строки, а не зрителя: чужая сессия закрывается
   // экшеном чужого списка, иначе набор не найдёт её в своём аккаунте.
@@ -126,7 +145,8 @@
           pick="only"
           step="confirm"
           action={exitAction}
-          backHref={exitHref}
+          backHref={exitBackHref}
+          onBack={stepsMode === 'modal' ? () => exitHost.set('summary') : undefined}
           heading="Завершение сессии"
           summary="Устройство потеряет доступ: войти придётся заново."
           confirmLabel="Завершить сессию"
@@ -134,9 +154,15 @@
         />
       {:else}
         <div class="flex items-center justify-between gap-3">
-          <Button href={exitHref} variant="outline" size="sm" data-testid="session-card-revoke">
-            Заблокировать
-          </Button>
+          {#if stepsMode === 'modal'}
+            <Button type="button" onclick={() => exitHost.set('confirm')} variant="outline" size="sm" data-testid="session-card-revoke">
+              Заблокировать
+            </Button>
+          {:else}
+            <Button href={exitNextHref} variant="outline" size="sm" data-testid="session-card-revoke">
+              Заблокировать
+            </Button>
+          {/if}
           {#if detail.canHardDelete}
             <span class="text-xs text-muted-foreground">Полное удаление доступно администратору.</span>
           {/if}

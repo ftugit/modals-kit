@@ -166,10 +166,10 @@ describe('SessionsList', () => {
     // показанных строк, то есть из-под фильтра.
     addr.url = new URL('http://localhost/user/sessions')
     const start = render(SessionsList, { props: { initial: routeData([device, other]) } })
-    expect(start.body).toContain('href="/user/sessions?sessions.exit=confirm"')
+    expect(start.body).toContain('href="/user/sessions?sessions-exit=confirm"')
     expect(start.body).not.toContain('data-testid="bulk-exit"')
 
-    addr.url = new URL('http://localhost/user/sessions?sessions.exit=confirm')
+    addr.url = new URL('http://localhost/user/sessions?sessions-exit=confirm')
     const confirm = render(SessionsList, { props: { initial: routeData([device, other]) } })
     expect(confirm.body).toContain('data-testid="bulk-exit"')
     // Набор — все строки списка; текущую из него уберёт сервер по чекбоксу.
@@ -268,5 +268,15 @@ describe('SessionsList', () => {
       props: { initial: routeData([device, other], { canRevoke: false }) },
     })
     expect(body).not.toContain('sessions-revoke-others')
+  })
+
+  test('модалка: шаг локальный, ключ носителя не открывает подтверждение', () => {
+    addr.url = new URL('http://localhost/users?modal=user.sessions&sessions-exit=confirm')
+    const { body } = render(SessionsList, { props: { mode: 'modal', initial: routeData([device, other]) } })
+    expect(body).toContain('data-testid="sessions-revoke-others"')
+    expect(body).toContain('Заблокировать остальные')
+    expect(body).not.toContain('data-testid="bulk-exit"')
+    expect(body).not.toContain('/users?sessions-exit')
+    addr.url = new URL('http://localhost/user/sessions')
   })
 })

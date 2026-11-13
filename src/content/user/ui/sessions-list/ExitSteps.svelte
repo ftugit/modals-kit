@@ -9,8 +9,9 @@
   Удержание — только когда в наборе больше одной строки: одну запись
   подтверждать удержанием незачем (то же правило у массовых действий блокировок).
 
-  Шаг живёт в адресе: без JS «Далее» — обычная ссылка, а состояние чекбокса
-  не теряется, потому что чекбокс и отправка стоят на одном экране.
+  Шаг задаёт носитель: на странице — URL-ключ (без JS «Далее» обычная ссылка),
+  в модалке — локальный хост шагов (`onNext`/`onBack`), адрес носителя не пишется.
+  Чекбокс и отправка стоят на одном экране, поэтому no-JS не теряет намерение.
 -->
 <script lang="ts">
   import { untrack } from 'svelte'
@@ -41,10 +42,14 @@
      * в него текущую сессию (список). Набор в обоих случаях считает сервер.
      */
     spread?: boolean
-    /** Шаг из адреса, не из состояния компонента. */
+    /** Шаг от носителя: страница — URL-ключ, модалка — локальный хост шагов. */
     step?: 'summary' | 'confirm'
     confirmHref?: string
     backHref?: string
+    /** Локальная смена шага в модалке: адрес носителя не трогается. */
+    onNext?: () => void
+    /** Локальный возврат к сводке в модалке. */
+    onBack?: () => void
     /**
      * Куда уходит POST. Обязателен: набор закрывают экшены конкретных роутов
      * (`?/others` у списков сессий, `?/exit` у выхода), а не текущая страница —
@@ -75,6 +80,8 @@
     step = 'summary',
     confirmHref,
     backHref,
+    onNext,
+    onBack,
     action,
     holdSeconds = 2,
     heading = 'Завершение сессий',
@@ -114,6 +121,15 @@
     return pick === 'only' ? base.size : Math.max(0, total - base.size)
   })
   const withHold = $derived(size > 1)
+
+  // Локальный шаг модалки: обычный левый клик без модификаторов меняет состояние
+  // хоста и не пишет адрес носителя. Модификаторы/средняя кнопка остаются
+  // браузеру — fallback-адрес ведёт на страницу той же единицы.
+  function localStep(e: MouseEvent, run?: () => void) {
+    if (!run || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    run()
+  }
 
   // Успех формы: куки снял гейтвей, но сессия в памяти ещё жива — решать
   // носителю (модалка закрывается, страница чистит хранилище).
@@ -193,8 +209,13 @@
             {confirmLabel}
           </Button>
         {/if}
-        {#if backHref}
-          <Button href={backHref} variant="outline" data-testid={`${testId}-back`}>Назад</Button>
+        {#if backHref || onBack}
+          <Button
+            href={backHref}
+            onclick={onBack ? (e) => localStep(e, onBack) : undefined}
+            variant="outline"
+            data-testid={`${testId}-back`}
+          >Назад</Button>
         {/if}
       </div>
     </div>
@@ -208,8 +229,14 @@
     <p class="text-sm" data-testid={`${testId}-count`}>
       Будет завершено сессий: <strong>{size}</strong>
     </p>
-    {#if confirmHref}
-      <Button href={confirmHref} variant="outline" class="self-start" data-testid={`${testId}-next`}>
+    {#if confirmHref || onNext}
+      <Button
+        href={confirmHref}
+        onclick={onNext ? (e) => localStep(e, onNext) : undefined}
+        variant="outline"
+        class="self-start"
+        data-testid={`${testId}-next`}
+      >
         Далее
       </Button>
     {/if}

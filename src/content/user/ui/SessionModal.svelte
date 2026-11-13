@@ -36,6 +36,7 @@
       detail={ldr.data.detail}
       notice={ldr.data.notice}
       {backHref}
+      mode="modal"
     />
   {/if}
 </Surface>

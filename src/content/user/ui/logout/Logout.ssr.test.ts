@@ -91,4 +91,15 @@ describe('Logout: выход как набор сессий', () => {
     expect(body).toContain('data-testid="logout-local"')
     expect(body).toContain('Сессию прочитать не удалось')
   })
+
+  test('модалка: шаг локальный, fallback ведёт на страницу выхода, а не на носитель', () => {
+    addr.url = new URL('http://localhost/user/menu?modal=user.logout&logout.step=confirm')
+    const { body } = render(Logout, { props: { mode: 'modal', sessionId: SESSION, total: 3 } })
+    expect(body).toContain('data-testid="logout-exit-next"')
+    expect(body).toContain('href="/user/logout?logout.step=confirm"')
+    expect(body).not.toContain('data-testid="logout-exit-submit"')
+    expect(body).toContain('data-testid="logout-local"')
+    expect(body).not.toContain('/user/menu?logout.step')
+    addr.url = new URL('http://localhost/user/logout')
+  })
 })

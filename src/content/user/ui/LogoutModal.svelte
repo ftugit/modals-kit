@@ -17,6 +17,7 @@
       sessionId={ldr.data.sessionId}
       total={ldr.data.total}
       canRevoke={ldr.data.canRevoke}
+      mode="modal"
       class="max-w-none"
     />
   {/if}

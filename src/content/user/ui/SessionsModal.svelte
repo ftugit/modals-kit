@@ -30,7 +30,7 @@
     <Acl status={ldr.data?.fact} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
     {#key uid}
-      <SessionsList {uid} {initial} variant="plain" class="min-h-0 flex-1" />
+      <SessionsList {uid} {initial} mode="modal" variant="plain" class="min-h-0 flex-1" />
     {/key}
   {/if}
 </Surface>
