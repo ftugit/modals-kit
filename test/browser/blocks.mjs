@@ -15,6 +15,7 @@
  */
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
+import { hold } from './hold.mjs'
 
 const PORT = Number(process.env.MODALS_PORT ?? 4173)
 const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}`
@@ -226,11 +227,9 @@ async function run() {
 
       await globalCreate.locator('select[name="scope"]').selectOption('auth')
       await globalCreate.locator('textarea[name="reason"]').fill(rGlobal)
-      await massHoldSubmit.focus()
-      await page.keyboard.down(' ')
-      await page.waitForTimeout(2600)
-      await page.keyboard.up(' ')
-      await globalCreate.waitFor({ state: 'hidden', timeout: 10000 })
+      // Общий hold вместо слепого sleep: data-mass-hold="true" (BlockFormBody),
+      // исход — форма создания закрылась.
+      await hold(page, massHoldSubmit, globalCreate.waitFor({ state: 'hidden', timeout: 10000 }))
 
       // Сбросим фильтр пользователей, чтобы увидеть обе созданные записи в глобальном списке
       await page.goto(BASE + '/blocks', { waitUntil: 'networkidle' })
@@ -269,11 +268,9 @@ async function run() {
       assert.equal(await delBox.locator('[data-testid="block-delete-hard-option"]').count(), 1, 'чекбокс hard виден для admin')
 
       const holdBtn = delBox.locator('[data-testid="block-delete-submit"]')
-      await holdBtn.focus()
-      await page.keyboard.down(' ')
-      await page.waitForTimeout(2600)
-      await page.keyboard.up(' ')
-      await delBox.waitFor({ state: 'hidden', timeout: 10000 })
+      // Общий hold вместо слепого sleep: data-mass-hold у BlockDelete нет —
+      // massHold:false; исход — форма удаления закрылась.
+      await hold(page, holdBtn, delBox.waitFor({ state: 'hidden', timeout: 10000 }), { massHold: false })
 
       // Переключаем фильтр состояния на deleted и проверяем read-only форму без submit
       await page.goto(BASE + '/blocks?blocks.state=deleted', { waitUntil: 'networkidle' })

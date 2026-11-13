@@ -14,6 +14,7 @@
  */
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
+import { hold } from './hold.mjs'
 
 const PORT = Number(process.env.MODALS_PORT ?? 5173)
 const BASE = process.env.MODALS_BASE ?? `http://127.0.0.1:${PORT}`
@@ -164,19 +165,19 @@ async function run() {
       await page.waitForURL(/stage=(auth\.)?register/)
       await page.waitForFunction(() => document.querySelector('input[name=seed]')?.value.length >= 43)
       const fresh = await page.inputValue('input[name=seed]')
-      const hold = form.locator('button[type=submit]:has-text("Удерживайте")')
-      await hold.click({ force: true })
+      const holdBtn = form.locator('button[type=submit]:has-text("Удерживайте")')
+      await holdBtn.click({ force: true })
       await page.waitForTimeout(600)
       assert.equal(await form.locator('input[name=nickname]').count(), 0, 'клик до заполнения не выполняет')
       ok('HoldButton до заполнения: клик не срабатывает')
       const fillOf = async () => {
-        const style = (await hold.locator('span').first().getAttribute('style')) ?? ''
+        const style = (await holdBtn.locator('span').first().getAttribute('style')) ?? ''
         return Number(/scaleX\(([\d.]+)\)/.exec(style)?.[1] ?? '0')
       }
       // Предыдущий клик оставляет курсор на кнопке: повторный hover без
       // выхода не порождает pointerenter и не запускает заливку.
       await page.mouse.move(0, 0)
-      await hold.hover({ force: true })
+      await holdBtn.hover({ force: true })
       await page.waitForTimeout(700)
       const t1 = await fillOf()
       assert.ok(t1 > 0.05, `заливка от курсора идёт (scaleX=${t1})`)
@@ -184,12 +185,15 @@ async function run() {
       await page.waitForTimeout(300)
       assert.equal(await fillOf(), 0, 'уход курсора сбрасывает заливку')
       ok(`HoldButton hover: заливка от курсора идёт (scaleX=${t1.toFixed(2)}) и сбрасывается`)
-      await hold.focus()
-      await page.keyboard.down(' ')
-      await page.waitForTimeout(2600)
-      await page.keyboard.up(' ')
       const profile = page.locator('#user-profile')
-      await profile.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 15000 })
+      // Общий hold вместо слепого sleep: ждём реальный исход (шаг профиля).
+      // data-mass-hold у кнопки регистрации нет (SeedForm) — massHold:false.
+      await hold(
+        page,
+        holdBtn,
+        profile.locator('input[name=nickname]').waitFor({ state: 'visible', timeout: 15000 }),
+        { massHold: false },
+      )
       ok('HoldButton удержание: шаг профиля открыт')
 
       // 6а. Фото-поле (`photo`): не-картинка даёт ошибку у поля, честный кадр
