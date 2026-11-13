@@ -55,7 +55,7 @@ import { runBrowserSchedule } from '../../tooling/browser-schedule.mjs';
 /** Основной набор — сьюты фильтруются по реально установленным файлам (ядро + активные модули). */
 const ALL = [
   'regressions', 'modals', 'shell', 'steps', 'forms', 'forms-a11y', 'db-demo', 'fields',
-  'paginate', 'capabilities', 'errors', 'a11y', 'loader', 'auth', 'blocks', 'stage1-audit', 'stage2-session', 'stage2-scope', 'stage2-auth-modal', 'stage2-modal-focus', 'stage2-acl', 'stage2-demo', 'layer-back.check', 'url-storage.check', 'search-nojs', 'select-floating-smoke', 'modal-retry', 'sessions-target', 'sessions-journal',
+  'paginate', 'capabilities', 'errors', 'a11y', 'loader', 'auth', 'blocks', 'stage1-audit', 'stage2-session', 'stage2-scope', 'stage2-auth-modal', 'stage2-modal-focus', 'stage2-acl', 'stage2-demo', 'layer-back.check', 'url-storage.check', 'search-nojs', 'select-floating-smoke', 'modal-retry', 'sessions-target', 'sessions-journal', 'sessions-local-steps',
 ];
 
 const PORT = Number(process.env.MODALS_PORT ?? process.env.PORT ?? 5173);
