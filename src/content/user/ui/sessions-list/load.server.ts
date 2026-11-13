@@ -17,7 +17,7 @@
 import type { RequestEvent } from '@sveltejs/kit'
 import { auth } from '../../gateway.server.js'
 import { userAccountSessionsRoute, userSessionsRoute } from '../../routes.js'
-import type { SessionsRouteData, SessionsState } from '../../types.js'
+import type { SessionsListNotice, SessionsRouteData, SessionsState } from '../../types.js'
 import {
   SESSIONS_PAGE_PARAM,
   SESSIONS_PAGE_SIZE,
@@ -37,6 +37,23 @@ const dateMs = (raw: string | null): number | null => {
   if (!raw) return null
   const v = Date.parse(raw)
   return Number.isFinite(v) ? v : null
+}
+
+/**
+ * Объявление после действия — из адреса, а не из тела: редирект экшена несёт
+ * его query-ключами. Числа частичного набора валидируются тем же `num`;
+ * объявление рисуется только при реальном расхождении `requested > revoked`,
+ * поэтому подделанный адрес с `requested <= revoked` ничего не показывает.
+ */
+function noticeOf(sp: URLSearchParams): SessionsListNotice | null {
+  const kind = sp.get('notice')
+  if (kind === 'revoke-failed') return { kind: 'revoke-failed' }
+  if (kind === 'bulk-exit-partial') {
+    const requested = num(sp.get('requested'), 0, 0, 1_000_000)
+    const revoked = num(sp.get('revoked'), 0, 0, 1_000_000)
+    if (requested > revoked) return { kind: 'bulk-exit-partial', requested, revoked }
+  }
+  return null
 }
 
 /** Адрес списка этого аккаунта: свой — без цели, чужой — путём. */
@@ -61,7 +78,7 @@ export async function loadSessionsRouteData(
 ): Promise<SessionsRouteData> {
   event.setHeaders({ 'cache-control': 'private, no-store' })
   const uid = journal ? null : fixedUid?.trim().toLowerCase() || null
-  const notice = event.url.searchParams.get('notice') === 'revoke-failed' ? 'revoke-failed' : null
+  const notice = noticeOf(event.url.searchParams)
   const u = auth(event)
   if (!u.enabled) {
     return {

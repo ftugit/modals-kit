@@ -293,3 +293,31 @@ describe('SessionsList', () => {
     expect(body).not.toContain('uid=')
   })
 })
+
+describe('SessionsList: объявление после действия берётся из initial.notice (P1-1)', () => {
+  test('частичный набор — расхождение requested/revoked видно в HTML', () => {
+    addr.url = new URL('http://localhost/user/sessions')
+    const { body } = render(SessionsList, {
+      props: { initial: routeData([device], { notice: { kind: 'bulk-exit-partial', requested: 5, revoked: 3 } }) },
+    })
+    expect(body).toContain('data-testid="sessions-list-partial"')
+    expect(body).toContain('Запрошено сессий: 5')
+    expect(body).toContain('завершено: 3')
+  })
+
+  test('сбой отзыва — объявление revoke-failed', () => {
+    addr.url = new URL('http://localhost/user/sessions')
+    const { body } = render(SessionsList, {
+      props: { initial: routeData([device], { notice: { kind: 'revoke-failed' } }) },
+    })
+    expect(body).toContain('data-testid="sessions-list-notice"')
+    expect(body).toContain('Не удалось завершить сессии')
+  })
+
+  test('без объявления — ни одного баннера', () => {
+    addr.url = new URL('http://localhost/user/sessions')
+    const { body } = render(SessionsList, { props: { initial: routeData([device], { notice: null }) } })
+    expect(body).not.toContain('data-testid="sessions-list-partial"')
+    expect(body).not.toContain('data-testid="sessions-list-notice"')
+  })
+})

@@ -29,7 +29,7 @@
     userSessionsRoute,
   } from '../routes.js'
   import { vault } from '../vault.svelte.js'
-  import type { SessionDeviceView, SessionsRouteData, SessionsTarget } from '../types.js'
+  import type { SessionDeviceView, SessionsListNotice, SessionsRouteData, SessionsTarget } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SessionRow from './SessionRow.svelte'
   import ExitSteps from './sessions-list/ExitSteps.svelte'
@@ -57,8 +57,8 @@
     url?: boolean
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (fact: AuthErrorCode) => void
-    /** Notice после сбоя отзыва: список рисует объявление, а не молчит. */
-    notice?: 'revoke-failed' | null
+    /** Объявление после действия: сбой отзыва или частичный набор. По умолчанию — из `initial.notice`. */
+    notice?: SessionsListNotice | null
     variant?: UserSurfaceVariant
     class?: string
     /** Зона sidebar. Страница передаёт, модалка — нет. */
@@ -80,6 +80,12 @@
 
   // Регистрация — в том же бандле, что и хост пагинатора внутри `Listing`.
   ensureSessionsPaginator()
+
+  // Объявление живёт в данных `load` (`initial.notice`): страницы и модалка
+  // передают `initial`, отдельный проп никто не подаёт — поэтому берём из
+  // данных, а проп остаётся явным переопределением. Так баннер виден на обоих
+  // носителях, а не только там, где проп передали бы вручную (P1-1).
+  const activeNotice = $derived<SessionsListNotice | null>(notice ?? initial?.notice ?? null)
 
   // Цель списка: адрес `load` и адрес экшенов собираются из пропа, а не из
   // query. `_uid` для догрузки порций едет в `extra` снапшота (см. `source.ts`).
@@ -265,9 +271,15 @@
   }
 </script>
 
-  {#if notice === 'revoke-failed'}
+  {#if activeNotice?.kind === 'revoke-failed'}
     <p class="text-sm text-destructive" role="alert" data-testid="sessions-list-notice">
       Не удалось завершить сессии — попробуйте ещё раз.
+    </p>
+  {:else if activeNotice?.kind === 'bulk-exit-partial'}
+    <!-- Набор закрыт не целиком: часть строк погасили между счётом и отзывом.
+         Показываем расхождение, а не молчим (P1-1). -->
+    <p class="text-sm text-muted-foreground" role="status" data-testid="sessions-list-partial">
+      Запрошено сессий: {activeNotice.requested}, завершено: {activeNotice.revoked} — часть уже была закрыта.
     </p>
   {/if}
 

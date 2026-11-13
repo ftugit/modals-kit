@@ -52,7 +52,19 @@ export async function runBulkExit(
     if (!r.ok) {
       return { ok: false, error: instruction(r.fact)[0] ?? failWith(AUTH_MESSAGES['auth.unavailable']!) }
     }
-    return { ok: true, redirect: r.value.current ? target.doneHref : target.selfHref }
+    const { revoked, current, requested } = r.value
+    // Текущая закрыта — зритель уходит на `doneHref` (список ему уже не
+    // показать). Остался в списке — возвращаем на `selfHref`; если набор закрыт
+    // не целиком (`requested > revoked`), несём расхождение query-ключами, и
+    // список рисует объявление «просили N, закрыто M» (P1-1).
+    if (!current && requested > revoked) {
+      const sep = target.selfHref.includes('?') ? '&' : '?'
+      return {
+        ok: true,
+        redirect: `${target.selfHref}${sep}notice=bulk-exit-partial&requested=${requested}&revoked=${revoked}`,
+      }
+    }
+    return { ok: true, redirect: current ? target.doneHref : target.selfHref }
   } catch {
     return { ok: false, error: failWith(AUTH_MESSAGES['auth.unavailable']!) }
   }

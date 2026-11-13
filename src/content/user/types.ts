@@ -175,6 +175,16 @@ export type SessionsTarget =
   | { kind: 'account'; uid: string }
   | { kind: 'journal' }
 
+/**
+ * Объявление списка устройств после действия. `revoke-failed` — отзыв не
+ * удался; `bulk-exit-partial` — серверный набор закрыт не целиком: `requested`
+ * строк попало в срез до удаления, `revoked` реально погашено (часть закрыли
+ * между счётом и отзывом). Расхождение показывается, только когда оно есть.
+ */
+export type SessionsListNotice =
+  | { kind: 'revoke-failed' }
+  | { kind: 'bulk-exit-partial'; requested: number; revoked: number }
+
 export type SessionsRouteData = {
   enabled: boolean
   fact: AuthErrorCode | null
@@ -184,7 +194,7 @@ export type SessionsRouteData = {
   canReadOthers: boolean
   snapshot: import('#lib/paginate/index.js').PaginatorState<SessionDeviceView> | null
   countries: readonly string[]
-  notice: 'revoke-failed' | null
+  notice: SessionsListNotice | null
   canSeeDeleted: boolean
   canRename: boolean
   canRevoke: boolean

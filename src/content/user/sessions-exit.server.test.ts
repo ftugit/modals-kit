@@ -43,6 +43,32 @@ describe('runBulkExit: бросок домена и факты', () => {
   })
 })
 
+describe('runBulkExit: частичный набор виден в редиректе (P1-1)', () => {
+  test('requested > revoked и текущая жива → selfHref с notice=bulk-exit-partial', async () => {
+    mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 3, current: false, requested: 5 } })
+    const r = await runBulkExit(event, {}, target)
+    expect(r).toEqual({ ok: true, redirect: '/user/sessions?notice=bulk-exit-partial&requested=5&revoked=3' })
+  })
+
+  test('набор закрыт целиком → selfHref без объявления', async () => {
+    mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 5, current: false, requested: 5 } })
+    const r = await runBulkExit(event, {}, target)
+    expect(r).toEqual({ ok: true, redirect: '/user/sessions' })
+  })
+
+  test('текущая закрыта → doneHref даже при расхождении (список уже не показать)', async () => {
+    mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 3, current: true, requested: 5 } })
+    const r = await runBulkExit(event, {}, target)
+    expect(r).toEqual({ ok: true, redirect: '/user/auth' })
+  })
+
+  test('selfHref уже с query — разделитель &', async () => {
+    mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 1, current: false, requested: 2 } })
+    const r = await runBulkExit(event, {}, { selfHref: '/user/sessions?sessions.state=active', doneHref: '/user/auth' })
+    expect(r).toEqual({ ok: true, redirect: '/user/sessions?sessions.state=active&notice=bulk-exit-partial&requested=2&revoked=1' })
+  })
+})
+
 test('sessionFormError: код только из каталога, текст из словаря', () => {
   const e = sessionFormError('auth.limit')
   expect(e.code).toBe('auth.limit')
