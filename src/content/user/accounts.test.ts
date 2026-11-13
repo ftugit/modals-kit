@@ -371,6 +371,15 @@ describe('список seed-юзеров', () => {
     expect(args.order).toEqual([['created_at', 'desc']])
   })
 
+  test('canReadSessions: вход в журнал — право session.select, не account.read', async () => {
+    const { ports, auths } = makePorts()
+    const reader = await joined(ports, auths, ['account.read'])
+    const admin = await joined(ports, auths, ['admin'])
+
+    expect(ok_(await listSeedUsers(ports, reader.access)).canReadSessions).toBe(false)
+    expect(ok_(await listSeedUsers(ports, admin.access)).canReadSessions).toBe(true)
+  })
+
   test('никнейм: право — политика профиля; без права параметр молча игнорируется', async () => {
     const { ports, auths, listArgsOf } = makePorts()
     const reader = await joined(ports, auths, ['account.read'])

@@ -106,5 +106,6 @@ export const load: PageServerLoad = async (event): Promise<SeedUsersRouteData> =
     enabled: u.enabled,
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,
     canSeeNickname: r.ok ? r.value.canSeeNickname : false,
+    canReadSessions: r.ok ? r.value.canReadSessions : false,
   }
 }

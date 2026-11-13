@@ -105,6 +105,8 @@ export interface SeedUsersRouteData {
   canSeeDeleted: boolean
   /** Доступны ли вызывающему никнеймы: от этого зависит параметр никнейма в фильтрах. */
   canSeeNickname: boolean
+  /** Право читать чужие устройства: SSR рисует вход в журнал по флагу `load`, `useGrants` уточняет после гидратации. */
+  canReadSessions: boolean
 }
 
 /**

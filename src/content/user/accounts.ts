@@ -20,12 +20,13 @@
  */
 import { checkGrants, grants, type Filter, type Order } from '#lib/db/index.js'
 import { blocksOfMany, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
-import { auth as authResource, profile as profileResource } from './schema.js'
+import { auth as authResource, profile as profileResource, session as sessionResource } from './schema.js'
 import type { AuthPorts, SeedAccountRow } from './ports.js'
 import type { SeedUserView, SeedUsersOrder, SeedUsersPage, SeedUsersState } from './types.js'
 
 const gAuth = grants(authResource)
 const gProfile = grants(profileResource)
+const gSession = grants(sessionResource)
 
 /** Потолок порции: экран догружает понемногу, выгрузка таблицы целиком не нужна. */
 export const SEED_USERS_MAX_PAGE_SIZE = 100
@@ -116,6 +117,7 @@ export async function listSeedUsers(
     canReadAccounts: gAuth.select,
     canSeeDeleted: gAuth.selectDeleted,
     canSeeNickname: gProfile.select,
+    canReadSessions: gSession.select,
   })
   if (!caps.canReadAccounts) return fail({ code: 'auth.forbidden' })
 
@@ -213,5 +215,6 @@ export async function listSeedUsers(
     pageSize,
     canSeeDeleted,
     canSeeNickname,
+    canReadSessions: caps.canReadSessions,
   })
 }

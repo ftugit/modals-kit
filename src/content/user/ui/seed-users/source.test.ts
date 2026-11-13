@@ -26,7 +26,7 @@ const row = (id: string): SeedUserView => ({
 
 describe('список seed-юзеров: снапшот и регистрация', () => {
   test('снапшот: страница загружена, totals и hasNext посчитаны', () => {
-    const snap = seedUsersSnapshot({ items: [row('1'), row('2')], total: 25, page: 2, pageSize: 10, canSeeDeleted: true, canSeeNickname: false })
+    const snap = seedUsersSnapshot({ items: [row('1'), row('2')], total: 25, page: 2, pageSize: 10, canSeeDeleted: true, canSeeNickname: false, canReadSessions: false })
     expect(snap.name).toBe(SEED_USERS_NAME)
     expect(snap.loadedPages).toEqual([2])
     expect(snap.pages[2]).toHaveLength(2)
@@ -38,7 +38,7 @@ describe('список seed-юзеров: снапшот и регистраци
   })
 
   test('снапшот пустой выдачи: страниц нет, дальше — некуда', () => {
-    const snap = seedUsersSnapshot({ items: [], total: 0, page: 1, pageSize: 10, canSeeDeleted: false, canSeeNickname: false })
+    const snap = seedUsersSnapshot({ items: [], total: 0, page: 1, pageSize: 10, canSeeDeleted: false, canSeeNickname: false, canReadSessions: false })
     expect(snap.totalPages).toBe(1)
     expect(snap.hasNext).toBe(false)
   })
@@ -82,7 +82,7 @@ describe('список seed-юзеров: снапшот и регистраци
 
   test('снапшот переносит полный активный срез фильтров в extra без записи дефолтов', () => {
     const snap = seedUsersSnapshot(
-      { items: [row('1')], total: 1, page: 1, pageSize: 30, canSeeDeleted: true, canSeeNickname: true },
+      { items: [row('1')], total: 1, page: 1, pageSize: 30, canSeeDeleted: true, canSeeNickname: true, canReadSessions: true },
       {
         q: 'alice',
         ord: 'id-asc',
@@ -102,7 +102,7 @@ describe('список seed-юзеров: снапшот и регистраци
     })
 
     const clean = seedUsersSnapshot(
-      { items: [row('1')], total: 1, page: 1, pageSize: 30, canSeeDeleted: false, canSeeNickname: false },
+      { items: [row('1')], total: 1, page: 1, pageSize: 30, canSeeDeleted: false, canSeeNickname: false, canReadSessions: false },
       { ord: 'created-desc', state: 'active', nick: false },
     )
     expect(clean.extra).toEqual({})

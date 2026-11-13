@@ -85,7 +85,11 @@
   // Адрес журнала — из реестра: вшитая строка расходится с роутом при его правке.
   const journalHref = $derived(sessionsJournalRoute.href())
 
-  const canReadSessions = $derived(readSessionsGrant.current)
+  // До гидратации право берётся из `load` (как `canSeeDeleted`/`canSeeNickname`),
+  // после — уточняется реактивным `useGrants`. Без этого SSR/no-JS не рисовал вход.
+  const canReadSessions = $derived(
+    vault.principal !== null ? readSessionsGrant.current : initial?.canReadSessions === true,
+  )
 
   const asModalLink = useModalLink()
   const attrsOf = (user: SeedUserView): LinkAttrs =>

@@ -89,6 +89,7 @@ export const load: PageServerLoad = async (event): Promise<UserPickerPageData> =
               pageSize,
               canSeeDeleted: probe.value.canSeeDeleted,
               canSeeNickname: probe.value.canSeeNickname,
+              canReadSessions: probe.value.canReadSessions,
             },
             {
               q: q || null,
@@ -106,6 +107,7 @@ export const load: PageServerLoad = async (event): Promise<UserPickerPageData> =
       enabled: u.enabled,
       canSeeDeleted: probe.ok ? probe.value.canSeeDeleted : false,
       canSeeNickname: probe.ok ? probe.value.canSeeNickname : false,
+      canReadSessions: probe.ok ? probe.value.canReadSessions : false,
     }
     return {
       mode,
@@ -169,6 +171,7 @@ export const load: PageServerLoad = async (event): Promise<UserPickerPageData> =
     enabled: u.enabled,
     canSeeDeleted: r.ok ? r.value.canSeeDeleted : false,
     canSeeNickname: r.ok ? r.value.canSeeNickname : false,
+    canReadSessions: r.ok ? r.value.canReadSessions : false,
   }
 
   return {
