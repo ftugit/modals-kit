@@ -107,7 +107,11 @@ POST <любой маршрут> (__form_id = user-seed | user-profile)
    `load`, но не `searchParams`. Так цель нельзя подменить из адресной строки.
 3. **Фильтры — из URL, но через whitelist и кламп.** Числа ограничиваются
    (`num(raw, 1, 1, 10_000)`), перечисления сверяются с закрытым списком
-   (`BLOCKS_ORDERS.includes(...)`), списки id режутся по количеству (`.slice(0, 500)`).
+   (`BLOCKS_ORDERS.includes(...)`), списки id режутся по количеству (`.slice(0, 500)`
+   в `routes/(site)/(app)/users/+page.server.ts`, `ui/blocks-list/load.server.ts` и
+   `routes/(site)/(app)/blocks/filters/+page.server.ts`). Пикер выбирает тот же порядок
+   величины через `parsePickedIds` / `USER_PICKER_IDS_MAX` (`ui/user-picker-query.ts`),
+   общий для модалки и страницы `/users/pick`; сам load `/users/pick` список не режет.
    Ни одно значение из адреса не попадает в запрос напрямую.
 4. **Права решает домен, компонент — только отрисовка.** Проверка живёт в доменной
    функции (`checkGrants` + ACL модели); компонент получает готовые флаги

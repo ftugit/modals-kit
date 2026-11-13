@@ -249,7 +249,14 @@ export type SessionsWhereArgs = {
   seenTo?: number | null
 }
 
-/** Предел исключений серверного набора: одно объявление на домен и форму. */
+/**
+ * Предел исключений серверного набора: одно объявление на домен и форму.
+ * 500 — порядок величины URL-списков, которые режутся `.slice(0, 500)`
+ * (`users/+page.server.ts`, `ui/blocks-list/load.server.ts`,
+ * `blocks/filters/+page.server.ts`). Пикер режет `parsePickedIds`
+ * (`USER_PICKER_IDS_MAX`), а не load `/users/pick`; здесь предел — отказ,
+ * не усечение: обрезанный `except` закрыл бы строки, которые просили оставить.
+ */
 export const SESSIONS_BULK_IDS_LIMIT = 500
 
 /** Итог пакетного отзыва. `current` — среди погашенных была сессия запроса. */
