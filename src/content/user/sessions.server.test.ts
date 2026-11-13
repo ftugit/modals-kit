@@ -476,3 +476,23 @@ test('except: ровно SESSIONS_BULK_IDS_LIMIT принят — фильтр �
     expect(r.value.requested).toBe(1)
   })
 })
+
+test('R3: чужой id — одиночный отзыв не закрывает чужую строку (revoked=0)', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'k'.repeat(43))
+    const them = await account(deps.db, 'l'.repeat(43))
+    const theirs = await device(deps.db, them, { jti: 'foreign-revoke-token-01', name: 'чужая' })
+    const mine = await device(deps.db, me, { jti: 'foreign-revoke-mine-001', name: 'моя' })
+
+    // Чужая строка не видна актору без прав: отзыв возвращает отказ, а не успех.
+    const r = await revokeSessionById(actor(me, []), theirs, deps)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.fact.code).toBe('auth.session-unknown')
+
+    // Негативный контроль: чужая строка осталась жива, своя тоже не тронута.
+    const left = await deps.db.resource(session).select(SERVER, { filter: { field: 'auth_id', op: 'eq', value: them } })
+    expect(left.map((row) => row.id)).toEqual([theirs])
+    const mineLeft = await deps.db.resource(session).select(SERVER, { filter: { field: 'id', op: 'eq', value: mine } })
+    expect(mineLeft).toHaveLength(1)
+  })
+})
