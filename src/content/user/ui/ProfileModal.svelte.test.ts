@@ -34,6 +34,7 @@ const full = (name: string): ProfileRouteData => ({
   fullBlock: null,
   blocks: [],
   canReadBlocks: false,
+  canReadSessions: false,
   canBlock: false,
   canOpenConfig: false,
   fact: null,

@@ -396,7 +396,7 @@ export type PublicProfileView = {
 export type ProfileRead = {
   profile: ProfileView | null
   /** Зритель читает чужие устройства: кнопка «Сессии» чужого профиля. */
-  canReadSessions?: boolean
+  canReadSessions: boolean
   /** Вызывающий — сам владелец цели (блок приватности показывается только ему). */
   isOwn: boolean
   /** Эффективный уровень видимости цели (конфиг: юзер → умолчание → бутстрап). */
@@ -471,9 +471,10 @@ export type ProfileRouteData = {
   canDeleteSeed: boolean
   /**
    * Зритель читает чужие устройства: кнопка «Сессии» чужого профиля ведёт
-   * на `/user/<uuid>/sessions`. Необязательный — старые фикстуры без флага.
+   * на `/user/<uuid>/sessions`. Обязательный: забытая фикстура без флага
+   * не должна проходить `check` (P0-5).
    */
-  canReadSessions?: boolean
+  canReadSessions: boolean
   /** Раздел блокировок (этап 9): записи цели и право операции для компонента. */
   blocks: BlockView[]
   canReadBlocks: boolean

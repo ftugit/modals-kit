@@ -40,6 +40,7 @@
         fullBlock: data.fullBlock,
         blocks: data.blocks,
         canReadBlocks: data.canReadBlocks,
+        canReadSessions: data.canReadSessions,
         canBlock: data.canBlock,
         canOpenConfig: data.canOpenConfig,
       }}

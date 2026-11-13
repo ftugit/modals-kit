@@ -138,6 +138,7 @@
       fullBlock: d.fullBlock,
       blocks: d.blocks,
       canReadBlocks: d.canReadBlocks,
+      canReadSessions: d.canReadSessions,
       canBlock: d.canBlock,
       canOpenConfig: d.canOpenConfig,
     }
