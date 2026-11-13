@@ -26,6 +26,18 @@ test('обычный код не задевается', () => {
   assert.deepEqual(checkSource('const href = sessionsJournalRoute.href()', 'x.ts'), []);
 });
 
+test('ловит вшитый адрес списка своих устройств', () => {
+  const problems = checkSource("const href = '/user/sessions'", 'x.ts')
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /userSessionsRoute/)
+})
+
+test('ловит шаблон чужого списка вместо реестра', () => {
+  const problems = checkSource('const href = `/user/${uid}/sessions`', 'x.ts')
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /userAccountSessionsRoute/)
+})
+
 test('в проекте нет нарушений', () => {
   assert.deepEqual(checkDir('src'), []);
 });

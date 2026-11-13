@@ -12,6 +12,7 @@ import { auth } from '#content/user/gateway.server.js'
 import type { AuthErrorCode } from '#content/user/index.js'
 import type { SessionsFilterValues } from '#content/user/ui/SessionsFiltersForm.svelte'
 import { sessionsCountryCodes, sessionsFiltersTarget } from '#content/user/ui/sessions-list/source.js'
+import { userSessionsRoute } from '#content/user/routes.js'
 
 export interface SessionsFiltersPageData {
   canSeeDeleted: boolean
@@ -40,7 +41,7 @@ export const load: PageServerLoad = async (event): Promise<SessionsFiltersPageDa
   event.setHeaders({ 'cache-control': 'private, no-store' })
 
   const sp = event.url.searchParams
-  const from = localPath(sp.get('from')) ?? '/user/sessions'
+  const from = localPath(sp.get('from')) ?? userSessionsRoute.href()
   const fromUrl = new URL(from, 'http://local.invalid')
   const fromSp = fromUrl.searchParams
 

@@ -4,6 +4,7 @@
 import { redirect } from '@sveltejs/kit'
 import { auth } from '#content/user/gateway.server.js'
 import { sessionRenameForm } from '#content/user/sessions.form.js'
+import { userSessionRoute, userSessionsRoute } from '#content/user/routes.js'
 import type { AuthErrorCode, SessionDetail } from '#content/user/index.js'
 import type { FormError } from '#lib/form/index.js'
 import { createFormHandler } from '#lib/form/server.js'
@@ -18,7 +19,7 @@ export interface SessionCardData {
   notice: 'rename-failed' | null
 }
 
-const list = '/user/sessions'
+const list = userSessionsRoute.href()
 const throttle = createIpThrottle('user-session-rename', 30, 60_000)
 
 const error = (code: string, message: string, path?: string): FormError => ({
@@ -64,7 +65,7 @@ export const actions: Actions = {
     })(event.request, 'action', event)
     redirect(
       303,
-      handled.result.ok && handled.result.redirect?.startsWith('/') ? handled.result.redirect : `${list}/${id}?notice=rename-failed`,
+      handled.result.ok && handled.result.redirect?.startsWith('/') ? handled.result.redirect : `${userSessionRoute.href({ id })}?notice=rename-failed`,
     )
   },
 }

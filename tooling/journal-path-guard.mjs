@@ -21,6 +21,12 @@ const SRC_DIR = 'src'
 /** Адрес журнала вшит литералом: кавычки любые, но ровно `/sessions`. */
 const LITERAL_RE = /['"`]\/sessions['"`]/
 
+/** Адрес списка своих устройств вшит литералом (включая подпути filters/<id>). */
+const SESSIONS_LITERAL_RE = /['"`]\/user\/sessions(?:[\/'"`?])/
+
+/** Чужой список собран шаблоном вместо userAccountSessionsRoute.href(). */
+const ACCOUNT_SESSIONS_TEMPLATE_RE = /`\/user\/\$\{[^}]*\}\/sessions`/
+
 /** Своё распознавание журнала по пути вместо вызова `sessionsFiltersTarget`. */
 const INLINE_RE = /\\\/sessions\s*\(\?:/i
 
@@ -43,6 +49,12 @@ export function checkSource(source, file) {
       problems.push(
         `${file}:${i + 1}: адрес журнала вшит строкой — берите sessionsJournalRoute.href() ` +
           '(реестр `src/content/user/routes.ts`); вшитый путь расходится с роутом при его правке',
+      )
+    }
+    if (SESSIONS_LITERAL_RE.test(line) || ACCOUNT_SESSIONS_TEMPLATE_RE.test(line)) {
+      problems.push(
+        `${file}:${i + 1}: адрес списка сессий вшит строкой — берите userSessionsRoute.href() ` +
+          'или userAccountSessionsRoute.href({ id }) (реестр `src/content/user/routes.ts`)',
       )
     }
     if (INLINE_RE.test(line)) {

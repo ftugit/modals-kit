@@ -22,7 +22,7 @@ import {
   type PaginatorState,
 } from '#lib/paginate/index.js'
 import { AUTH_MESSAGES } from '../../messages.js'
-import { sessionsJournalRoute } from '../../routes.js'
+import { sessionsJournalRoute, userAccountSessionsRoute, userSessionsRoute } from '../../routes.js'
 import { SESSIONS_COUNTRY_NONE, type SessionDeviceView, type SessionsPage, type SessionsState, type SessionsTarget } from '../../types.js'
 
 export const SESSIONS_NAME = 'user-sessions'
@@ -100,8 +100,8 @@ async function fetchSessionsPage(
   const basePath = journal
     ? sessionsJournalRoute.href()
     : target
-      ? `/user/${encodeURIComponent(target)}/sessions`
-      : '/user/sessions'
+      ? userAccountSessionsRoute.href({ id: target })
+      : userSessionsRoute.href()
   const r = await preloadData(`${basePath}?${q}`)
   if (r.type !== 'loaded') {
     const err = new Error('Не удалось загрузить устройства') as Error & { code: string }

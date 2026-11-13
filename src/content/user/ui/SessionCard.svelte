@@ -35,7 +35,7 @@
     actionHref?: string
   }
 
-  let { detail, notice = null, now = Date.now(), backHref = '/user/sessions', mode = 'page', actionHref }: Props = $props()
+  let { detail, notice = null, now = Date.now(), backHref = userSessionsRoute.href(), mode = 'page', actionHref }: Props = $props()
 
   const session = $derived(detail.session)
   const status = $derived(

@@ -16,6 +16,7 @@
  */
 import type { RequestEvent } from '@sveltejs/kit'
 import { auth } from '../../gateway.server.js'
+import { userAccountSessionsRoute, userSessionsRoute } from '../../routes.js'
 import type { SessionsRouteData, SessionsState } from '../../types.js'
 import {
   SESSIONS_PAGE_PARAM,
@@ -40,7 +41,7 @@ const dateMs = (raw: string | null): number | null => {
 
 /** Адрес списка этого аккаунта: свой — без цели, чужой — путём. */
 export function sessionsListHref(uid: string | null): string {
-  return uid ? `/user/${encodeURIComponent(uid)}/sessions` : '/user/sessions'
+  return uid ? userAccountSessionsRoute.href({ id: uid }) : userSessionsRoute.href()
 }
 
 /**
