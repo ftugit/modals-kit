@@ -226,6 +226,19 @@ export type SessionRevokeResult = {
   hard: boolean
 }
 
+/** Поля среза списка: один источник для чтения и для серверного набора отзыва. */
+export type SessionsWhereArgs = {
+  state?: SessionsState
+  /** Коды стран (`SESSIONS_COUNTRY_NONE` — строки без страны). Пусто — фильтра нет. */
+  country?: readonly string[]
+  /** «Сеть менялась»: в истории строки есть прежние подсети. */
+  subnetChanged?: boolean
+  createdFrom?: number | null
+  createdTo?: number | null
+  seenFrom?: number | null
+  seenTo?: number | null
+}
+
 /** Предел исключений серверного набора: одно объявление на домен и форму. */
 export const SESSIONS_BULK_IDS_LIMIT = 500
 

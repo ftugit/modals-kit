@@ -16,7 +16,8 @@ import {
 } from '#lib/db/index.js'
 import { SERVER, fail, ok, principalOfRow, type UserResult } from './auth.js'
 import { auth as authResource, session as sessionResource } from './schema.js'
-import { SESSIONS_BULK_IDS_LIMIT, SESSIONS_COUNTRY_NONE } from './types.js'
+import { SESSIONS_BULK_IDS_LIMIT, SESSIONS_COUNTRY_NONE, type SessionsWhereArgs } from './types.js'
+export type { SessionsWhereArgs } from './types.js'
 export { SESSIONS_BULK_IDS_LIMIT } from './types.js'
 import type {
   SessionBulkRevokeResult,
@@ -62,19 +63,6 @@ function normalizeSessionIds(ids: readonly string[] | undefined): string[] {
     if (SESSION_ID_RE.test(id)) out.add(id)
   }
   return [...out]
-}
-
-/** Поля среза списка: один источник для чтения и для серверного набора отзыва. */
-export type SessionsWhereArgs = {
-  state?: SessionsState
-  /** Коды стран (`SESSIONS_COUNTRY_NONE` — строки без страны). Пусто — фильтра нет. */
-  country?: readonly string[]
-  /** «Сеть менялась»: в истории строки есть прежние подсети. */
-  subnetChanged?: boolean
-  createdFrom?: number | null
-  createdTo?: number | null
-  seenFrom?: number | null
-  seenTo?: number | null
 }
 
 export type ListSessionsPageArgs = SessionsWhereArgs & {

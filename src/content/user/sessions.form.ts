@@ -3,6 +3,7 @@
  * обычный POST, идентификатор едет скрытым полем, не адресом.
  */
 import { defineForm, field, v } from '#lib/form/index.js'
+import type { SessionsWhereArgs } from './types.js'
 
 export const SESSION_REVOKE_FORM_ID = 'user-session-revoke'
 export const SESSION_REVOKE_OTHERS_FORM_ID = 'user-session-revoke-others'
@@ -111,7 +112,7 @@ export function bulkExitArgs(
   values: Record<string, unknown>,
   currentId: string | null,
 ): {
-  where: import('./sessions.server.js').SessionsWhereArgs
+  where: SessionsWhereArgs
   except: readonly string[]
   includeCurrent: boolean
   onlyCurrent: boolean
