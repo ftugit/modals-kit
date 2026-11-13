@@ -1,4 +1,5 @@
 import type { AuthErrorCode } from './error.js'
+import type { PageCaps, SessionSliceCaps } from './caps.js'
 
 /**
  * Типы модуля пользователя. Ядро (`auth.ts`) не знает ни Request/Response,
@@ -195,11 +196,8 @@ export type SessionsRouteData = {
   snapshot: import('#lib/paginate/index.js').PaginatorState<SessionDeviceView> | null
   countries: readonly string[]
   notice: SessionsListNotice | null
-  canSeeDeleted: boolean
-  canRename: boolean
-  canRevoke: boolean
-  canHardDelete: boolean
-}
+  // Флаги среза — из той же карты, что производит домен (`capsOf`, P2-3).
+} & SessionSliceCaps
 
 /** Порция списка устройств и флаги зрителя на этот срез. */
 export type SessionsPage = {
@@ -215,19 +213,12 @@ export type SessionsPage = {
   state: SessionsState
   /** Коды стран среза без фильтра страны (`SESSIONS_COUNTRY_NONE` — без страны). */
   countries: readonly string[]
-  canSeeDeleted: boolean
-  canRename: boolean
-  canRevoke: boolean
-  canHardDelete: boolean
-}
+} & SessionSliceCaps
 
 /** Одна строка устройства и права на неё. */
 export type SessionDetail = {
   session: SessionDeviceView
-  canRename: boolean
-  canRevoke: boolean
-  canHardDelete: boolean
-}
+} & Pick<PageCaps<'sessions'>, 'canRename' | 'canRevoke' | 'canHardDelete'>
 
 /** Итог отзыва одной строки. `current` — обработчик должен снять куки. */
 export type SessionRevokeResult = {
@@ -412,10 +403,6 @@ export type PublicProfileView = {
 /** Итог чтения профиля доменом: строка (если видна) и признак «не создан». */
 export type ProfileRead = {
   profile: ProfileView | null
-  /** Зритель читает чужие устройства: кнопка «Сессии» чужого профиля. */
-  canReadSessions: boolean
-  /** Вызывающий — сам владелец цели (блок приватности показывается только ему). */
-  isOwn: boolean
   /** Эффективный уровень видимости цели (конфиг: юзер → умолчание → бутстрап). */
   visibility: VisibilityLevel
   /**
@@ -424,20 +411,6 @@ export type ProfileRead = {
    * `profile === null` и `notCreated === false` — снаружи это отказ.
    */
   notCreated: boolean
-  /**
-   * Вызывающий вправе править этот профиль (владелец или
-   * `profile.edit`/`admin`): показ рисует кнопку редактирования, а
-   * носители редактирования — свой ACL-гейт.
-   */
-  canEdit: boolean
-  /**
-   * Вызывающий вправе удалить этот профиль: право (`profile.edit`/
-   * владелец) и нет активного запрета `profile.delete` на цели.
-   * Запрет цели сильнее любого права, включая владельца и админа.
-   */
-  canDeleteProfile: boolean
-  /** То же для seed-аккаунта: `account.edit`/владелец и нет запрета `account.delete`. */
-  canDeleteSeed: boolean
   /**
    * Активная полная блокировка цели — для показа в профиле. Причина и
    * срок (`reason`/`until`) заполнены только тем, кому их можно знать
@@ -450,13 +423,10 @@ export type ProfileRead = {
    * список, компонента раздела в разметке нет.
    */
   blocks: BlockView[]
-  /** Вызывающий вправе видеть раздел блокировок. */
-  canReadBlocks: boolean
-  /** Вызывающий вправе накладывать и снимать блокировки. */
-  canBlock: boolean
-  /** Вызывающий вправе открыть экран настроек пользователя (`user.config.edit`). */
-  canOpenConfig?: boolean
-}
+  // Флаги прав зрителя — из той же карты, что производит домен (`profile()`,
+  // P2-3): canEdit/canDeleteProfile/canDeleteSeed/canReadBlocks/canBlock/
+  // canReadSessions/canOpenConfig/isOwn. Расхождение с доменом не компилируется.
+} & PageCaps<'profile'>
 
 /**
  * Данные `load` маршрута `/user/[id]` — единственный источник показа
@@ -475,29 +445,12 @@ export type ProfileRouteData = {
   profile: ProfileView | null
   /** Публичная проекция, если обычное чтение недоступно, а уровень видимости разрешает показ. */
   publicProfile: PublicProfileView | null
-  /** Вызывающий — владелец цели (для блока приватности в показе). */
-  isOwn: boolean
   /** Эффективный уровень видимости цели. */
   visibility: VisibilityLevel
   /** Профиля нет, но смотреть можно: заглушка «не создан» вместо отказа. */
   notCreated: boolean
-  /** Вызывающий вправе править этот профиль: кнопка и гейт редактирования. */
-  canEdit: boolean
-  /** Возможности удаления по цели (права + запреты этапа 6): гейты удаления. */
-  canDeleteProfile: boolean
-  canDeleteSeed: boolean
-  /**
-   * Зритель читает чужие устройства: кнопка «Сессии» чужого профиля ведёт
-   * на `/user/<uuid>/sessions`. Обязательный: забытая фикстура без флага
-   * не должна проходить `check` (P0-5).
-   */
-  canReadSessions: boolean
   /** Раздел блокировок (этап 9): записи цели и право операции для компонента. */
   blocks: BlockView[]
-  canReadBlocks: boolean
-  canBlock: boolean
-  /** Вызывающий вправе открыть экран настроек пользователя (`user.config.edit`). */
-  canOpenConfig?: boolean
   /** Активная полная блокировка цели для показа (причина — за правами). */
   fullBlock: { reason: string | null; until: number | null } | null
   fact: AuthErrorCode | null
@@ -505,7 +458,9 @@ export type ProfileRouteData = {
   enabled: boolean
   /** Ограничения экрана: те же, что у формы (`ProfileLimits`). */
   limits: { readonly nicknameForbidden: readonly string[] }
-}
+  // Флаги прав зрителя — из карты домена (`profile()`, P2-3). Обязательные
+  // (кроме canOpenConfig): забытая фикстура без флага не проходит `check` (P0-5).
+} & PageCaps<'profile'>
 
 /**
  * Данные носителей удаления (`/user/[id]/delete` и модалка

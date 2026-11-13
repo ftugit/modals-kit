@@ -15,6 +15,7 @@ import {
   type Filter,
 } from '#lib/db/index.js'
 import { SERVER, fail, ok, principalOfRow, type UserResult } from './auth.js'
+import { defineCaps, type PageCaps } from './caps.js'
 import { auth as authResource, session as sessionResource } from './schema.js'
 import { SESSIONS_BULK_IDS_LIMIT, SESSIONS_COUNTRY_NONE, type SessionsWhereArgs } from './types.js'
 export type { SessionsWhereArgs } from './types.js'
@@ -182,18 +183,22 @@ async function accountExists(deps: SessionDeps, authId: string): Promise<boolean
  */
 const journalCapsOf = (actor: SessionActor) => capsOf(actor, null)
 
-const capsOf = (actor: SessionActor, ownerId: string | null) => {
+const capsOf = (actor: SessionActor, ownerId: string | null): PageCaps<'sessions'> => {
   const principal = ctxOf(actor).principal
-  return checkGrants(
-    principal,
-    {
-      canRead: gSession.select,
-      canSeeDeleted: gSession.selectDeleted,
-      canRename: gSession.update,
-      canRevoke: gSession.delete,
-      canHardDelete: gSession.hardDelete,
-    },
-    { ownerId },
+  // Состав флагов закреплён картой `PageCaps<'sessions'>` (P2-3): переименовать
+  // или убрать флаг здесь, не поправ route data, — ошибка компиляции.
+  return defineCaps<'sessions'>(
+    checkGrants(
+      principal,
+      {
+        canRead: gSession.select,
+        canSeeDeleted: gSession.selectDeleted,
+        canRename: gSession.update,
+        canRevoke: gSession.delete,
+        canHardDelete: gSession.hardDelete,
+      },
+      { ownerId },
+    ),
   )
 }
 

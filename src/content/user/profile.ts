@@ -5,12 +5,13 @@
  */
 import { checkGrants, forOwner, grants } from '#lib/db/index.js'
 import { SERVER, blocksOf, fail, guard, ok, principalOfRow, type UserResult } from './auth.js'
+import { defineCaps } from './caps.js'
 import { canOpenUserConfig, getEffective, setUserKey } from './config-api.js'
 import { auth as authResource, block as blockResource, profile as profileResource, session as sessionResource } from './schema.js'
 import { VISIBILITY_KEY } from './spec-config.js'
 import { activeBlock, longestFullBlock } from './spec-block.js'
 import type { AuthPorts } from './ports.js'
-import type { ProfileRead, ProfileView, PublicProfileView, VisibilityLevel } from './types.js'
+import type { BlockView, ProfileRead, ProfileView, PublicProfileView, VisibilityLevel } from './types.js'
 
 const gProfile = grants(profileResource)
 const gBlock = grants(blockResource)
@@ -80,22 +81,27 @@ export async function profile(
     : null
   // Кнопка «Блокировки» в профиле: пагинированный список подгружается по требованию
   // в `user.blocks` (`/user/[id]/blocks`), без лишнего запроса при каждом чтении профиля.
-  const caps = {
+  // Флаги прав — через карту `PageCaps<'profile'>` (P2-3): лишний/пропущенный
+  // флаг здесь не скомпилируется, route data наследует тот же тип.
+  const caps = defineCaps<'profile'>({
     canEdit: scoped.canEdit,
     canDeleteProfile,
     canDeleteSeed,
-    fullBlock,
-    blocks: [],
     canReadBlocks: scoped.canReadBlocks,
     canBlock: scoped.canBlock,
     canReadSessions: scoped.canReadSessions,
     canOpenConfig: await canOpenUserConfig(ports, { id: g.sub, perms: g.perms }, target),
     isOwn: target === g.sub,
+  })
+  // Данные показа — не флаги прав, в карту не входят.
+  const data = {
+    fullBlock,
+    blocks: [] as BlockView[],
     visibility: await visibilityOf(ports, target),
   }
   const row = await ports.profiles.get(principalOfRow({ id: g.sub, permissions: g.perms }), target)
-  if (row) return ok({ profile: row, notCreated: false, ...caps })
-  return ok({ profile: null, notCreated: scoped.canReadProfile, ...caps })
+  if (row) return ok({ profile: row, notCreated: false, ...caps, ...data })
+  return ok({ profile: null, notCreated: scoped.canReadProfile, ...caps, ...data })
 }
 
 /**
