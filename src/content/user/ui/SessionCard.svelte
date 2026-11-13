@@ -3,9 +3,9 @@
    * Карточка одного устройства. Рисунок, не экран: носитель даёт `Surface`.
    *
    * Переименование — форма компонента: `device_name` единственное поле строки,
-   * которое человек вправе менять. Отзыв — удержание и нативный POST на
-   * `/user/sessions?/others`, тот же, что у списка. Секретов строки в карточке
-   * нет: `jti` и версию сервер не отдаёт.
+   * которое человек вправе менять. Отзыв одной строки — нативный POST на
+   * `?/revoke` списка своей единицы (не массовый набор). Секретов строки в
+   * карточке нет: `jti` и версию сервер не отдаёт.
    */
   import { untrack } from 'svelte'
   import { visibleAddress } from '#lib/address/sveltekit.js'
@@ -14,12 +14,12 @@
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
   import { Badge, Button, TimeAgo } from '#components/ui/index.js'
+  import Common from '#components/form/Common.svelte'
   import { bind, Form } from '#lib/form/svelte/index.js'
-  import { sessionRenameForm } from '../sessions.form.js'
+  import { sessionRenameForm, sessionRevokeForm } from '../sessions.form.js'
   import { userAccountSessionRoute, userAccountSessionsRoute, userSessionRoute, userSessionsRoute } from '../routes.js'
   import type { SessionDetail } from '../types.js'
   import { vault } from '../vault.svelte.js'
-  import ExitSteps from './sessions-list/ExitSteps.svelte'
 
   interface Props {
     detail: SessionDetail
@@ -43,9 +43,8 @@
   )
   const id = untrack(() => detail.session.id)
 
-  // Закрыть карточку — тот же набор, что и в списке: `only ids=[эта строка]`.
-  // Свою текущую сессию здесь не закрывают вовсе: для неё есть выход в меню,
-  // а две кнопки с одним смыслом в разных местах расходятся поведением.
+  // Закрыть карточку — отзыв одной строки (`?/revoke`), а не массовый набор.
+  // Свою текущую сессию здесь не закрывают вовсе: для неё есть выход в меню.
   const stepsMode = untrack(() => mode)
   const exitKey = 'session.exit'
   const exitHost = useSteps({
@@ -76,7 +75,7 @@
   // экшеном чужого списка, иначе набор не найдёт её в своём аккаунте.
   const foreign = $derived(Boolean(session.authId && session.authId !== vault.principal))
   const exitAction = $derived(
-    foreign ? `${userAccountSessionsRoute.href({ id: session.authId! })}?/others` : `${userSessionsRoute.href()}?/others`,
+    foreign ? `${userAccountSessionsRoute.href({ id: session.authId! })}?/revoke` : `${actionHref ?? userSessionsRoute.href()}?/revoke`,
   )
   // Переименование уходит на экшен своей единицы: чужая строка — на чужой
   // роут, поэтому `actions.rename` чужой страницы достижим и не удаляется.
@@ -90,6 +89,15 @@
     action: untrack(() => renameAction),
     intercept: false,
   })
+  const revokeForm = bind(forms, sessionRevokeForm(id), {
+    action: untrack(() => exitAction),
+    intercept: false,
+  })
+  function localBack(e: MouseEvent) {
+    if (stepsMode !== 'modal' || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    e.preventDefault()
+    exitHost.set('summary')
+  }
 </script>
 
 <div class="flex flex-col gap-4" data-testid="session-card">
@@ -149,18 +157,21 @@
   {#if closable}
     <div class="flex flex-col gap-3 border-t border-border pt-3">
       {#if exitStep === 'confirm'}
-        <ExitSteps
-          ids={[id]}
-          pick="only"
-          step="confirm"
-          action={exitAction}
-          backHref={exitBackHref}
-          onBack={stepsMode === 'modal' ? () => exitHost.set('summary') : undefined}
-          heading="Завершение сессии"
-          summary="Устройство потеряет доступ: войти придётся заново."
-          confirmLabel="Завершить сессию"
-          testId="session-card-exit"
-        />
+        <Form
+          form={revokeForm}
+          hiddenFields={revokeForm.hidden()}
+          class="flex flex-col gap-3"
+          data-testid="session-card-exit"
+        >
+          <div hidden><Field of={revokeForm.f.id} /></div>
+          <Common errors={revokeForm.common} title="Не получилось завершить сессию" />
+          <h3 class="text-base font-semibold">Завершение сессии</h3>
+          <p class="text-sm text-muted-foreground">Устройство потеряет доступ: войти придётся заново.</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button type="submit" variant="destructive" size="sm" data-testid="session-card-exit-submit">Завершить сессию</Button>
+            <Button href={exitBackHref} onclick={localBack} variant="outline" size="sm" data-testid="session-card-exit-back">Назад</Button>
+          </div>
+        </Form>
       {:else}
         <div class="flex items-center justify-between gap-3">
           {#if stepsMode === 'modal'}

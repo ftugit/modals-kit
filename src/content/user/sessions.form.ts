@@ -45,109 +45,110 @@ export function sessionRevokeForm(id: string) {
   })
 }
 
-/** Все свои, кроме текущей. Намерение задаёт экшен `?/others`, не поле. */
-export function sessionRevokeOthersForm() {
-  return defineForm({
-    id: SESSION_REVOKE_OTHERS_FORM_ID,
-    revision: 1,
-    fields: {
-      scope: field.hidden({
-        defaultValue: 'others',
-        validate: [v.required()],
-      }),
-    },
-  })
-}
-
-/** Набор массового выхода: что закрываем. Пустой `pick` — весь срез цели. */
+/** Набор массового выхода: что закрываем. Состав считает сервер по фильтру. */
 export type SessionBulkExitShape = {
-  /** `only` — ровно перечисленные, `except` — все, кроме перечисленных. */
-  pick?: 'only' | 'except' | null
-  ids?: readonly string[]
   /** Начальное состояние чекбокса «включая текущую»: им носитель задаёт инверсию. */
   includeCurrent?: boolean
   /**
-   * Чекбокс расширяет набор, а не впускает текущую сессию. Список сессий
-   * закрывает показанные строки и чекбоксом добавляет к ним текущую; экран
-   * выхода закрывает одну текущую сессию и чекбоксом раздвигает набор до
-   * всего аккаунта. Один компонент, две инверсии — разница только в этом флаге.
+   * Чекбокс расширяет набор до всего аккаунта (экран выхода), а не впускает
+   * текущую сессию в показанный список. Один компонент, две инверсии.
    */
   spread?: boolean
   /** Подпись чекбокса: у списка и у экрана выхода он разный. */
   checkboxLabel?: string
+  /** Фильтр списка, который сервер применит в момент POST (те же имена, что у пагинатора). */
+  filters?: Partial<Record<'state' | 'net' | 'country' | 'cfrom' | 'cto' | 'sfrom' | 'sto', string>>
 }
 
-/** Предел набора: столько же, сколько принимает домен. */
-export const SESSION_BULK_IDS_MAX = 500
+/** Предел исключений — одно объявление в домене (`types.ts`). */
+export { SESSIONS_BULK_IDS_LIMIT as SESSION_BULK_IDS_MAX } from './types.js'
 
 /**
- * Форма массового выхода. Одна на оба носителя — список сессий и экран выхода:
- * различаются только значения по умолчанию, а не набор полей. Это и есть
- * «инверсия себя же»: чекбокс «включая текущую» меняет набор, а не экран.
- *
- * Намерение теперь задаёт поле, а не имя экшена — иначе «закрыть всё, что в
- * списке после фильтрации» выразить нечем.
+ * Форма массового выхода. Одна на оба носителя — список сессий и экран выхода.
+ * Клиентские `ids`/`pick` удалены: разметка не посылает состав набора, сервер
+ * считает его по фильтру из POST. Единственный пользовательский тик —
+ * `include_current`; `spread` меняет инверсию чекбокса на экране выхода.
  */
 export function sessionBulkExitForm(opts: SessionBulkExitShape = {}) {
+  const f = opts.filters ?? {}
   return defineForm({
     id: SESSION_REVOKE_OTHERS_FORM_ID,
-    revision: 2,
+    revision: 3,
     actions: [{ id: 'bulk-exit', label: 'Завершить', validate: 'partial', relax: ['required'] }],
     fields: {
-      /** Снимать и текущую сессию зрителя. */
       include_current: field.checkbox({
         label: opts.checkboxLabel ?? 'Закрыть и текущую сессию',
         defaultValue: opts.includeCurrent ?? false,
       }),
-      pick: field.hidden({ defaultValue: opts.pick ?? '' }),
-      ids: field.hidden({ defaultValue: (opts.ids ?? []).join(',') }),
-      /** `1` — чекбокс раздвигает набор до всего аккаунта (экран выхода). */
       spread: field.hidden({ defaultValue: opts.spread ? '1' : '' }),
+      state: field.hidden({ defaultValue: f.state ?? '' }),
+      net: field.hidden({ defaultValue: f.net ?? '' }),
+      country: field.hidden({ defaultValue: f.country ?? '' }),
+      cfrom: field.hidden({ defaultValue: f.cfrom ?? '' }),
+      cto: field.hidden({ defaultValue: f.cto ?? '' }),
+      sfrom: field.hidden({ defaultValue: f.sfrom ?? '' }),
+      sto: field.hidden({ defaultValue: f.sto ?? '' }),
     },
   })
 }
 
 const TRUE_VALUES = new Set(['1', 'on', 'true', 'yes'])
+const STATES = ['active', 'expired', 'all', 'revoked'] as const
+type State = (typeof STATES)[number]
+
+const dateMs = (raw: string): number | null => {
+  if (!raw) return null
+  const v = Date.parse(raw)
+  return Number.isFinite(v) ? v : null
+}
 
 /**
- * Аргументы домена из значений формы. Чистая функция: екшен её вызывает, тест
- * гоняет без SvelteKit.
- *
- * Чекбокс «включая текущую» снят — текущая выходит из набора: в `only` она
- * удаляется из списка, в `except` попадает в исключения. Отсюда же следует,
- * что без JS форма работает: и чекбокс, и отправка на одном экране.
+ * Аргументы домена из значений формы. Чистая функция: экшен её вызывает, тест
+ * гоняет без SvelteKit. Состав набора (`ids`) не читается: сервер применяет
+ * фильтр сам. `except` остаётся только как серверный контракт исключений.
  */
 export function bulkExitArgs(
   values: Record<string, unknown>,
   currentId: string | null,
-): { scope: 'others' | 'all'; pick: 'only' | 'except' | null; ids: readonly string[] } {
-  const raw = String(values.pick ?? '').trim().toLowerCase()
-  const pick = raw === 'only' || raw === 'except' ? raw : null
+): {
+  where: import('./sessions.server.js').SessionsWhereArgs
+  except: readonly string[]
+  includeCurrent: boolean
+  onlyCurrent: boolean
+} {
+  const str = (key: string) => String(values[key] ?? '').trim()
   const include =
-    values.include_current === true || TRUE_VALUES.has(String(values.include_current ?? '').trim().toLowerCase())
-  const spread = TRUE_VALUES.has(String(values.spread ?? '').trim().toLowerCase())
+    values.include_current === true || TRUE_VALUES.has(str('include_current').toLowerCase())
+  const spread = TRUE_VALUES.has(str('spread').toLowerCase())
 
-  // Экран выхода: отмеченный чекбокс — весь аккаунт, снятый — одна текущая
-  // сессия. Набор считает сервер, поэтому no-JS (без JS скрытые поля не
-  // переписываются по чекбоксу) получает тот же исход, что и браузер.
+  // Экран выхода: снятый чекбокс — одна текущая сессия (id сервер знает сам),
+  // отмеченный — весь активный срез аккаунта. Клиентские ids не участвуют.
   if (spread) {
-    if (!include) return { scope: 'all', pick: 'only', ids: currentId ? [currentId] : [] }
-    return { scope: 'all', pick: 'except', ids: [] }
+    return { where: { state: 'active' }, except: [], includeCurrent: include, onlyCurrent: !include }
   }
 
-  const seen = new Set<string>()
-  for (const part of String(values.ids ?? '').split(',')) {
-    const id = part.trim().toLowerCase()
-    if (id) seen.add(id)
-    if (seen.size >= SESSION_BULK_IDS_MAX) break
+  const stateRaw = str('state')
+  const state = (STATES as readonly string[]).includes(stateRaw) ? (stateRaw as State) : undefined
+  const country = [...new Set(str('country').split(',').map((c) => c.trim()).filter(Boolean))]
+    .slice(0, 20)
+    .map((c) => (c === 'none' ? 'none' : c.toUpperCase()))
+  const net = TRUE_VALUES.has(str('net').toLowerCase())
+  const cfrom = str('cfrom')
+  const cto = str('cto')
+  const sfrom = str('sfrom')
+  const sto = str('sto')
+  return {
+    where: {
+      state,
+      country,
+      subnetChanged: net,
+      createdFrom: dateMs(cfrom),
+      createdTo: dateMs(cto),
+      seenFrom: dateMs(sfrom),
+      seenTo: dateMs(sto),
+    },
+    except: [],
+    includeCurrent: include,
+    onlyCurrent: false,
   }
-  // Чекбокс «включая текущую» инвертирует набор, а не экран: в `only` снятый
-  // чекбокс убирает текущую из набора, в `except` — добавляет её в исключения.
-  if (pick && currentId) {
-    if (include) {
-      if (pick === 'except') seen.delete(currentId)
-    } else if (pick === 'only') seen.delete(currentId)
-    else seen.add(currentId)
-  }
-  return { scope: pick || include ? 'all' : 'others', pick, ids: [...seen] }
 }

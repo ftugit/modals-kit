@@ -16,7 +16,8 @@ import {
 } from '#lib/db/index.js'
 import { SERVER, fail, ok, principalOfRow, type UserResult } from './auth.js'
 import { auth as authResource, session as sessionResource } from './schema.js'
-import { SESSIONS_COUNTRY_NONE } from './types.js'
+import { SESSIONS_BULK_IDS_LIMIT, SESSIONS_COUNTRY_NONE } from './types.js'
+export { SESSIONS_BULK_IDS_LIMIT } from './types.js'
 import type {
   SessionBulkRevokeResult,
   SessionDetail,
@@ -47,13 +48,6 @@ export type SessionDeps = {
 /** Сколько стран показывает форма фильтров. Срез шире — это уже не подсказка. */
 export const SESSIONS_COUNTRY_LIMIT = 60
 
-/**
- * Сколько идентификаторов принимает пакетный отзыв за один вызов. Тот же
- * порядок, что у среза списка аккаунтов (`.slice(0, 500)` в
- * `routes/(site)/(app)/users/pick/+page.server.ts`).
- */
-export const SESSIONS_BULK_IDS_LIMIT = 500
-
 /** Идентификатор строки: 36 символов, как у всех uuid в проекте. */
 const SESSION_ID_RE = /^[0-9a-f-]{36}$/i
 
@@ -70,11 +64,8 @@ function normalizeSessionIds(ids: readonly string[] | undefined): string[] {
   return [...out]
 }
 
-export type ListSessionsPageArgs = {
-  /** Один аккаунт. Пусто и без `journal` — свои устройства. */
-  authId?: string | null
-  /** Общий журнал. Чужой аккаунт сюда не подставляется. */
-  journal?: boolean
+/** Поля среза списка: один источник для чтения и для серверного набора отзыва. */
+export type SessionsWhereArgs = {
   state?: SessionsState
   /** Коды стран (`SESSIONS_COUNTRY_NONE` — строки без страны). Пусто — фильтра нет. */
   country?: readonly string[]
@@ -84,25 +75,36 @@ export type ListSessionsPageArgs = {
   createdTo?: number | null
   seenFrom?: number | null
   seenTo?: number | null
+}
+
+export type ListSessionsPageArgs = SessionsWhereArgs & {
+  /** Один аккаунт. Пусто и без `journal` — свои устройства. */
+  authId?: string | null
+  /** Общий журнал. Чужой аккаунт сюда не подставляется. */
+  journal?: boolean
   page?: number
   pageSize?: number
 }
 
+/**
+ * Серверный набор отзыва: тот же срез, что показывает список (`where`), плюс
+ * исключения и флаг текущей сессии. Клиентские `ids`/`pick`/`scope` удалены:
+ * разметка не посылает состав набора, сервер считает его сам в момент POST.
+ */
 export type RevokeBulkArgs = {
-  scope: 'others' | 'all'
   /** Пусто — свой аккаунт. */
   authId?: string | null
+  /** Фильтр списка: те же поля, что у `listSessionsPage`. */
+  where?: SessionsWhereArgs
+  /** Единственные клиентские id — исключения («всё, кроме»). Мусор и повторы отбрасываются. */
+  except?: readonly string[]
+  /** Включать текущую сессию актора в набор. Снят — она исключается сервером. */
+  includeCurrent?: boolean
   /**
-   * Набор по идентификаторам строк. `only` — закрыть ровно перечисленные,
-   * `except` — все строки цели, кроме перечисленных.
-   *
-   * Заданный `pick` важнее `scope`: `scope` выражает то же намерение в двух
-   * частных случаях (`others` ≡ `except ids=[своя текущая]`, `all` ≡ весь срез),
-   * а набор уточняет его. Пустой `only` — не «закрыть всё», а отказ.
+   * Только текущая сессия актора (экран выхода, снятый чекбокс). Id сервер
+   * знает сам из куки; клиентский идентификатор сюда не попадает.
    */
-  pick?: 'except' | 'only' | null
-  /** Идентификаторы строк для `pick`. Мусор и повторы отбрасываются. */
-  ids?: readonly string[]
+  onlyCurrent?: boolean
 }
 
 const ctxOf = (actor: SessionActor): DataContext =>
@@ -232,6 +234,48 @@ async function loadRow(
   }
 }
 
+/**
+ * Построитель среза списка: один источник истины для «что показывает список»
+ * и «что закрывает серверный набор». Чистая функция: права не проверяет,
+ * только собирает фильтр из цели, состояния, стран, сети и дат.
+ */
+export function sessionsWhere(
+  actor: SessionActor,
+  args: ListSessionsPageArgs,
+  now: number,
+): { and: Filter[]; filter: Filter | undefined; state: SessionsState; includeDeleted: boolean; countryFilter: Filter | null } {
+  const journal = args.journal === true
+  const requested = args.authId?.trim() || null
+  const own = !journal && (requested === null || requested === actor.id)
+  const target = own ? actor.id : requested
+  const ownerId = journal ? null : target
+  const caps = capsOf(actor, ownerId)
+  const state = clampState(args.state ?? 'active', caps.canSeeDeleted)
+  const and: Filter[] = []
+  if (!journal && target) and.push({ field: 'auth_id', op: 'eq', value: target })
+  if (state === 'active') and.push({ field: 'expires_at', op: 'gt', value: iso(now) })
+  else if (state === 'expired') and.push({ field: 'expires_at', op: 'lte', value: iso(now) })
+  else if (state === 'revoked') and.push({ field: 'deleted_at', op: 'gte', value: iso(0) })
+  const wanted = [...new Set((args.country ?? []).map((c) => c.trim()).filter(Boolean))].slice(0, 20)
+  const countryParts: Filter[] = []
+  for (const code of wanted) {
+    if (code === SESSIONS_COUNTRY_NONE) countryParts.push({ field: 'country', op: 'isNull' })
+    else countryParts.push({ field: 'country', op: 'eq', value: code })
+  }
+  const countryFilter: Filter | null =
+    countryParts.length === 0 ? null : countryParts.length === 1 ? countryParts[0]! : { or: countryParts }
+  if (countryFilter) and.push(countryFilter)
+  if (args.subnetChanged === true) and.push({ field: 'subnet_history', op: 'ne', value: [] })
+  const range = (field: string, from?: number | null, to?: number | null): void => {
+    if (from != null && Number.isFinite(from)) and.push({ field, op: 'gte', value: iso(from) })
+    if (to != null && Number.isFinite(to)) and.push({ field, op: 'lte', value: iso(to) })
+  }
+  range('created_at', args.createdFrom, args.createdTo)
+  range('last_seen_at', args.seenFrom, args.seenTo)
+  const filter: Filter | undefined = and.length === 0 ? undefined : and.length === 1 ? and[0] : { and }
+  return { and, filter, state, includeDeleted: state === 'revoked', countryFilter }
+}
+
 export async function listSessionsPage(
   actor: SessionActor,
   args: ListSessionsPageArgs = {},
@@ -253,39 +297,8 @@ export async function listSessionsPage(
 
   const page = Math.max(1, Math.trunc(args.page ?? 1) || 1)
   const pageSize = Math.min(SESSIONS_MAX_PAGE_SIZE, Math.max(1, Math.trunc(args.pageSize ?? 30) || 30))
-  const state = clampState(args.state ?? 'active', caps.canSeeDeleted)
   const now = nowOf(deps)
-  const and: Filter[] = []
-  if (!journal && target) and.push({ field: 'auth_id', op: 'eq', value: target })
-  if (state === 'active') and.push({ field: 'expires_at', op: 'gt', value: iso(now) })
-  else if (state === 'expired') and.push({ field: 'expires_at', op: 'lte', value: iso(now) })
-  else if (state === 'revoked') and.push({ field: 'deleted_at', op: 'gte', value: iso(0) })
-  // Страна: выбранные коды через `or`, «неизвестно» — `isNull`. Оператора `in`
-  // у поля нет (объявлены `eq`/`icontains`/пустота), новый не заводится.
-  const wanted = [...new Set((args.country ?? []).map((c) => c.trim()).filter(Boolean))].slice(0, 20)
-  const countryParts: Filter[] = []
-  for (const code of wanted) {
-    if (code === SESSIONS_COUNTRY_NONE) countryParts.push({ field: 'country', op: 'isNull' })
-    else countryParts.push({ field: 'country', op: 'eq', value: code })
-  }
-  const countryFilter: Filter | null =
-    countryParts.length === 0
-      ? null
-      : countryParts.length === 1
-        ? countryParts[0]!
-        : { or: countryParts }
-  if (countryFilter) and.push(countryFilter)
-  // «Сеть менялась» — уже существующий `ne` по истории подсетей: пустая история
-  // значит, что устройство ещё не меняло сеть. Новый оператор не изобретается.
-  if (args.subnetChanged === true) and.push({ field: 'subnet_history', op: 'ne', value: [] })
-  const range = (field: string, from?: number | null, to?: number | null): void => {
-    if (from != null && Number.isFinite(from)) and.push({ field, op: 'gte', value: iso(from) })
-    if (to != null && Number.isFinite(to)) and.push({ field, op: 'lte', value: iso(to) })
-  }
-  range('created_at', args.createdFrom, args.createdTo)
-  range('last_seen_at', args.seenFrom, args.seenTo)
-  const filter: Filter | undefined = and.length === 0 ? undefined : and.length === 1 ? and[0] : { and }
-  const includeDeleted = state === 'revoked'
+  const { and, filter, state, includeDeleted, countryFilter } = sessionsWhere(actor, args, now)
   const api = deps.db.resource(sessionResource)
   const ctx = ctxOf(actor)
   const [rows, total] = await Promise.all([
@@ -416,45 +429,51 @@ export async function revokeBulkSessions(
   args: RevokeBulkArgs,
   deps: SessionDeps,
 ): Promise<UserResult<SessionBulkRevokeResult>> {
-  if (args.scope !== 'others' && args.scope !== 'all') return fail({ code: 'auth.forbidden' })
-  const pick = args.pick ?? null
-  // Без идентификатора нельзя отличить текущую сессию от остальных — но только
-  // когда множество вычисляет `scope`. При явном наборе `pick` текущую ищут
-  // сравнением, а не исключением, и знать её заранее не нужно.
-  if (!pick && args.scope === 'others' && !actor.sessionId?.trim()) {
-    return fail({ code: 'auth.session-unknown' })
-  }
-  const requested = args.authId?.trim() || null
-  const own = requested === null || requested === actor.id
-  const target = own ? actor.id : requested
+  const requestedTarget = args.authId?.trim() || null
+  const own = requestedTarget === null || requestedTarget === actor.id
+  const target = own ? actor.id : requestedTarget
   if (!target) return fail({ code: 'auth.forbidden' })
   const caps = capsOf(actor, target)
   if (!caps.canRevoke) return fail({ code: 'auth.forbidden' })
   if (!own && !(await accountExists(deps, target))) return fail({ code: 'auth.identity-unknown' })
 
-  // Набор по id. Оператора `in` у `session.id` нет (объявлены `eq` и `ne`,
-  // `schema.ts:201-203`), поэтому список собирается из объявленных — так же,
-  // как набор стран в срезе: `or` из `eq` для `only`, `and` из `ne` для `except`.
-  const picked = pick ? normalizeSessionIds(args.ids) : []
-  // Усечение набора молча менять намерение не должно: для `except` обрезанный
-  // список исключений закрыл бы строки, которые просили оставить.
-  if (pick && picked.length > SESSIONS_BULK_IDS_LIMIT) return fail({ code: 'auth.forbidden' })
-  // Пустой `only` — не «весь срез», а отказ: набор не выбрал ни одной строки.
-  if (pick === 'only' && picked.length === 0) return fail({ code: 'auth.session-unknown' })
+  // Единственные клиентские id — исключения. Усечение молча менять намерение
+  // не должно: обрезанный список исключений закрыл бы строки, которые просили
+  // оставить, поэтому предел — отказ, а не `.slice`.
+  const except = normalizeSessionIds(args.except)
+  if (except.length > SESSIONS_BULK_IDS_LIMIT) return fail({ code: 'auth.limit' })
 
-  const and: Filter[] = [{ field: 'auth_id', op: 'eq', value: target }]
-  if (pick === 'only') and.push({ or: picked.map((id) => ({ field: 'id', op: 'eq', value: id })) })
-  else if (pick === 'except') for (const id of picked) and.push({ field: 'id', op: 'ne', value: id })
-  else if (args.scope === 'others' && actor.sessionId) and.push({ field: 'id', op: 'ne', value: actor.sessionId })
+  // Тот же срез, что показывает список: один построитель на чтение и отзыв.
+  const where = sessionsWhere(actor, { ...args.where, authId: target }, nowOf(deps))
+  const and: Filter[] = [...where.and]
+  if (args.onlyCurrent) {
+    // Экран выхода: снятый чекбокс закрывает одну текущую сессию. Id сервер
+    // знает сам из куки; клиентский идентификатор в набор не попадает.
+    const currentId = actor.sessionId?.trim()
+    if (!currentId) return fail({ code: 'session.nothing-to-close' })
+    and.push({ field: 'id', op: 'eq', value: currentId })
+  } else if (!args.includeCurrent && actor.sessionId?.trim()) {
+    and.push({ field: 'id', op: 'ne', value: actor.sessionId.trim() })
+  }
+  for (const id of except) and.push({ field: 'id', op: 'ne', value: id })
   const filter: Filter = and.length === 1 ? and[0]! : { and }
   const ctx = ctxOf(actor)
 
+  let requested = 0
   let revoked = 0
   let current = false
   await deps.db.transaction(async (tx) => {
     const api = tx.resource(sessionResource)
+    // `requested` — счёт по тому же срезу до удаления: расхождение с `revoked`
+    // означает, что часть строк закрыли между счётом и отзывом.
+    requested = await api.count(ctx, { filter, includeDeleted: where.includeDeleted })
+    if (requested === 0) return
     for (;;) {
-      const rows = (await api.select(ctx, { filter, limit: SESSIONS_MAX_PAGE_SIZE })) as unknown as Record<string, unknown>[]
+      const rows = (await api.select(ctx, {
+        filter,
+        limit: SESSIONS_MAX_PAGE_SIZE,
+        includeDeleted: where.includeDeleted,
+      })) as unknown as Record<string, unknown>[]
       if (rows.length === 0) break
       for (const row of rows) {
         const id = String(row.id)
@@ -464,5 +483,6 @@ export async function revokeBulkSessions(
       }
     }
   })
-  return ok({ revoked, current, requested: pick ? picked.length : undefined })
+  if (requested === 0) return fail({ code: 'session.nothing-to-close' })
+  return ok({ revoked, current, requested })
 }

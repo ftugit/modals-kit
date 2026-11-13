@@ -4,13 +4,12 @@
 //
 // Данные выхода обязаны быть приватными: у `load` нет ни одного заголовка
 // по умолчанию.
-import { redirect } from '@sveltejs/kit'
+import { fail, redirect } from '@sveltejs/kit'
 import { auth } from '#content/user/gateway.server.js'
-import { runBulkExit, runLocalExit } from '#content/user/sessions-exit.server.js'
+import { runBulkExit, runLocalExit, sessionFormError } from '#content/user/sessions-exit.server.js'
 import { sessionBulkExitForm } from '#content/user/sessions.form.js'
 import { logoutLocalForm } from '#content/user/ui/logout/form.js'
 import type { LogoutRouteData } from '#content/user/types.js'
-import type { FormError } from '#lib/form/index.js'
 import { createFormHandler } from '#lib/form/server.js'
 import { createIpThrottle } from '#server/client-ip.server.js'
 import { SECURITY_LAYERS } from '#server/form-security.server.js'
@@ -18,13 +17,6 @@ import type { Actions, PageServerLoad } from './$types'
 
 // Выход не чаще соседа по частоте — отзыв сессий (`user-sessions-revoke`).
 const exitThrottle = createIpThrottle('user-sessions-revoke', 30, 60_000)
-
-const error = (code: string, message: string): FormError => ({
-  id: `*:${code}:0`,
-  code,
-  message,
-  origin: 'server',
-})
 
 export const load: PageServerLoad = async (event): Promise<LogoutRouteData> => {
   event.setHeaders({ 'cache-control': 'private, no-store' })
@@ -56,19 +48,16 @@ export const actions: Actions = {
           event,
           values,
           { selfHref: here, doneHref: '/user/auth' },
-          (message) => error('auth.unavailable', message),
+          (message) => sessionFormError('auth.unavailable', message),
         )
-        if (!r.ok) return fail([r.error ?? error('auth.unavailable', 'Не удалось завершить сессии')])
+        if (!r.ok) return fail([r.error ?? sessionFormError('auth.unavailable')])
         commit()
         return { redirect: r.redirect }
       },
     })(event.request, 'action', event)
-    redirect(
-      303,
-      handled.result.ok && handled.result.redirect?.startsWith('/')
-        ? handled.result.redirect
-        : `${here}?notice=revoke-failed`,
-    )
+    if (handled.result.ok && handled.result.redirect?.startsWith('/')) redirect(303, handled.result.redirect)
+    if (handled.result.outcome === 'unknown') return fail(handled.status, { result: handled.result })
+    redirect(303, `${here}?notice=revoke-failed`)
   },
   local: async (event) => {
     const handled = await createFormHandler({

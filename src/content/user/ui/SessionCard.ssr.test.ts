@@ -102,11 +102,11 @@ describe('SessionCard', () => {
     const { body } = render(SessionCard, { props: { detail: other } })
 
     expect(body).toContain('data-testid="session-card-exit"')
-    expect(body).toContain('action="/user/sessions?/others"')
-    // Набор — ровно эта строка: скрытое поле `ids`, а не совпадение id где-то
-    // в разметке (форма переименования несёт тот же id в своём поле).
-    expect(idsOf(body)).toBe(device.id)
-    expect(body).toContain('value="only"')
+    expect(body).toContain('action="/user/sessions?/revoke"')
+    // Отзыв одной строки: скрытое поле `id` формы отзыва, не массовый набор.
+    expect(body).toContain('name="id"')
+    expect(body).toContain(`value="${device.id}"`)
+    expect(body).not.toContain('name="ids"')
     // Одна запись: подтверждать удержанием нечего.
     expect(body).not.toContain('data-mass-hold="true"')
     expect(body).toContain('data-testid="session-card-exit-submit"')
@@ -119,7 +119,7 @@ describe('SessionCard', () => {
     const foreign = render(SessionCard, {
       props: { detail: { ...other, session: { ...other.session, authId: '99999999-9999-4999-8999-999999999999' } } },
     })
-    expect(foreign.body).toContain('action="/user/99999999-9999-4999-8999-999999999999/sessions?/others"')
+    expect(foreign.body).toContain('action="/user/99999999-9999-4999-8999-999999999999/sessions?/revoke"')
     // Переименование тоже уходит на чужой роут: экшен чужой страницы достижим.
     expect(foreign.body).toContain(
       'action="/user/99999999-9999-4999-8999-999999999999/sessions/11111111-1111-4111-8111-111111111111?/rename"',
@@ -138,13 +138,13 @@ describe('SessionCard', () => {
       addr.url = new URL(`${base}?session.exit=confirm`)
       const own = render(SessionCard, { props: { detail: other } })
       expect(own.body, `own rename on ${base}`).toContain(`action="/user/sessions/${device.id}?/rename"`)
-      expect(own.body, `own exit on ${base}`).toContain('action="/user/sessions?/others"')
+      expect(own.body, `own exit on ${base}`).toContain('action="/user/sessions?/revoke"')
       const foreign = render(SessionCard, { props: { detail: foreignDetail } })
       expect(foreign.body, `foreign rename on ${base}`).toContain(
         'action="/user/99999999-9999-4999-8999-999999999999/sessions/11111111-1111-4111-8111-111111111111?/rename"',
       )
       expect(foreign.body, `foreign exit on ${base}`).toContain(
-        'action="/user/99999999-9999-4999-8999-999999999999/sessions?/others"',
+        'action="/user/99999999-9999-4999-8999-999999999999/sessions?/revoke"',
       )
     }
     addr.url = new URL(`http://localhost/user/sessions/${device.id}`)

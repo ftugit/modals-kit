@@ -173,12 +173,13 @@ describe('SessionsList', () => {
     addr.url = new URL('http://localhost/user/sessions?sessions-exit=confirm')
     const confirm = render(SessionsList, { props: { initial: routeData([device, other]) } })
     expect(confirm.body).toContain('data-testid="bulk-exit"')
-    // Набор — все строки списка; текущую из него уберёт сервер по чекбоксу.
-    // Чекбокс снят, значит закрывается одна запись и удержание не нужно.
-    expect(confirm.body).toContain(`value="${device.id},${other.id}"`)
+    // Набор считает сервер по фильтру: клиентские ids не посылаются.
+    // Чекбокс снят, текущая исключается — закрывается одна запись, удержания нет.
+    expect(confirm.body).toContain('name="state"')
+    expect(confirm.body).not.toContain('name="ids"')
     expect(confirm.body).not.toContain('data-mass-hold="true"')
     expect(confirm.body).toContain('data-testid="bulk-exit-submit"')
-    expect(confirm.body).toContain('Отменить')
+    expect(confirm.body).toContain('Назад')
     expect(confirm.body).toContain('href="/user/sessions"')
     addr.url = new URL('http://localhost/user/sessions')
   })

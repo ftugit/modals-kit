@@ -30,6 +30,8 @@ export type AuthErrorCode =
   | 'auth.deleted'            // аккаунт удалён (seed ещё не стёрт): шаг восстановления, сессии нет
   | 'auth.confirm'            // подтверждение не прошло (удаление аккаунта)
   | 'auth.forbidden'          // нет права: действие доступно только администратору
+  | 'auth.limit'              // слишком много строк в исключениях серверного набора
+  | 'session.nothing-to-close' // серверный набор пуст: нечего закрывать
   | 'auth.unavailable'        // хранилище недоступно: домен бросил исключение, а не факт
   | 'permissions.unknown'     // в списке прав незнакомое значение (не из каталога)
   | 'permissions.self'        // попытка изменить свои права (защита от самоблокировки)
@@ -87,6 +89,8 @@ const INSTRUCTIONS: Record<AuthErrorCode, AuthInstruction> = {
   'auth.deleted': () => [generalError('auth.deleted')],
   'auth.confirm': (f) => [fieldError(f)],
   'auth.forbidden': () => [generalError('auth.forbidden')],
+  'auth.limit': () => [generalError('auth.limit')],
+  'session.nothing-to-close': () => [generalError('session.nothing-to-close')],
   // Хранилище легло — повторить можно: это не отказ и не вина пользователя.
   'auth.unavailable': () => [generalError('auth.unavailable', { retryable: true })],
   'permissions.unknown': (f) => [fieldError(f, { path: f.path ?? 'permissions' })],

@@ -852,7 +852,7 @@ export function auth(event: AuthEvent): {
     logoutAll: async () => {
       const g = await coreGuard(ports, access())
       if (!('code' in g)) {
-        const r = await coreRevokeBulkSessions(sessionActor(g), { scope: 'all' }, sessionDeps())
+        const r = await coreRevokeBulkSessions(sessionActor(g), { where: { state: 'all' }, includeCurrent: true }, sessionDeps())
         clearCookies()
         return r.ok ? { ok: true, value: null } : r
       }
@@ -1007,6 +1007,7 @@ export function toHttpStatus(result: UserResult<unknown>): number {
       return 401
     case 'auth.blocked':
     case 'auth.forbidden':
+    case 'auth.limit':
     case 'profile.delete-blocked':
     case 'account.delete-blocked':
     case 'permissions.unknown':
@@ -1019,6 +1020,7 @@ export function toHttpStatus(result: UserResult<unknown>): number {
     case 'storage.unavailable':
       return 503
     case 'auth.identity-unknown':
+    case 'session.nothing-to-close':
     case 'storage.not-found':
       return 404
     case 'auth.delete-pending':

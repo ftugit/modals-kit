@@ -1,10 +1,9 @@
 <!--
   Массовый выход: один компонент на список сессий и на экран выхода.
 
-  Намерение — набор идентификаторов, а не режим: `only` закрывает ровно
-  перечисленные строки, `except` — все строки цели, кроме перечисленных. Чекбокс
-  «включая текущую» меняет набор, а не экран: снят — текущая выходит из него
-  (в `only` удаляется из списка, в `except` попадает в исключения).
+  Набор считает сервер по фильтру списка: клиентские `ids`/`pick` не посылаются.
+  Чекбокс «включая текущую» меняет набор, а не экран: снят — текущая выходит из
+  него; на экране выхода (`spread`) снятый чекбокс оставляет одну текущую сессию.
 
   Удержание — только когда в наборе больше одной строки: одну запись
   подтверждать удержанием незачем (то же правило у массовых действий блокировок).
@@ -27,10 +26,8 @@
   import { sessionBulkExitForm } from '../../sessions.form.js'
 
   interface Props {
-    /** Идентификаторы строк среза. */
-    ids?: readonly string[]
-    /** `only` — закрыть перечисленные, `except` — все, кроме перечисленных. */
-    pick?: 'only' | 'except'
+    /** Фильтр списка, который сервер применит в момент POST. */
+    filters?: Partial<Record<'state' | 'net' | 'country' | 'cfrom' | 'cto' | 'sfrom' | 'sto', string>>
     /** Своя текущая сессия: её и убирает снятый чекбокс. */
     currentId?: string | null
     /** Сколько всего строк в срезе — размер набора в режиме `except`. */
@@ -71,8 +68,7 @@
   }
 
   let {
-    ids = [],
-    pick = 'only',
+    filters = {},
     currentId = null,
     total = 0,
     includeCurrent = false,
@@ -95,7 +91,7 @@
   }: Props = $props()
 
   const checkboxText = $derived(checkboxLabel ?? (spread ? 'Выйти на всех устройствах' : undefined))
-  const shape = $derived({ pick, ids, includeCurrent, spread, checkboxLabel: checkboxText })
+  const shape = $derived({ filters, includeCurrent, spread, checkboxLabel: checkboxText })
   const bound = bindComponentForm(forms, untrack(() => sessionBulkExitForm(shape)), {
     action: untrack(() => action),
     continuation: untrack(() => form?.result ?? undefined),
@@ -106,19 +102,11 @@
     bound.state.values.include_current === true ||
       String(bound.state.values.include_current ?? '') === 'on',
   )
-  /** Сколько строк закроет набор при текущем состоянии чекбокса. */
+  /** Сколько строк закроет набор: размер среза знает носитель, не клиентские ids. */
   const size = $derived.by(() => {
-    // Экран выхода: снятый чекбокс — одна текущая сессия, отмеченный — весь
-    // аккаунт. Число строк среза знает носитель, `ids` тут роли не играют.
-    if (spread) return checked ? Math.max(1, total ?? ids.length) : 1
-    const base = new Set(ids)
-    if (currentId) {
-      if (checked) {
-        if (pick === 'except') base.delete(currentId)
-      } else if (pick === 'only') base.delete(currentId)
-      else base.add(currentId)
-    }
-    return pick === 'only' ? base.size : Math.max(0, total - base.size)
+    if (spread) return checked ? Math.max(1, total) : 1
+    // Список: снятый чекбокс исключает текущую, если она попала в срез.
+    return checked ? total : Math.max(0, total - (currentId ? 1 : 0))
   })
   const withHold = $derived(size > 1)
 
@@ -151,9 +139,14 @@
     data-testid={testId}
   >
     <div hidden>
-      <Field of={bound.f.pick} />
-      <Field of={bound.f.ids} />
       <Field of={bound.f.spread} />
+      <Field of={bound.f.state} />
+      <Field of={bound.f.net} />
+      <Field of={bound.f.country} />
+      <Field of={bound.f.cfrom} />
+      <Field of={bound.f.cto} />
+      <Field of={bound.f.sfrom} />
+      <Field of={bound.f.sto} />
     </div>
 
     <Common errors={bound.common} title="Не получилось завершить сессии" />

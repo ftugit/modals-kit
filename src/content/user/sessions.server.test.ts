@@ -16,6 +16,7 @@ import {
   revokeBulkSessions,
   revokeSessionById,
   SESSIONS_BULK_IDS_LIMIT,
+  sessionsWhere,
   type SessionActor,
   type SessionDeps,
 } from './sessions.server.js'
@@ -191,7 +192,7 @@ test('чтение, правка, отозванные и жёсткое уда�
   })
 })
 
-test('чужой uuid не отличим от пустого; пакетный отзыв исключает текущую только в others', async () => {
+test('чужой uuid не отличим от пустого; серверный набор исключает текущую по умолчанию', async () => {
   await withDb(async (deps) => {
     const me = await account(deps.db, 'd'.repeat(43))
     const current = await device(deps.db, me, { jti: 'bulk-current-token-021', name: 'эта' })
@@ -204,21 +205,18 @@ test('чужой uuid не отличим от пустого; пакетный 
     expect(foreign.ok).toBe(false)
     if (!empty.ok && !foreign.ok) expect(foreign.fact.code).toBe(empty.fact.code)
 
-    const unknown = await revokeBulkSessions(actor(me), { scope: 'others' }, deps)
-    expect(unknown).toMatchObject({ ok: false, fact: { code: 'auth.session-unknown' } })
     const before = await listSessionsPage(meActor, { state: 'all' }, deps)
     expect(before.ok && before.value.items).toHaveLength(2)
 
-    const kept = await revokeBulkSessions(meActor, { scope: 'others' }, deps)
+    // includeCurrent снят: текущая исключается сервером, без клиентских ids.
+    const kept = await revokeBulkSessions(meActor, { where: { state: 'all' } }, deps)
     expect(kept.ok).toBe(true)
     if (!kept.ok) return
-    expect(kept.value).toEqual({ revoked: 1, current: false })
+    expect(kept.value).toEqual({ revoked: 1, current: false, requested: 1 })
     const live = await listSessionsPage(meActor, { state: 'all' }, deps)
-    expect(live.ok).toBe(true)
-    if (!live.ok) return
-    expect(live.value.items.map((item) => item.id)).toEqual([current])
+    expect(live.ok && live.value.items.map((item) => item.id)).toEqual([current])
 
-    const all = await revokeBulkSessions(meActor, { scope: 'all' }, deps)
+    const all = await revokeBulkSessions(meActor, { where: { state: 'all' }, includeCurrent: true }, deps)
     expect(all.ok).toBe(true)
     if (!all.ok) return
     expect(all.value.current).toBe(true)
@@ -227,155 +225,131 @@ test('чужой uuid не отличим от пустого; пакетный 
   })
 })
 
-test('all без известной текущей сессии доступен после отказа others', async () => {
-  await withDb(async (deps) => {
-    const me = await account(deps.db, 'c'.repeat(43))
-    await device(deps.db, me, { jti: 'bulk-nosession-token-021', name: 'та' })
-    const noSession = actor(me, [])
-    const denied = await revokeBulkSessions(noSession, { scope: 'others' }, deps)
-    expect(denied).toMatchObject({ ok: false, fact: { code: 'auth.session-unknown' } })
-    const live = await listSessionsPage(noSession, { state: 'all' }, deps)
-    expect(live.ok && live.value.items).toHaveLength(1)
-    const all = await revokeBulkSessions(noSession, { scope: 'all' }, deps)
-    expect(all.ok).toBe(true)
-    if (all.ok) expect(all.value.revoked).toBe(1)
-  })
-})
-
-test('пакетный отзыв по набору id: only закрывает перечисленное, пустой набор — отказ', async () => {
+test('серверный набор по фильтру: две из пяти, лишние строки аккаунта живы', async () => {
   await withDb(async (deps) => {
     const me = await account(deps.db, 'e'.repeat(43))
-    const them = await account(deps.db, 'f'.repeat(43))
-    const current = await device(deps.db, me, { jti: 'set-current-token-0021', name: 'эта' })
-    const other = await device(deps.db, me, { jti: 'set-other-token-00211', name: 'та' })
-    const third = await device(deps.db, me, { jti: 'set-third-token-00211', name: 'третья' })
-    const foreign = await device(deps.db, them, { jti: 'set-foreign-token-0021', name: 'чужая' })
+    const current = await device(deps.db, me, { jti: 'set-current-token-00211', name: 'эта', country: 'RU' })
+    const ru2 = await device(deps.db, me, { jti: 'set-ru2-token-0021111', name: 'вторая', country: 'RU' })
+    const de = await device(deps.db, me, { jti: 'set-de-token-00211111', name: 'третья', country: 'DE' })
+    const none = await device(deps.db, me, { jti: 'set-none-token-002111', name: 'четвёртая' })
+    const expired = await device(deps.db, me, { jti: 'set-exp-token-0021111', name: 'пятая', country: 'RU', expiresAt: NOW - 60_000 })
     const meActor = actor(me, [], current)
 
-    // Пустой `only` — не «закрыть всё», а отказ. Это главная ловушка набора.
-    const empty = await revokeBulkSessions(meActor, { scope: 'all', pick: 'only', ids: [] }, deps)
-    expect(empty).toMatchObject({ ok: false, fact: { code: 'auth.session-unknown' } })
-    const survivedEmpty = await listSessionsPage(meActor, { state: 'all' }, deps)
-    expect(survivedEmpty.ok && survivedEmpty.value.items).toHaveLength(3)
+    const filtered = await listSessionsPage(meActor, { country: ['RU'], state: 'active' }, deps)
+    expect(filtered.ok && filtered.value.items.map((i) => i.id).sort()).toEqual([current, ru2].sort())
 
-    // Мусор не проходит в набор и не роняет вызов: один годный id — закрыт один.
-    const one = await revokeBulkSessions(meActor, {
-      scope: 'all',
-      pick: 'only',
-      ids: ['мусор', '', '  ', other, other],
-    }, deps)
-    expect(one.ok).toBe(true)
-    if (!one.ok) return
-    expect(one.value.revoked).toBe(1)
-    expect(one.value.requested).toBe(1)
-
-    // Чужой id не закрывается: набор ограничен `auth_id` цели.
-    const withForeign = await revokeBulkSessions(meActor, {
-      scope: 'all',
-      pick: 'only',
-      ids: [foreign, third],
-    }, deps)
-    expect(withForeign.ok).toBe(true)
-    if (!withForeign.ok) return
-    expect(withForeign.value.requested).toBe(2)
-    expect(withForeign.value.revoked).toBe(1)
+    const r = await revokeBulkSessions(meActor, { where: { country: ['RU'], state: 'active' }, includeCurrent: true }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.requested).toBe(2)
+    expect(r.value.revoked).toBe(2)
+    expect(r.value.current).toBe(true)
 
     const left = await listSessionsPage(meActor, { state: 'all' }, deps)
-    expect(left.ok).toBe(true)
-    if (!left.ok) return
-    expect(left.value.items.map((item) => item.id)).toEqual([current])
-
-    const foreignLeft = await deps.db.resource(session).select(SERVER, {
-      filter: { field: 'id', op: 'eq', value: foreign },
-    })
-    expect(foreignLeft).toHaveLength(1)
+    expect(left.ok && left.value.items.map((i) => i.id).sort()).toEqual([de, none, expired].sort())
   })
 })
 
-test('пакетный отзыв по набору id: except закрывает всё, кроме перечисленного', async () => {
+test('IDOR: серверный набор чужого аккаунта не закрывает строки другого аккаунта', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'c'.repeat(43))
+    const them = await account(deps.db, 'd'.repeat(43))
+    const mine = await device(deps.db, me, { jti: 'scope-mine-token-00211', name: 'моя', country: 'RU' })
+    const theirs = await device(deps.db, them, { jti: 'scope-their-token-0021', name: 'их', country: 'RU' })
+
+    const denied = await revokeBulkSessions(actor(me, []), { authId: them, where: { country: ['RU'] } }, deps)
+    expect(denied).toMatchObject({ ok: false, fact: { code: 'auth.forbidden' } })
+
+    const admin = await revokeBulkSessions(actor(me, ['admin']), { authId: them, where: { country: ['RU'] }, includeCurrent: true }, deps)
+    expect(admin.ok).toBe(true)
+    if (!admin.ok) return
+    expect(admin.value.revoked).toBe(1)
+    expect(admin.value.current).toBe(false)
+
+    const mineLeft = await deps.db.resource(session).select(SERVER, { filter: { field: 'id', op: 'eq', value: mine } })
+    expect(mineLeft).toHaveLength(1)
+    const theirsLeft = await deps.db.resource(session).select(SERVER, { filter: { field: 'id', op: 'eq', value: theirs } })
+    expect(theirsLeft).toHaveLength(0)
+  })
+})
+
+test('except: всё кроме перечисленных; предел исключений — отказ, а не усечение', async () => {
   await withDb(async (deps) => {
     const me = await account(deps.db, 'a'.repeat(43))
     const current = await device(deps.db, me, { jti: 'exc-current-token-0021', name: 'эта' })
     const other = await device(deps.db, me, { jti: 'exc-other-token-00211', name: 'та' })
     const meActor = actor(me, [], current)
 
-    // Исключили текущую — закрылась одна, `current` не поднимался.
-    const keepCurrent = await revokeBulkSessions(meActor, {
-      scope: 'others',
-      pick: 'except',
-      ids: [current],
-    }, deps)
+    const keepCurrent = await revokeBulkSessions(meActor, { where: { state: 'all' }, except: [current], includeCurrent: true }, deps)
     expect(keepCurrent.ok).toBe(true)
     if (!keepCurrent.ok) return
     expect(keepCurrent.value.revoked).toBe(1)
     expect(keepCurrent.value.current).toBe(false)
 
-    // Исключений нет — закрывается и текущая: набор полностью заменяет `scope`.
-    const all = await revokeBulkSessions(meActor, { scope: 'others', pick: 'except', ids: [] }, deps)
-    expect(all.ok).toBe(true)
-    if (!all.ok) return
-    expect(all.value.revoked).toBe(1)
-    expect(all.value.current).toBe(true)
-
+    const over = Array.from({ length: SESSIONS_BULK_IDS_LIMIT + 1 }, () => crypto.randomUUID())
+    const denied = await revokeBulkSessions(meActor, { where: { state: 'all' }, except: over, includeCurrent: true }, deps)
+    expect(denied).toMatchObject({ ok: false, fact: { code: 'auth.limit' } })
     const left = await listSessionsPage(meActor, { state: 'all' }, deps)
-    expect(left.ok && left.value.items).toHaveLength(0)
+    expect(left.ok && left.value.items.map((i) => i.id)).toEqual([current])
     expect(other).not.toBe(current)
   })
 })
 
-test('пакетный отзыв по набору id: предел набора — отказ, а не усечение', async () => {
+test('onlyCurrent: экран выхода закрывает одну текущую; без текущей — нечего закрывать', async () => {
   await withDb(async (deps) => {
     const me = await account(deps.db, 'b'.repeat(43))
     const current = await device(deps.db, me, { jti: 'lim-current-token-0021', name: 'эта' })
+    await device(deps.db, me, { jti: 'lim-other-token-00211', name: 'та' })
     const meActor = actor(me, [], current)
-    const over = Array.from({ length: SESSIONS_BULK_IDS_LIMIT + 1 }, () => crypto.randomUUID())
 
-    for (const pick of ['only', 'except'] as const) {
-      const denied = await revokeBulkSessions(meActor, { scope: 'all', pick, ids: over }, deps)
-      expect(denied).toMatchObject({ ok: false, fact: { code: 'auth.forbidden' } })
-    }
-
-    // Негативный контроль: при отказе ничего не закрылось.
+    const one = await revokeBulkSessions(meActor, { onlyCurrent: true }, deps)
+    expect(one.ok).toBe(true)
+    if (!one.ok) return
+    expect(one.value).toEqual({ revoked: 1, current: true, requested: 1 })
     const left = await listSessionsPage(meActor, { state: 'all' }, deps)
+    expect(left.ok && left.value.items).toHaveLength(1)
+
+    const noSession = await revokeBulkSessions(actor(me, []), { onlyCurrent: true }, deps)
+    expect(noSession).toMatchObject({ ok: false, fact: { code: 'session.nothing-to-close' } })
+  })
+})
+
+test('пустой срез — session.nothing-to-close, а не тихий успех', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'f'.repeat(43))
+    const current = await device(deps.db, me, { jti: 'empty-current-token-021', name: 'эта', country: 'DE' })
+    const r = await revokeBulkSessions(actor(me, [], current), { where: { country: ['RU'] }, includeCurrent: true }, deps)
+    expect(r).toMatchObject({ ok: false, fact: { code: 'session.nothing-to-close' } })
+    const left = await listSessionsPage(actor(me, [], current), { state: 'all' }, deps)
     expect(left.ok && left.value.items).toHaveLength(1)
   })
 })
 
-test('пакетный отзыв по набору id: набор важнее scope и прав на чужой аккаунт не даёт', async () => {
-  await withDb(async (deps) => {
-    const me = await account(deps.db, 'c'.repeat(43))
-    const them = await account(deps.db, 'd'.repeat(43))
-    const mine = await device(deps.db, me, { jti: 'scope-mine-token-00211', name: 'моя' })
-    const theirs = await device(deps.db, them, { jti: 'scope-their-token-0021', name: 'их' })
-
-    // `pick` задан — он и определяет набор, `scope: 'others'` не исключает ничего сам.
-    const meActor = actor(me, [])
-    const picked = await revokeBulkSessions(meActor, {
-      scope: 'others',
-      authId: them,
-      pick: 'only',
-      ids: [theirs],
-    }, deps)
-    expect(picked).toMatchObject({ ok: false, fact: { code: 'auth.forbidden' } })
-
-    // Админ с правом на чужой аккаунт закрывает перечисленную строку цели.
-    const admin = await revokeBulkSessions(actor(me, ['admin']), {
-      scope: 'all',
-      authId: them,
-      pick: 'only',
-      ids: [theirs],
-    }, deps)
-    expect(admin.ok).toBe(true)
-    if (!admin.ok) return
-    expect(admin.value.revoked).toBe(1)
-    // При `uid` текущей считается только своя строка: чужая не поднимает `current`.
-    expect(admin.value.current).toBe(false)
-
-    const mineLeft = await deps.db.resource(session).select(SERVER, {
-      filter: { field: 'id', op: 'eq', value: mine },
-    })
-    expect(mineLeft).toHaveLength(1)
-  })
+test('sessionsWhere: один построитель среза для списка и серверного набора', async () => {
+  const a = actor('account-id', [])
+  const args = {
+    authId: 'account-id',
+    state: 'active' as const,
+    country: ['RU', SESSIONS_COUNTRY_NONE],
+    subnetChanged: true,
+    createdFrom: NOW - 10_000,
+    createdTo: NOW,
+  }
+  const w = sessionsWhere(a, args, NOW)
+  expect(w.state).toBe('active')
+  expect(w.includeDeleted).toBe(false)
+  expect(w.and).toEqual([
+    { field: 'auth_id', op: 'eq', value: 'account-id' },
+    { field: 'expires_at', op: 'gt', value: new Date(NOW).toISOString() },
+    { or: [{ field: 'country', op: 'eq', value: 'RU' }, { field: 'country', op: 'isNull' }] },
+    { field: 'subnet_history', op: 'ne', value: [] },
+    { field: 'created_at', op: 'gte', value: new Date(NOW - 10_000).toISOString() },
+    { field: 'created_at', op: 'lte', value: new Date(NOW).toISOString() },
+  ])
+  // Без права на отозванные состояние срезается до all, а не revoked.
+  const clamped = sessionsWhere(a, { authId: 'account-id', state: 'revoked' }, NOW)
+  expect(clamped.state).toBe('all')
+  expect(clamped.includeDeleted).toBe(false)
 })
 
 test('сервер пишет свой id сессии только без protect', async () => {

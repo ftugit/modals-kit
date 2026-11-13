@@ -102,7 +102,6 @@
     untrack(forget)
   })
 
-  const ids = $derived(sessionId ? [sessionId] : [])
   // Набор уходит на экшен роута выхода, а не на страницу, где модалка открыта.
   const exitAction = $derived(action ?? `${userLogoutRoute.href()}?/exit`)
 </script>
@@ -128,8 +127,6 @@
 
   {#if canRevoke}
     <ExitSteps
-      {ids}
-      pick="only"
       currentId={sessionId}
       {total}
       spread

@@ -57,6 +57,8 @@
     url?: boolean
     /** Отказ из собственного запроса: ACL рисует носитель. */
     onAcl?: (fact: AuthErrorCode) => void
+    /** Notice после сбоя отзыва: список рисует объявление, а не молчит. */
+    notice?: 'revoke-failed' | null
     variant?: UserSurfaceVariant
     class?: string
     /** Зона sidebar. Страница передаёт, модалка — нет. */
@@ -70,6 +72,7 @@
     scope = null,
     url = undefined,
     onAcl,
+    notice = null,
     variant = 'plain',
     class: className,
     sidebar,
@@ -198,8 +201,32 @@
     }
     return Object.values(initial?.snapshot?.pages ?? {}).flat()
   })
-  const exitIds = $derived(exitRows.map((row) => row.id))
   const currentId = $derived(exitRows.find((row) => row.current)?.id ?? null)
+  // Фильтр для серверного набора: те же имена, что у пагинатора. Состав строк
+  // клиент не посылает — сервер применит этот срез в момент POST.
+  const exitValues = $derived(
+    appliedValues ??
+      valuesFrom(
+        (initial?.snapshot?.extra ?? {}) as Record<string, unknown>,
+        initial?.snapshot?.pageSize ?? SESSIONS_PAGE_SIZE,
+      ),
+  )
+  const exitFilters = $derived({
+    state: exitValues.state,
+    net: exitValues.net ? '1' : '',
+    country: exitValues.country.join(','),
+    cfrom: exitValues.cfrom,
+    cto: exitValues.cto,
+    sfrom: exitValues.sfrom,
+    sto: exitValues.sto,
+  })
+  const exitTotal = $derived.by(() => {
+    if (filterStore) {
+      const state = getState<SessionDeviceView>(filterStore, SESSIONS_NAME)
+      return state.totalItems ?? initial?.snapshot?.totalItems ?? 0
+    }
+    return initial?.snapshot?.totalItems ?? exitRows.length
+  })
 
   // Шаг подтверждения: на странице — URL-ключ (без JS «Далее» обычная ссылка),
   // в модалке — локальный хост шагов. Адрес носителя в модалке не читается и не
@@ -238,12 +265,17 @@
   }
 </script>
 
+  {#if notice === 'revoke-failed'}
+    <p class="text-sm text-destructive" role="alert" data-testid="sessions-list-notice">
+      Не удалось завершить сессии — попробуйте ещё раз.
+    </p>
+  {/if}
+
   {#if exitStep === 'confirm' && !journal}
     <ExitSteps
-      ids={exitIds}
-      pick="only"
+      filters={exitFilters}
       {currentId}
-      total={exitRows.length}
+      total={exitTotal}
       step="confirm"
       backHref={exitBackHref}
       onBack={stepsMode === 'modal' ? () => exitHost.set('summary') : undefined}

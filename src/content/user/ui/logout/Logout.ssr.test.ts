@@ -55,7 +55,8 @@ describe('Logout: выход как набор сессий', () => {
     expect(body).toContain('name="include_current"')
     expect(body).toContain('name="spread"')
     expect(body).toContain('value="1"')
-    expect(body).toContain(`value="${SESSION}"`)
+    // Клиентский id текущей сессии не посылается: сервер знает его из куки.
+    expect(body).not.toContain('name="ids"')
     // Локальный выход — другой сценарий, в подтверждении он только мешает.
     expect(body).not.toContain('data-testid="logout-local"')
     addr.url = new URL('http://localhost/user/logout')

@@ -1,125 +1,81 @@
-/**
- * Разбор намерения массового выхода. Чистая функция — без SvelteKit и базы:
- * екшен только передаёт ей значения формы и идентификатор текущей сессии.
- */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import { SESSION_BULK_IDS_MAX, bulkExitArgs, sessionBulkExitForm } from './sessions.form.js'
+import { SESSIONS_BULK_IDS_LIMIT } from './types.js'
 
-const CURRENT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-const THIRD = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+const CURRENT = '11111111-1111-4111-8111-111111111111'
+const OTHER = '22222222-2222-4222-8222-222222222222'
 
-describe('bulkExitArgs: намерение набора', () => {
-  it('без набора чекбокс выбирает scope: снят — others, отмечен — all', () => {
-    expect(bulkExitArgs({ include_current: false }, CURRENT)).toEqual({
-      scope: 'others',
-      pick: null,
-      ids: [],
-    })
-    expect(bulkExitArgs({ include_current: 'on' }, CURRENT).scope).toBe('all')
-    // Негативный контроль: отмеченный чекбокс не оставляет `others`.
-    expect(bulkExitArgs({ include_current: true }, CURRENT).scope).not.toBe('others')
+const valueOf = (form: ReturnType<typeof sessionBulkExitForm>, name: string): unknown =>
+  form.byName[name]?.defaultValue
+
+describe('bulkExitArgs: серверный набор по фильтру, без клиентских ids', () => {
+  test('список: чекбокс меняет includeCurrent, состав не читается из ids/pick', () => {
+    const values = { ids: [CURRENT, OTHER].join(','), pick: 'only', include_current: false, state: 'expired' }
+    const args = bulkExitArgs(values, CURRENT)
+    expect(args.includeCurrent).toBe(false)
+    expect(args.onlyCurrent).toBe(false)
+    expect(args.except).toEqual([])
+    expect(args.where.state).toBe('expired')
+    expect(bulkExitArgs({ ...values, include_current: 'on' }, CURRENT).includeCurrent).toBe(true)
   })
 
-  it('only: снятый чекбокс убирает текущую из набора, отмеченный — оставляет', () => {
-    const values = { pick: 'only', ids: [CURRENT, OTHER].join(','), include_current: false }
-    expect(bulkExitArgs(values, CURRENT)).toEqual({
-      scope: 'all',
-      pick: 'only',
-      ids: [OTHER],
-    })
-    expect(bulkExitArgs({ ...values, include_current: '1' }, CURRENT).ids).toEqual([CURRENT, OTHER])
-  })
-
-  it('except: снятый чекбокс добавляет текущую в исключения', () => {
-    const values = { pick: 'except', ids: OTHER, include_current: false }
-    expect(bulkExitArgs(values, CURRENT)).toEqual({
-      scope: 'all',
-      pick: 'except',
-      ids: [OTHER, CURRENT],
-    })
-    // Отмеченный — исключений ровно столько, сколько передали.
-    expect(bulkExitArgs({ ...values, include_current: 'on' }, CURRENT).ids).toEqual([OTHER])
-  })
-
-  it('без известной текущей сессии набор не меняется', () => {
-    const values = { pick: 'only', ids: [CURRENT, OTHER].join(','), include_current: false }
-    expect(bulkExitArgs(values, null).ids).toEqual([CURRENT, OTHER])
-    expect(bulkExitArgs({ ...values, pick: 'except' }, null).ids).toEqual([CURRENT, OTHER])
-  })
-
-  it('мусор в ids не проходит, повторы схлопываются', () => {
-    const raw = ['', '  ', THIRD, THIRD.toUpperCase(), OTHER].join(',')
-    expect(bulkExitArgs({ pick: 'only', ids: raw, include_current: true }, CURRENT).ids).toEqual([
-      THIRD,
-      OTHER,
-    ])
-  })
-
-  it('набор длиннее предела обрезается, вызов не падает', () => {
-    const many = Array.from({ length: SESSION_BULK_IDS_MAX + 50 }, (_, i) =>
-      `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`,
+  test('фильтр списка разбирается из POST: страна, сеть, даты', () => {
+    const args = bulkExitArgs(
+      { state: 'all', country: 'ru,none', net: '1', cfrom: '2026-01-01T00:00', cto: '2026-02-01T00:00' },
+      CURRENT,
     )
-    const args = bulkExitArgs({ pick: 'only', ids: many.join(','), include_current: true }, CURRENT)
-    expect(args.ids).toHaveLength(SESSION_BULK_IDS_MAX)
+    expect(args.where.state).toBe('all')
+    expect(args.where.country).toEqual(['RU', 'none'])
+    expect(args.where.subnetChanged).toBe(true)
+    expect(args.where.createdFrom).toBe(Date.parse('2026-01-01T00:00'))
+    expect(args.where.createdTo).toBe(Date.parse('2026-02-01T00:00'))
   })
 
-  it('незнакомое значение pick — не набор', () => {
-    expect(bulkExitArgs({ pick: 'everything', ids: OTHER, include_current: false }, CURRENT).pick).toBeNull()
-    expect(bulkExitArgs({ pick: 'ONLY', ids: OTHER, include_current: true }, CURRENT).pick).toBe('only')
-  })
-})
-
-/** Поля описаны массивом: порядок объявления, у каждого есть `name`. */
-describe('bulkExitArgs: чекбокс экрана выхода расширяет набор (spread)', () => {
-  // Тот же компонент, другая инверсия: на экране выхода снятый чекбокс —
-  // одна текущая сессия, отмеченный — весь аккаунт. Список сессий работает
-  // наоборот: набор задан строками, чекбокс впускает в него текущую.
-  it('снят — только текущая сессия, отмечен — весь аккаунт', () => {
-    const values = { pick: 'only', ids: CURRENT, spread: '1', include_current: false }
-    expect(bulkExitArgs(values, CURRENT)).toEqual({ scope: 'all', pick: 'only', ids: [CURRENT] })
-
-    const all = { ...values, include_current: 'on' }
-    expect(bulkExitArgs(all, CURRENT)).toEqual({ scope: 'all', pick: 'except', ids: [] })
-    // Негативный контроль: «весь аккаунт» — это исключений нет, а не «всё перечислить».
-    expect(bulkExitArgs(all, CURRENT).ids).not.toEqual([CURRENT])
+  test('мусорное состояние не проходит; пустой фильтр — без состояния', () => {
+    expect(bulkExitArgs({ state: 'everything' }, CURRENT).where.state).toBeUndefined()
+    expect(bulkExitArgs({}, CURRENT).where.state).toBeUndefined()
   })
 
-  it('набор считает сервер, а не разметка: переданные ids не меняют исхода', () => {
-    const values = { pick: 'except', ids: [CURRENT, OTHER].join(','), spread: '1', include_current: false }
-    expect(bulkExitArgs(values, CURRENT)).toEqual({ scope: 'all', pick: 'only', ids: [CURRENT] })
-  })
-
-  it('без известной текущей сессии снятый чекбокс даёт пустой набор — домен откажет', () => {
-    const values = { pick: 'only', ids: '', spread: '1', include_current: false }
-    expect(bulkExitArgs(values, null)).toEqual({ scope: 'all', pick: 'only', ids: [] })
+  test('предел исключений — одно объявление домена', () => {
+    expect(SESSION_BULK_IDS_MAX).toBe(SESSIONS_BULK_IDS_LIMIT)
+    expect(SESSION_BULK_IDS_MAX).toBe(500)
   })
 })
 
-function valueOf(form: ReturnType<typeof sessionBulkExitForm>, name: string): unknown {
-  const field = form.fields.find((f) => f.name === name)
-  return field?.defaultValue
-}
-
-describe('sessionBulkExitForm: одна форма на оба носителя', () => {
-  it('чекбокс по умолчанию снят, поля набора несут переданные значения', () => {
-    const form = sessionBulkExitForm({ pick: 'only', ids: [CURRENT, OTHER] })
-    expect(valueOf(form, 'include_current')).toBe(false)
-    expect(valueOf(form, 'pick')).toBe('only')
-    expect(valueOf(form, 'ids')).toBe(`${CURRENT},${OTHER}`)
+describe('bulkExitArgs: экран выхода (spread) инвертирует чекбокс', () => {
+  test('снятый чекбокс — только текущая сессия, id сервер знает сам', () => {
+    const args = bulkExitArgs({ spread: '1', include_current: false, ids: OTHER }, CURRENT)
+    expect(args.onlyCurrent).toBe(true)
+    expect(args.includeCurrent).toBe(false)
+    expect(args.where.state).toBe('active')
+    expect(args.except).toEqual([])
   })
 
-  it('тот же набор полей без значений — пустая строка и снятый чекбокс', () => {
-    const form = sessionBulkExitForm()
-    expect(valueOf(form, 'pick')).toBe('')
-    expect(valueOf(form, 'ids')).toBe('')
-    expect(valueOf(form, 'include_current')).toBe(false)
+  test('отмеченный чекбокс — весь активный срез аккаунта', () => {
+    const args = bulkExitArgs({ spread: '1', include_current: 'on' }, CURRENT)
+    expect(args.onlyCurrent).toBe(false)
+    expect(args.includeCurrent).toBe(true)
+    expect(args.where.state).toBe('active')
+  })
+
+  test('без текущей сессии снятый чекбокс всё равно только текущая (домен откажет)', () => {
+    const args = bulkExitArgs({ spread: '1', include_current: false }, null)
+    expect(args.onlyCurrent).toBe(true)
+  })
+})
+
+describe('sessionBulkExitForm: поля набора', () => {
+  test('нет клиентских ids/pick; есть фильтр и spread', () => {
+    const form = sessionBulkExitForm({ filters: { state: 'expired', country: 'RU' } })
+    expect(form.byName.ids).toBeUndefined()
+    expect(form.byName.pick).toBeUndefined()
+    expect(valueOf(form, 'state')).toBe('expired')
+    expect(valueOf(form, 'country')).toBe('RU')
     expect(valueOf(form, 'spread')).toBe('')
+    expect(form.revision).toBe(3)
   })
 
-  it('носитель выхода помечает форму флагом `spread`', () => {
+  test('spread экрана выхода', () => {
     expect(valueOf(sessionBulkExitForm({ spread: true }), 'spread')).toBe('1')
-    // Негативный контроль: список сессий флага не несёт.
-    expect(valueOf(sessionBulkExitForm({ pick: 'only', ids: [CURRENT] }), 'spread')).toBe('')
   })
 })
