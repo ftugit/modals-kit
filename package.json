@@ -46,6 +46,7 @@
     "test:browser:select-trace": "node test/browser/select-trace.mjs",
     "test:browser:errors": "node test/browser/errors.mjs",
     "test:db:probes": "node --no-liftoff --import tsx src/lib/db/probes/pglite.probe.mts && node --no-liftoff --import tsx src/lib/db/probes/order.probe.mts",
+    "probe:user:sessions-bulk": "node --no-liftoff --import tsx src/content/user/probes/sessions-bulk.probe.mts",
     "test:db": "vitest run src/lib/db",
     "test:browser:live": "node test/browser/shikimori.mjs && node test/browser/rickmorty.mjs",
     "test:browser:loader": "node test/browser/loader.mjs",

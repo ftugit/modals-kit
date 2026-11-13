@@ -419,3 +419,60 @@ test('фильтры среза: страна, смена сети, диапаз
     expect(future.ok && future.value.items).toHaveLength(0)
   })
 })
+
+test('except: 101 исключение — две порции notIn, всё кроме перечисленных', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'h'.repeat(43))
+    const ids: string[] = []
+    for (let i = 0; i < 120; i++) {
+      ids.push(await device(deps.db, me, { jti: `chunk-except-token-${String(i).padStart(4, '0')}`, name: `d${i}` }))
+    }
+    const keep = ids.slice(0, 101) // 101 > inValues(100) → порции 100 + 1
+    const meActor = actor(me, [], ids[0])
+    const r = await revokeBulkSessions(meActor, { where: { state: 'all' }, except: keep, includeCurrent: true }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.revoked).toBe(19)
+    expect(r.value.requested).toBe(19)
+    expect(r.value.current).toBe(false)
+    const left = await deps.db.resource(session).count(SERVER, { filter: { field: 'auth_id', op: 'eq', value: me } })
+    expect(left).toBe(101)
+    // Первая сохранённая строка жива, первая отозванная — удалена.
+    await expect(deps.db.resource(session).get(SERVER, keep[0]!)).resolves.toBeTruthy()
+    await expect(deps.db.resource(session).get(SERVER, ids[101]!)).rejects.toMatchObject({ kind: 'not_found' })
+  })
+})
+
+test('except: 250 исключений — три порции notIn, а не 250 отдельных ne', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'i'.repeat(43))
+    const ids: string[] = []
+    for (let i = 0; i < 260; i++) {
+      ids.push(await device(deps.db, me, { jti: `bulk-except-token-${String(i).padStart(4, '0')}`, name: `d${i}` }))
+    }
+    const keep = ids.slice(0, 250) // 250 → порции 100 + 100 + 50
+    const meActor = actor(me, [], ids[0])
+    const r = await revokeBulkSessions(meActor, { where: { state: 'all' }, except: keep, includeCurrent: true }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.revoked).toBe(10)
+    expect(r.value.requested).toBe(10)
+    const left = await deps.db.resource(session).count(SERVER, { filter: { field: 'auth_id', op: 'eq', value: me } })
+    expect(left).toBe(250)
+  })
+})
+
+test('except: ровно SESSIONS_BULK_IDS_LIMIT принят — фильтр строится, а не auth.limit', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, 'j'.repeat(43))
+    await device(deps.db, me, { jti: 'limit-500-token-00001', name: 'одна' })
+    // 500 случайных uuid не совпадают с реальной строкой: срез не пуст,
+    // отзыв должен пройти (5 порций notIn), а не упасть validation/auth.limit.
+    const except = Array.from({ length: SESSIONS_BULK_IDS_LIMIT }, () => crypto.randomUUID())
+    const r = await revokeBulkSessions(actor(me, []), { where: { state: 'all' }, except, includeCurrent: true }, deps)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.revoked).toBe(1)
+    expect(r.value.requested).toBe(1)
+  })
+})

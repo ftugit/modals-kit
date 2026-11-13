@@ -200,7 +200,9 @@ export const session = defineResource({
   fields: {
     id: f.uuid({
       read: () => true, createValue: () => crypto.randomUUID(), immutable: true,
-      orderable: true, filters: ['eq', 'ne'], db: { default: 'gen_random_uuid()' },
+      // `notIn` — объявленный оператор для исключений серверного набора отзыва
+      // (P1-8): домен собирает `except` порциями, а не сотнями отдельных `ne`.
+      orderable: true, filters: ['eq', 'ne', 'notIn'], db: { default: 'gen_random_uuid()' },
     }),
     auth_id: field(s.uuid(), {
       read: () => true, create: [...SESSION_SERVER_WRITE], required: true,

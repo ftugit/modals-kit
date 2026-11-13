@@ -443,7 +443,14 @@ export async function revokeBulkSessions(
   } else if (!args.includeCurrent && actor.sessionId?.trim()) {
     and.push({ field: 'id', op: 'ne', value: actor.sessionId.trim() })
   }
-  for (const id of except) and.push({ field: 'id', op: 'ne', value: id })
+  // Исключения — объявленный `notIn` порциями по техническому лимиту значений
+  // (`db.limits.inValues`), а не сотни отдельных `ne`: 500 `ne` превышают
+  // `filterNodes` боевого драйвера и падают validation ещё до SQL (P1-8).
+  // Порция ≤ inValues даёт один узел фильтра на кусок; 500 id → 5 узлов.
+  const chunk = deps.db.limits.inValues
+  for (let i = 0; i < except.length; i += chunk) {
+    and.push({ field: 'id', op: 'notIn', value: except.slice(i, i + chunk) })
+  }
   const filter: Filter = and.length === 1 ? and[0]! : { and }
   const ctx = ctxOf(actor)
 
