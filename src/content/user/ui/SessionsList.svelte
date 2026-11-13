@@ -151,6 +151,10 @@
     ),
   )
   let appliedKey = $state('')
+  // Живые строки/счёт из стора пагинатора: getState сам по себе не реактивен,
+  // поэтому набор для выхода обновляется подпиской, а не чтением один раз.
+  let liveRows = $state<SessionDeviceView[] | null>(null)
+  let liveTotal = $state<number | null>(null)
 
   $effect(() => {
     if (!filterStore) return
@@ -160,6 +164,8 @@
       const pageSize = state.pageSize || SESSIONS_PAGE_SIZE
       appliedValues = valuesFrom(extra, pageSize)
       appliedKey = SESSIONS_FILTER_KEYS.map((key) => String(extra[key] ?? '')).join('|') + '|' + pageSize
+      liveRows = Object.values(state.pages).flat()
+      liveTotal = state.totalItems ?? null
     }
     sync()
     const unsub = filterStore.subscribe?.(SESSIONS_NAME, sync)
@@ -195,10 +201,7 @@
   // страницы берутся из стора пагинатора; без стора (модалка без sidebar) —
   // первая порция снапшота.
   const exitRows = $derived.by(() => {
-    if (filterStore) {
-      const state = getState<SessionDeviceView>(filterStore, SESSIONS_NAME)
-      return Object.values(state.pages).flat()
-    }
+    if (filterStore) return liveRows ?? Object.values(initial?.snapshot?.pages ?? {}).flat()
     return Object.values(initial?.snapshot?.pages ?? {}).flat()
   })
   const currentId = $derived(exitRows.find((row) => row.current)?.id ?? null)
@@ -221,10 +224,7 @@
     sto: exitValues.sto,
   })
   const exitTotal = $derived.by(() => {
-    if (filterStore) {
-      const state = getState<SessionDeviceView>(filterStore, SESSIONS_NAME)
-      return state.totalItems ?? initial?.snapshot?.totalItems ?? 0
-    }
+    if (filterStore) return liveTotal ?? initial?.snapshot?.totalItems ?? 0
     return initial?.snapshot?.totalItems ?? exitRows.length
   })
 
