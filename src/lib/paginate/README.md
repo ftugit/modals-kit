@@ -84,6 +84,40 @@ Headless-библиотека пагинации с разделением frame
   обязателен, озвучку загрузки и ошибок ставит UI-компонент `<LiveStatus {name} />`.
 - **Готовые UI-компоненты**: `src/components/paginator/` (`PageList`, `PageColumns`, `PageSlice`, `PageDivider`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `ErrorRow`, `ResetButton`, `LiveStatus`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
 
+## Extra-ключи списка — одно описание (`defineListExtras`)
+
+Хост списка объявляет свои extra-ключи один раз через `defineListExtras({ searchable, internal, defaults })`
+(`list-extras.ts`), а не перечисляет их отдельно в источнике и пагинаторе:
+
+- `searchable` — адресная спека (`ExtraSearchSpec`): ключи, которые живут в URL
+  (`extraSearch` URL-адаптера) и влияют на выдачу. Сюда же входит `q` родного
+  поиска и адресные срезы (`ids`), если они есть.
+- `internal` — внутренние ключи `extra` (`_uid`, `_journal`): влияют на выдачу,
+  но в адрес НЕ пишутся — цель списка задаёт путь/проп, а не адресная строка.
+- `defaults` — умолчания адресных ключей (в адрес не пишутся).
+
+Из описания выводятся `filterKeys` (что понимает источник → `defineSource.filters`)
+и `reloadKeys` (смена чего пересобирает выдачу → `definePaginator.reloadKeys`).
+Внутренние ключи объявляются один раз и в `extraSearch` не попадают by construction.
+`q` зарезервирован под родной поиск: `defineSource` сам добавляет его в `extraKeys`
+при объявленном `search`, поэтому в `filterKeys` он не входит (иначе задвоился бы),
+но в `reloadKeys` входит. Пересечение адресного и внутреннего ключа — ошибка
+описания (бросает в разработке).
+
+```ts
+const extras = defineListExtras({
+  searchable: SESSIONS_EXTRA_SEARCH,
+  internal: [SESSIONS_INTERNAL_UID_KEY, SESSIONS_INTERNAL_JOURNAL_KEY],
+  defaults: SESSIONS_EXTRA_DEFAULTS,
+})
+defineSource({ filters: [...extras.filterKeys], /* … */ })
+definePaginator({ reloadKeys: [...extras.reloadKeys], adapter: createUrlAdapter({ extraSearch: extras.extraSearch, /* … */ }) })
+```
+
+Так мигрированы три хоста: `ui/sessions-list/source.ts` (`SESSIONS_EXTRAS`),
+`ui/blocks-list/source.ts` (`BLOCKS_EXTRAS`), `ui/seed-users/source.ts`
+(`SEED_USERS_EXTRAS`, внутренних ключей нет).
+
 ## Быстрый старт
 
 ### Определение пагинатора
@@ -158,6 +192,8 @@ definePaginator({
     новый объект (носитель/компонент переспросил источник) заменяет её свежей
     первой порцией.
   - `registry.ts` — реестр экземпляров пагинаторов по имени.
+  - `list-extras.ts` — `defineListExtras`: одно описание extra-ключей списка
+    (адресные + внутренние), из которого выводятся `filterKeys`/`reloadKeys` (см. выше).
   - `core.ts` — операции ядра (`initPaginator`, `goToPage`, `loadMore`, `setExtra` с атомарным `{ pageSize }`, `setPageSize`, `patchItems`, `invalidatePaginator` с `hasPaginator`-защитой и др.) и привязка сессионного транспорта (`setSessionTransport`, `transportOf`).
   - `scopes.ts` — хранилища, изолированные по ключу носителя (`acquireScopedStore`, `releaseScopedStore`, `findScopedStore`, `listLiveStores`): одно имя пагинатора
     на разных экранах (глобальный список, персональный, пикер) не делит ячейку,

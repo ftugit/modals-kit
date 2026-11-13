@@ -13,6 +13,7 @@
 import { preloadData } from '$app/navigation'
 import {
   createUrlAdapter,
+  defineListExtras,
   definePaginator,
   defineSource,
   extraField,
@@ -77,6 +78,17 @@ export const SESSIONS_EXTRA_DEFAULTS = {
   sto: '',
 } as const
 
+/**
+ * Одно описание extra-ключей списка (P2-2): адресные (`SESSIONS_EXTRA_SEARCH`)
+ * и внутренние (`_uid`, `_journal`). `filterKeys`/`reloadKeys` выводятся отсюда,
+ * внутренние ключи больше не перечисляются вручную в источнике и пагинаторе.
+ */
+export const SESSIONS_EXTRAS = defineListExtras({
+  searchable: SESSIONS_EXTRA_SEARCH,
+  internal: [SESSIONS_INTERNAL_UID_KEY, SESSIONS_INTERNAL_JOURNAL_KEY],
+  defaults: SESSIONS_EXTRA_DEFAULTS,
+})
+
 /** Данные `load` роута описаны рядом с моделью (`types.ts`), не второй раз. */
 import type { SessionsRouteData } from '../../types.js'
 export type { SessionsRouteData }
@@ -135,7 +147,7 @@ export const sessionsSource = defineSource<SessionDeviceView>({
     // по имени устройства не ищет), поэтому `search` не объявлен.
     texts: (r) => [r.deviceName ?? '', r.country ?? ''],
   },
-  filters: [...SESSIONS_FILTER_KEYS, SESSIONS_INTERNAL_UID_KEY, SESSIONS_INTERNAL_JOURNAL_KEY],
+  filters: [...SESSIONS_EXTRAS.filterKeys],
   totals: true,
   data: (look, input) => fetchSessionsPage(look.page, look.pageSize, input),
 })
@@ -144,8 +156,9 @@ export function ensureSessionsPaginator(): string {
   if (!hasPaginator(SESSIONS_NAME)) {
     definePaginator({
       name: SESSIONS_NAME,
-      // Любой фильтр — новая выдача с первой порции.
-      reloadKeys: [...SESSIONS_FILTER_KEYS, SESSIONS_INTERNAL_UID_KEY, SESSIONS_INTERNAL_JOURNAL_KEY],
+      // Любой extra-ключ (адресный или внутренний) — новая выдача с первой
+      // порции; состав выведен из одного описания SESSIONS_EXTRAS (P2-2).
+      reloadKeys: [...SESSIONS_EXTRAS.reloadKeys],
       adapter: createUrlAdapter({
         name: SESSIONS_NAME,
         source: sessionsSource,

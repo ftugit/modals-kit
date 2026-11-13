@@ -10,6 +10,7 @@
 import { preloadData } from '$app/navigation'
 import {
   createUrlAdapter,
+  defineListExtras,
   definePaginator,
   defineSource,
   extraField,
@@ -61,6 +62,16 @@ export const BLOCKS_EXTRA_DEFAULTS = {
   scopes: '',
   uids: '',
 } as const
+
+/**
+ * Одно описание extra-ключей списка (P2-2): адресные (`BLOCKS_EXTRA_SEARCH`)
+ * и внутренний `_uid`. `filterKeys`/`reloadKeys` выводятся отсюда.
+ */
+export const BLOCKS_EXTRAS = defineListExtras({
+  searchable: BLOCKS_EXTRA_SEARCH,
+  internal: [BLOCKS_INTERNAL_UID_KEY],
+  defaults: BLOCKS_EXTRA_DEFAULTS,
+})
 
 export interface BlocksRouteData {
   snapshot: PaginatorState<BlockView> | null
@@ -136,7 +147,7 @@ export const blocksSource = defineSource<BlockView>({
     title: (r) => `${r.scope}: ${r.reason}`,
     texts: (r) => [r.scope, r.reason, r.authId],
   },
-  filters: [...BLOCKS_FILTER_KEYS, BLOCKS_INTERNAL_UID_KEY],
+  filters: [...BLOCKS_EXTRAS.filterKeys],
   totals: true,
   data: (look, input) => fetchBlocksPage(look.page, look.pageSize, input),
 })
@@ -145,7 +156,8 @@ export function ensureBlocksPaginator(): string {
   if (!hasPaginator(BLOCKS_NAME)) {
     definePaginator({
       name: BLOCKS_NAME,
-      reloadKeys: [...BLOCKS_FILTER_KEYS, BLOCKS_INTERNAL_UID_KEY],
+      // Состав выведен из одного описания BLOCKS_EXTRAS (P2-2).
+      reloadKeys: [...BLOCKS_EXTRAS.reloadKeys],
       adapter: createUrlAdapter({
         name: BLOCKS_NAME,
         source: blocksSource,

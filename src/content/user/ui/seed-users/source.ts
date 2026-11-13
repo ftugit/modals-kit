@@ -17,6 +17,7 @@
 import { preloadData } from '$app/navigation'
 import {
   createUrlAdapter,
+  defineListExtras,
   definePaginator,
   defineSource,
   extraField,
@@ -89,6 +90,17 @@ export const SEED_USERS_EXTRA_SEARCH: ExtraSearchSpec = {
 
 /** Дефолты `extra`: значения по умолчанию в адрес не пишутся — чистый URL. */
 export const SEED_USERS_EXTRA_DEFAULTS = { q: '', ord: 'created-desc', state: 'active', nick: '', ids: '' } as const
+
+/**
+ * Одно описание extra-ключей списка (P2-2). У списка аккаунтов внутренних
+ * ключей нет: всё адресное (`q`, фильтры, срез `ids`). `filterKeys`/`reloadKeys`
+ * выводятся отсюда; `SEED_USERS_FILTER_KEYS` остаётся списком ключей формы
+ * (без `q`/`ids`) для сборки адреса догрузки и пропа `keys` компонента.
+ */
+export const SEED_USERS_EXTRAS = defineListExtras({
+  searchable: SEED_USERS_EXTRA_SEARCH,
+  defaults: SEED_USERS_EXTRA_DEFAULTS,
+})
 
 /**
  * Данные `load` роута `/users` — единственный источник показа списка.
@@ -167,7 +179,7 @@ export const seedUsersSource = defineSource<SeedUserView>({
   // сужает выдачу сервер (подстрока seed/id, при включённом параметре — ещё
   // никнейма), а не клиент по загруженным порциям.
   search: { minLength: 2 },
-  filters: [...SEED_USERS_FILTER_KEYS, SEED_USERS_IDS_KEY],
+  filters: [...SEED_USERS_EXTRAS.filterKeys],
   totals: true,
   data: (look, input) => fetchSeedUsersPage(look.page, look.pageSize, input),
 })
@@ -180,10 +192,10 @@ export function ensureSeedUsersPaginator(): string {
   if (!hasPaginator(SEED_USERS_NAME)) {
     definePaginator({
       name: SEED_USERS_NAME,
-      // Поиск и любой фильтр — новая выдача с первой порции. Без `reloadKeys`
-      // `setExtra` только правил бы состояние: ни перезапроса, ни смены адреса
-      // (прецедент — `reloadKeys` демо-пагинатора и списка постов).
-      reloadKeys: ['q', ...SEED_USERS_FILTER_KEYS, SEED_USERS_IDS_KEY],
+      // Поиск и любой extra-ключ — новая выдача с первой порции; состав выведен
+      // из одного описания SEED_USERS_EXTRAS (P2-2). Без `reloadKeys` `setExtra`
+      // только правил бы состояние: ни перезапроса, ни смены адреса.
+      reloadKeys: [...SEED_USERS_EXTRAS.reloadKeys],
       adapter: createUrlAdapter({
         name: SEED_USERS_NAME,
         source: seedUsersSource,
