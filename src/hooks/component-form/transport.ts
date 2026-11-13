@@ -106,6 +106,18 @@ export function kitRedirectLocation(body: unknown): string | null {
   return /^\/(?!\/)/.test(location) ? location : null
 }
 
+/**
+ * Адрес действия компонент-формы обязан быть абсолютным (корневой путь `/…`),
+ * а не относительным к странице-носителю: модалка открывается поверх любого
+ * адреса, и `./?/…` ушёл бы на носитель, где нужного экшена нет (P2-1).
+ * Внешний адрес и `//хост` — тоже не действие формы. Возвращает нормализованный
+ * путь либо `null` (транспорт откажет ДО сетевого вызова).
+ */
+export function kitActionTarget(url: string): string | null {
+  const target = typeof url === 'string' ? url.trim() : ''
+  return /^\/(?!\/)/.test(target) ? target : null
+}
+
 /** Успех, собранный на месте: действие применено, показать нечего. */
 export function appliedResult(envelope: Envelope, status: number): Result {
   return {
@@ -156,13 +168,30 @@ export function kitActionTransport(
          разберёт как обычную ошибку входа */
     }
     const targetUrl = typeof path === 'function' ? path() : path
+    // Инвариант P2-1: относительный адрес (`./?/…`) ушёл бы на страницу-носитель.
+    // Отказываем до fetch — действие не применено, запрос не отправлен.
+    const target = kitActionTarget(targetUrl)
+    if (!target) {
+      return {
+        kind: 'result',
+        result: {
+          v: 1, ...req.envelope, values: {}, ok: false, status: 0, outcome: 'not-applied',
+          errors: [{
+            id: '*:transport.action-relative:0', code: 'transport.action-relative',
+            message: 'Адрес действия формы должен быть абсолютным (корневой путь), а не относительным к странице-носителю',
+            origin: 'external',
+          }],
+          from: 'fetch',
+        },
+      }
+    }
     let res: Response
     try {
       // Ход долгой отправки — строками ответа (`#lib/fetch` `readTaskStream`):
       // канал тот же, что у `jsonTransport`, иначе форма, у которой база
       // запускается первым запросом, молчала бы о прогрессе.
       const report = req.report
-      res = await fetchWithTask(targetUrl, {
+      res = await fetchWithTask(target, {
         method: 'POST',
         body: req.data,
         headers: { accept: 'application/json', [FORM_ID_HEADER]: req.envelope.formId },

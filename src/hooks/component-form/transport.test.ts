@@ -2,7 +2,7 @@
 // действие, а не «неизвестный ответ». Без этого форма показывала
 // «сервер ответил HTTP 200» там, где выход уже выполнен.
 import { describe, expect, test, vi } from 'vitest'
-import { kitActionTransport, kitRedirectLocation } from './transport.js'
+import { kitActionTarget, kitActionTransport, kitRedirectLocation } from './transport.js'
 
 const goto = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('$app/navigation', () => ({ goto }))
@@ -70,5 +70,68 @@ describe('kitActionTransport: редирект экшена', () => {
     if (out.kind !== 'result') return
     expect(out.result.ok).toBe(false)
     expect(out.result.outcome).toBe('unknown')
+  })
+})
+
+// P2-1: инвариант абсолютного action. Компонент-форма открывается поверх любого
+// адреса-носителя, поэтому `./?/…` ушёл бы на носитель, где нужного экшена нет.
+// Транспорт обязан отказать ДО fetch; тест падает, если страж снять.
+describe('kitActionTransport: action абсолютный, не относительно носителя (P2-1)', () => {
+  const req = () => ({
+    envelope: { ...envelope },
+    data: new FormData(),
+    accept: ['application/json'],
+    signal: new AbortController().signal,
+  })
+
+  test('kitActionTarget: корневой путь проходит, относительный/внешний — нет', () => {
+    expect(kitActionTarget('/user/logout?/exit')).toBe('/user/logout?/exit')
+    expect(kitActionTarget('/user/sessions?/others')).toBe('/user/sessions?/others')
+    expect(kitActionTarget('./?/exit')).toBeNull()
+    expect(kitActionTarget('?/exit')).toBeNull()
+    expect(kitActionTarget('user/logout?/exit')).toBeNull()
+    expect(kitActionTarget('//зло.example/?/exit')).toBeNull()
+    expect(kitActionTarget('https://зло.example/?/exit')).toBeNull()
+    expect(kitActionTarget('')).toBeNull()
+  })
+
+  test('относительный action не отправляется: отказ до fetch, not-applied', async () => {
+    const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const out = await kitActionTransport('./?/exit')(req())
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(out.kind).toBe('result')
+    if (out.kind !== 'result') return
+    expect(out.result.ok).toBe(false)
+    expect(out.result.outcome).toBe('not-applied')
+    expect(out.result.errors[0]?.code).toBe('transport.action-relative')
+  })
+
+  test('геттер адреса проверяется в момент отправки, а не связывания', async () => {
+    const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const out = await kitActionTransport(() => '?/exit')(req())
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(out.kind).toBe('result')
+    if (out.kind !== 'result') return
+    expect(out.result.outcome).toBe('not-applied')
+  })
+
+  test('абсолютный action отправляется на свой адрес (позитивный контроль)', async () => {
+    const fetchSpy = vi.fn(async (url: string | URL | Request, _init?: RequestInit) =>
+      new Response(JSON.stringify({ type: 'success', status: 200, data: '' }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await kitActionTransport('/user/logout?/exit')(req())
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toBe('/user/logout?/exit')
   })
 })
