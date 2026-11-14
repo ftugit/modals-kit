@@ -39,3 +39,27 @@ export function parsePickerStep(raw: string | null | undefined): UserPickerStep 
   const value = raw?.trim().toLowerCase()
   return STEPS.includes(value as UserPickerStep) ? (value as UserPickerStep) : 'pick'
 }
+
+/**
+ * Отметка строки в пикере: поставить или снять. Предел тот же, что у адреса:
+ * набор сверх предела не растёт молча — лишняя отметка просто не добавляется.
+ */
+export function togglePicked(
+  list: readonly string[],
+  id: string,
+  limit: number = USER_PICKER_IDS_MAX,
+): string[] {
+  if (list.includes(id)) return list.filter((v) => v !== id)
+  if (!UUID_RE.test(id) || list.length >= limit) return [...list]
+  return [...list, id]
+}
+
+/**
+ * Отмеченные юзеры становятся срезом списка: шаг «выбранные» переспрашивает
+ * порцию параметром `users.ids` (S21). Пустой набор — это отсутствие среза,
+ * а не пустая строка: иначе список примет пустоту за запрос.
+ */
+export function pickedSlice(list: readonly string[]): Record<string, string> {
+  const joined = list.join(',')
+  return joined ? { 'users.ids': joined } : {}
+}

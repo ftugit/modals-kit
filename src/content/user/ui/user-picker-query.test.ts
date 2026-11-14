@@ -1,6 +1,12 @@
 // Разбор адреса пикера: мусор, предел и шаг. Чистые функции — без SvelteKit.
 import { describe, expect, test } from 'vitest'
-import { parsePickedIds, parsePickerStep, USER_PICKER_IDS_MAX } from './user-picker-query.js'
+import {
+  parsePickedIds,
+  parsePickerStep,
+  pickedSlice,
+  togglePicked,
+  USER_PICKER_IDS_MAX,
+} from './user-picker-query.js'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -43,5 +49,31 @@ describe('parsePickerStep: шаг из адреса', () => {
     expect(parsePickerStep('')).toBe('pick')
     expect(parsePickerStep(null)).toBe('pick')
     expect(parsePickerStep(undefined)).toBe('pick')
+  })
+})
+
+describe('отмеченные юзеры становятся срезом (S21)', () => {
+  test('отметка ставится и снимается, порядок отметок сохраняется', () => {
+    const one = togglePicked([], A)
+    expect(one).toEqual([A])
+    expect(togglePicked(one, B)).toEqual([A, B])
+    expect(togglePicked([A, B], A)).toEqual([B])
+  })
+
+  test('срез — это `users.ids`, пустой набор среза не создаёт', () => {
+    expect(pickedSlice([A, B])).toEqual({ 'users.ids': `${A},${B}` })
+    expect(pickedSlice([])).toEqual({})
+  })
+
+  test('предел набора и мусор: отметка не расширяет набор сверх предела', () => {
+    const full = Array.from({ length: USER_PICKER_IDS_MAX }, (_, i) =>
+      `44444444-4444-4444-8444-${String(i).padStart(12, '0')}`,
+    )
+    const next = togglePicked(full, B)
+    expect(next).toHaveLength(USER_PICKER_IDS_MAX)
+    expect(next).toEqual(full)
+    // Негативный контроль: без предела набор вырос бы до 501.
+    expect(togglePicked(full, B, 501)).toHaveLength(USER_PICKER_IDS_MAX + 1)
+    expect(togglePicked([], 'не-uuid')).toEqual([])
   })
 })

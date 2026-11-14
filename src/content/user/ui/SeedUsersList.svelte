@@ -31,6 +31,7 @@
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
   import { seedFilterLabels, seedFilterText } from './seed-users/filters-form.js'
   import SeedUserCard from './seed-users/SeedUserCard.svelte'
+  import { togglePicked } from './user-picker-query.js'
   import {
     ensureSeedUsersPaginator,
     SEED_USERS_EXTRA_DEFAULTS,
@@ -57,6 +58,14 @@
     rowAttrs?: (user: SeedUserView) => LinkAttrs
     /** Оформление выбранных строк: смысл выбора — у механики носителя. */
     isSelected?: (id: string) => boolean
+    /**
+     * Внешний набор выбранных (пикер): список сам включает режим отметок, а
+     * выбор хранит носитель. Свои кнопки набора тогда не рисуются — действия
+     * у пикера свои.
+     */
+    picked?: readonly string[] | null
+    /** Изменение внешнего набора: список сообщает, носитель решает. */
+    onPicked?: (ids: string[]) => void
     variant?: UserSurfaceVariant
     class?: string
     /** Зона sidebar. Страница передаёт, модалка — нет. */
@@ -70,6 +79,8 @@
     onAcl,
     rowAttrs,
     isSelected,
+    picked = null,
+    onPicked,
     variant = 'plain',
     class: className,
     sidebar,
@@ -79,6 +90,17 @@
   ensureSeedUsersPaginator()
 
   const selection = useListSelection({ sliceKey: () => `${vault.principal ?? ''}:seed-users` })
+
+  // Внешний набор: список в режиме отметок, состояние — у носителя (пикер).
+  const external = $derived(onPicked !== undefined && picked !== null)
+  const pickedSet = $derived(new Set(picked ?? []))
+  const checkMode = $derived(external || selection.mode)
+  const isChecked = (id: string) => (external ? pickedSet.has(id) : selection.isSelected(id))
+  function toggleCheck(id: string) {
+    if (!external) return selection.toggle(id)
+    // Предел и форма id — общие с адресом пикера: одно правило на оба носителя.
+    onPicked?.(togglePicked([...pickedSet], id))
+  }
 
   // Вход в журнал сессий — только тому, кто вправе читать чужие устройства
   // (круг журнала). Право смотрит та же модель, что и сам экран.
@@ -239,14 +261,16 @@
     {/if}
   {/snippet}
   {#snippet controls()}
-    <Button
-      variant="outline"
-      size="sm"
-      data-testid="seed-users-select-toggle"
-      onclick={() => (selection.mode ? selection.exit() : selection.enter())}
-    >
-      {selection.mode ? 'Готово' : 'Выбрать'}
-    </Button>
+    {#if !external}
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="seed-users-select-toggle"
+        onclick={() => (selection.mode ? selection.exit() : selection.enter())}
+      >
+        {selection.mode ? 'Готово' : 'Выбрать'}
+      </Button>
+    {/if}
     {#if selection.mode}
       <span class="text-sm text-muted-foreground" data-testid="seed-users-selected-count">
         Выбрано: {selection.count}
@@ -303,11 +327,11 @@
     {/if}
   {/snippet}
   {#snippet row(user, ctx)}
-    {#if selection.mode}
+    {#if checkMode}
       <label class="flex items-center gap-2">
         <Checkbox
-          checked={selection.isSelected(user.id)}
-          onchange={() => selection.toggle(user.id)}
+          checked={isChecked(user.id)}
+          onchange={() => toggleCheck(user.id)}
           data-testid="seed-user-checkbox"
         />
         <ListingRow attrs={attrsOf(user)} id={user.id} testId="seed-user-row" selected={ctx.selected}>

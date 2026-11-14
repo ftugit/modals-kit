@@ -39,7 +39,7 @@
   import Acl, { type UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersList from './SeedUsersList.svelte'
   import { SEED_USERS_NAME, type SeedUsersRouteData } from './seed-users/source.js'
-  import { parsePickedIds, parsePickerStep } from './user-picker-query.js'
+  import { parsePickedIds, parsePickerStep, pickedSlice, togglePicked } from './user-picker-query.js'
   import type { AuthErrorCode } from '../error.js'
   import type { SeedUserView } from '../types.js'
 
@@ -108,20 +108,27 @@
     }
   }
 
-  function toggleLocal(id: string) {
+  /**
+   * Единственная точка правки набора в модалке: её зовут и отметки списка
+   * (`onPicked`), и щелчок по строке. Отдельной реализации выбора у пикера нет.
+   */
+  function applyPicked(ids: readonly string[]) {
     if (mode === 'single') {
-      localPicked = localPicked[0] === id ? [] : [id]
+      const last = ids[ids.length - 1]
+      const was = localPicked.length === 1 && localPicked[0] === last
+      localPicked = last && !was ? [last] : []
     } else {
-      const next = new Set(localPicked)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      localPicked = [...next]
+      localPicked = [...ids]
     }
     if (localStep === 'chosen' && hasPaginator(SEED_USERS_NAME)) {
       void setExtra(store, SEED_USERS_NAME, {
         ids: localPicked.length ? localPicked.join(',') : undefined,
       })
     }
+  }
+
+  function toggleLocal(id: string) {
+    applyPicked(togglePicked(localPicked, id))
   }
 
   const rowAttrs = (user: SeedUserView): LinkAttrs => {
@@ -171,8 +178,9 @@
     const sp = new URLSearchParams(url.searchParams.toString())
     sp.set('upicks', step)
     sp.delete('users')
-    if (withSlice && pickedSet.size) sp.set('users.ids', [...pickedSet].join(','))
-    else sp.delete('users.ids')
+    const slice = withSlice ? pickedSlice([...pickedSet]) : {}
+    sp.delete('users.ids')
+    for (const [key, value] of Object.entries(slice)) sp.set(key, value)
     return `${url.pathname}?${sp.toString()}`
   }
 
@@ -336,6 +344,8 @@
             initial={initialUsers}
             {rowAttrs}
             isSelected={(id) => pickedSet.has(id)}
+            picked={isModalMode ? activeList : null}
+            onPicked={isModalMode ? applyPicked : undefined}
             onAcl={handleAcl}
             class={isModalMode ? 'min-h-0 flex-1' : undefined}
           />
@@ -374,6 +384,8 @@
               initial={initialUsers}
               {rowAttrs}
               isSelected={(id) => pickedSet.has(id)}
+              picked={isModalMode ? activeList : null}
+              onPicked={isModalMode ? applyPicked : undefined}
               onAcl={handleAcl}
               class={isModalMode ? 'min-h-0 flex-1' : undefined}
             />
