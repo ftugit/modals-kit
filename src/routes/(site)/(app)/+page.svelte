@@ -3,6 +3,7 @@
   import { useHeadSeo } from '#components/shell/index.js'
   import { asLink } from '#hooks/links/index.js'
   import SeedUsersEntry from '#content/user/ui/SeedUsersEntry.svelte'
+  import SiteListsEntry from '#content/user/ui/SiteListsEntry.svelte'
   import StorageServersEntry from '#content/storage-servers/ui/StorageServersEntry.svelte'
   import { HOME_CARDS } from '../nav.js'
 
@@ -30,6 +31,7 @@
   <div class="mt-8 grid gap-4 sm:grid-cols-2">
     <SeedUsersEntry />
     <StorageServersEntry />
+    <SiteListsEntry />
   </div>
   {#if HOME_CARDS.length > 0}
     <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
