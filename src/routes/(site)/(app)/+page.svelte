@@ -6,6 +6,9 @@
   import SiteListsEntry from '#content/user/ui/SiteListsEntry.svelte'
   import StorageServersEntry from '#content/storage-servers/ui/StorageServersEntry.svelte'
   import { HOME_CARDS } from '../nav.js'
+  import type { PageProps } from './$types'
+
+  let { data }: PageProps = $props()
 
   useHeadSeo({
     title: 'modals-kit — главная',
@@ -31,7 +34,7 @@
   <div class="mt-8 grid gap-4 sm:grid-cols-2">
     <SeedUsersEntry />
     <StorageServersEntry />
-    <SiteListsEntry />
+    <SiteListsEntry entries={data.siteEntries} />
   </div>
   {#if HOME_CARDS.length > 0}
     <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
