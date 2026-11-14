@@ -27,9 +27,14 @@ test('негативный контроль: молчаливое вычитан
       path: 'src/content/user/ui/Fixture.svelte',
       source: 'const ids = raw.filter((id) => Boolean(id) && id !== vault.principal)',
     },
+    {
+      path: 'src/content/user/ui/BlockBody.svelte',
+      source: 'if (!id || (selfId && id === selfId)) continue',
+    },
   ])
-  assert.equal(hits.length, 1, 'вычитание себя в filter должно ловиться')
+  assert.equal(hits.length, 2, 'вычитание себя ловится и через filter, и через continue')
   assert.match(hits[0].rule, /вычитание/)
+  assert.match(hits[1].rule, /вычитание/)
 })
 
 test('сравнение зеркала для показа кнопки не ловится', () => {

@@ -6,7 +6,8 @@
    *  - В режиме `create` показывает доступные сферы `assignableScopes`, причину,
    *    срок (`forever` / `until`), а при открытии из глобального списка без `uid`
    *    строит выбор по схеме `1 + 3`: `field.multiselect` (`subjects`), предзаполненный
-   *    из фильтра `uids` за вычетом `vault.principal`, кнопку выбора пользователей
+   *    из фильтра `uids` без правки набора на клиенте (своя цель видна и уходит на сервер,
+   *    который отказывает внятным кодом), кнопку выбора пользователей
    *    `user.picker` (`multiple`), закрытую через `useGrants([grants(auth).select, grants(block).insert])`,
    *    и защиту от случайного массового бана — кнопку с удержанием `HoldButton`, когда
    *    выбрано больше одного пользователя (`N > 1`).
@@ -45,6 +46,7 @@
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { USER_PICKER_CHANNEL_PREFIX, type UserPickerPayload } from '../UserPicker.svelte'
   import { createBlockFormDescription } from './form.js'
+  import { normalizeSubjects, resolveSeedSubjects } from './subjects.js'
 
   const gBlock = grants(blockResource)
   const gAuth = grants(authResource)
@@ -122,33 +124,12 @@
 
   const hasLivePrincipal = $derived(vault.principal !== null)
 
-  function normalizeSubjects(raw: readonly string[], selfId: string | null): string[] {
-    const out: string[] = []
-    const seen = new Set<string>()
-    for (const item of raw) {
-      for (const part of String(item ?? '').split(',')) {
-        const id = part.trim()
-        if (!id || (selfId && id === selfId) || seen.has(id)) continue
-        seen.add(id)
-        out.push(id)
-      }
-    }
-    return out
-  }
-
-  function resolveSeedSubjects(
+  /** Начальный набор: источники в порядке приоритета, без правки по «это я». */
+  function seedSubjects(
     curSubjects: readonly string[] | undefined,
-    curSubj: string,
-    selfId: string | null,
+    curSubj: string | null | undefined,
   ): string[] {
-    if (curSubjects && curSubjects.length > 0) {
-      return normalizeSubjects(curSubjects, selfId)
-    }
-    if (curSubj.trim()) {
-      return normalizeSubjects([curSubj], selfId)
-    }
-    const fromFilter = String(currentSearch()['blocks.uids'] ?? '')
-    return fromFilter ? normalizeSubjects([fromFilter], selfId) : []
+    return resolveSeedSubjects(curSubjects, curSubj, String(currentSearch()['blocks.uids'] ?? ''))
   }
 
   function toDatetimeLocal(ms: number): string {
@@ -207,13 +188,13 @@
   let knownSubjectIds = $state<string[]>(
     untrack(() =>
       mode === 'create' && !fixedUid
-        ? resolveSeedSubjects(initialSubjects, initialSubject, vault.principal)
+        ? seedSubjects(initialSubjects, initialSubject)
         : [],
     ),
   )
 
   function mergeKnownSubjects(ids: readonly string[]) {
-    const merged = normalizeSubjects([...knownSubjectIds, ...ids], vault.principal)
+    const merged = normalizeSubjects([...knownSubjectIds, ...ids])
     if (merged.length !== knownSubjectIds.length || merged.some((id, i) => id !== knownSubjectIds[i])) {
       knownSubjectIds = merged
     }
@@ -229,7 +210,7 @@
     preserveDraft = false,
   ): string {
     if (curMode === 'create') {
-      const seededSubjects = curUid ? [] : resolveSeedSubjects(curSubjects, curSubj, vault.principal)
+      const seededSubjects = curUid ? [] : seedSubjects(curSubjects, curSubj)
       const k = `create:${curUid ?? ''}:${seededSubjects.join(',')}:${cData?.assignableScopes?.[0] ?? ''}`
       fBlockId?.onInput('')
       fSubject?.onInput(curUid ?? '')
@@ -263,7 +244,7 @@
 
   let lastEmittedSubjectsCsv = untrack(() =>
     (mode === 'create' && !fixedUid
-      ? resolveSeedSubjects(initialSubjects, initialSubject, vault.principal)
+      ? seedSubjects(initialSubjects, initialSubject)
       : []
     ).join(','),
   )
@@ -292,7 +273,7 @@
     const curSubj = initialSubject
     const seededSubjects =
       curMode === 'create' && !curUid
-        ? resolveSeedSubjects(curSubjects, curSubj, vault.principal)
+        ? seedSubjects(curSubjects, curSubj)
         : []
     const nextKey =
       curMode === 'create'
@@ -321,7 +302,7 @@
       | undefined
     if (!raw || raw.seq <= lastPickerSeq) return
     lastPickerSeq = raw.seq
-    const pickedIds = normalizeSubjects(raw.ids, vault.principal)
+    const pickedIds = normalizeSubjects(raw.ids)
     untrack(() => {
       mergeKnownSubjects(pickedIds)
       fSubjects?.onInput(pickedIds)
@@ -348,7 +329,7 @@
   const selectedSubjects = $derived.by(() => {
     const val = bound.f.subjects.value
     const list = Array.isArray(val) ? val.map(String) : []
-    return normalizeSubjects(list, vault.principal)
+    return normalizeSubjects(list)
   })
 
   $effect(() => {
@@ -360,7 +341,7 @@
   })
 
   const subjectOptionsCsv = $derived(
-    normalizeSubjects([...knownSubjectIds, ...selectedSubjects], vault.principal).join(','),
+    normalizeSubjects([...knownSubjectIds, ...selectedSubjects]).join(','),
   )
 
   const subjectOptions = $derived(
@@ -376,6 +357,10 @@
     return clone
   })
 
+  /** Своя цель в наборе: показываем пометку, набор не правим. */
+  const selfInSubjects = $derived(
+    Boolean(vault.principal) && selectedSubjects.includes(vault.principal as string),
+  )
   const targetCount = $derived(fixedUid ? 1 : selectedSubjects.length)
   const holdSeconds = $derived(createData?.holdSeconds ?? 2)
 
@@ -469,6 +454,13 @@
     {#if !fixedUid}
       <div class="flex flex-col gap-2" data-testid="block-create-subject-row">
         <Field of={subjectsFieldView} />
+        {#if selfInSubjects}
+          <!-- Правило цели (S1): своя цель не прячется и не вычитается — она помечена,
+               решение остаётся за сервером, который отказывает внятным кодом. -->
+          <p class="text-xs text-muted-foreground" data-testid="block-create-self-note">
+            В наборе есть вы сами: себя заблокировать нельзя, сервер откажет по этой цели.
+          </p>
+        {/if}
         {#if canPickUsers}
           <div>
             <Button

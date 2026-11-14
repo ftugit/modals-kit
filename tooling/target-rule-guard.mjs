@@ -20,12 +20,18 @@ import { join } from 'node:path'
 
 const UI_DIR = 'src/content/user/ui'
 
+/** Признаки строки, которая правит состав набора. */
+const SET_RE = /filter\(|normalize|subjects|uids|continue/i
+
+/** Метка осознанного исключения из правила. */
+const ACCEPT = 'target-rule-ok:'
+
 /** Признаки строки, которая строит адрес. */
 const ADDRESS_RE = /href\(|\?\/revoke|\?\/rename/
 /** Клиентское зеркало авторизации. */
 const MIRROR_RE = /vault\.principal/
-/** Молчаливое вычитание себя. */
-const SUBTRACT_RE = /!==\s*(vault\.principal|selfId)/
+/** Молчаливое вычитание себя: и `!==`, и `===` (исключение через `continue`). */
+const SUBTRACT_RE = /(!==|===)\s*(vault\.principal|selfId)/
 
 /**
  * Найти нарушения правила цели.
@@ -37,7 +43,9 @@ export function findTargetRuleViolations(files, window = 3) {
   for (const { path, source } of files) {
     const lines = source.split('\n')
     lines.forEach((text, i) => {
-      if (text.includes('target-rule-ok:')) return
+      // Отключение действует на своей строке и на следующей: многострочные выражения
+      // не помещаются одной строкой, и метка должна стоять там, где её видно.
+      if (text.includes(ACCEPT) || lines[i - 1]?.includes(ACCEPT)) return
       // Адрес и зеркало часто стоят в одном многострочном выражении: смотрим
       // окно вокруг строки с адресом, а не только саму строку.
       if (ADDRESS_RE.test(text)) {
@@ -49,7 +57,7 @@ export function findTargetRuleViolations(files, window = 3) {
           return
         }
       }
-      if (SUBTRACT_RE.test(text) && /filter\(|normalize|subjects|uids/i.test(text)) {
+      if (SUBTRACT_RE.test(text) && SET_RE.test(text)) {
         out.push({ path, line: i + 1, rule: 'молчаливое вычитание цели из набора', text: text.trim() })
       }
     })

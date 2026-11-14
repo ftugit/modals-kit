@@ -67,3 +67,4 @@ it('при новом initial заново связывает форму тол�
     mock.preload.mockReset()
   }
 })
+
