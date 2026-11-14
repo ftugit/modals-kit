@@ -22,9 +22,10 @@
   import { SESSIONS_NAME } from '../sessions-list/source.js'
   import type { SessionDeleteRouteData } from '../../types.js'
   import { SESSION_DELETE_SLICE_KEYS, type SessionDeleteVariant } from '../../session-delete.js'
-  import { userSession } from '../../vault.svelte.js'
+  import { userSession, vault } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { sessionDeleteForm, sessionDeleteSummary, sliceFieldName } from './form.js'
+  import { logoutLocalForm } from '../logout/form.js'
 
   interface Props {
     /** Явный набор: одна строка карточки или отмеченные строки списка. */
@@ -34,6 +35,7 @@
     variant?: SessionDeleteVariant
     initial?: SessionDeleteRouteData | null
     action?: string
+    localAction?: string
     form?: { result?: Result } | null
     doneHref?: string
     onDone?: () => void
@@ -46,6 +48,7 @@
     variant = 'delete',
     initial = null,
     action,
+    localAction,
     form,
     doneHref,
     onDone,
@@ -65,6 +68,14 @@
     session: userSession,
   })
 
+  // Локальный выход (только logout): куки снимаются, сессия живёт.
+  const localBound = untrack(() => variant) === 'logout'
+    ? bindComponentForm(forms, logoutLocalForm, {
+        action: untrack(() => localAction) ?? '/user/logout?/local',
+        session: userSession,
+      })
+    : null
+
   mirrorToField(bound, 'ids', () => ids.join(','))
   mirrorToField(bound, 'variant', () => variant)
   for (const key of SESSION_DELETE_SLICE_KEYS) {
@@ -76,6 +87,18 @@
     bound.state.result?.data as { step?: string; revoked?: number | null } | undefined,
   )
   const done = $derived(resultData?.step === 'done')
+  // Неизвестный исход: форма вернула ошибку (в т.ч. retryable) — куки
+  // сохраняются, показываем повтор и «выйти только здесь» (только logout).
+  const failed = $derived(
+    bound.state.result?.outcome === 'unknown' ||
+      Boolean(bound.state.result && !bound.state.result.ok && !done),
+  )
+  let retriedSubmission = $state('')
+  const unknown = $derived(
+    variant === 'logout' &&
+      failed &&
+      bound.state.result?.submissionId !== retriedSubmission,
+  )
 
   $effect(() => {
     const r = bound.state.result
@@ -83,7 +106,18 @@
     if ((r.data as { step?: string } | undefined)?.step !== 'done') return
     lastHandledSubmission = r.submissionId
     void invalidatePaginator(SESSIONS_NAME)
+    // Выход: снимаем куки и память браузера (сценарий успеха).
+    if (variant === 'logout') vault.clear()
     onDone?.()
+  })
+
+  // Локальный выход: куки снял сервер, хранилище чистит клиент.
+  $effect(() => {
+    if (!localBound) return
+    const r = localBound.state.result
+    if (!r?.ok || r.submissionId === lastHandledSubmission) return
+    lastHandledSubmission = r.submissionId
+    vault.clear()
   })
 </script>
 
@@ -114,6 +148,39 @@
   <p class={cn('text-sm text-destructive', className)} data-testid="session-delete-too-many">
     Устройств в наборе больше предела ({initial.ids.length}). Сократите выбор — набор не усекается молча.
   </p>
+{:else if unknown}
+  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', className)} data-testid="session-delete-unknown">
+    <h2 class="text-lg font-semibold leading-tight tracking-tight">Исход неизвестен</h2>
+    <p class="text-sm text-muted-foreground">Повторите попытку или выйдите только на этом устройстве.</p>
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        class="rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:bg-destructive/90"
+        data-testid="session-delete-retry"
+        onclick={() => (retriedSubmission = bound.state.result?.submissionId ?? '')}
+      >
+        Повторить
+      </button>
+      {#if localBound}
+        <Form
+          id="user-logout-local"
+          form={localBound}
+          hiddenFields={localBound.hidden()}
+          class="inline-flex"
+        >
+          <button
+            type="submit"
+            name="intent"
+            value="local"
+            class="rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+            data-testid="session-delete-exit-here"
+          >
+            Выйти только здесь
+          </button>
+        </Form>
+      {/if}
+    </div>
+  </div>
 {:else}
   <Form
     id="user-session-delete"
@@ -163,6 +230,26 @@
           {variant === 'logout' ? 'Выйти' : 'Закрыть'}
         </button>
       {/if}
+
     </div>
   </Form>
+
+  {#if variant === 'logout' && localBound}
+    <Form
+      id="user-logout-local"
+      form={localBound}
+      hiddenFields={localBound.hidden()}
+      class="mx-auto flex w-full max-w-sm flex-col gap-2 border-t border-border pt-4"
+    >
+      <button
+        type="submit"
+        name="intent"
+        value="local"
+        class="self-start rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+        data-testid="session-delete-local"
+      >
+        Только на этом устройстве
+      </button>
+    </Form>
+  {/if}
 {/if}
