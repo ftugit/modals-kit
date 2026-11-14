@@ -31,9 +31,12 @@ export function normalizeSubjects(raw: readonly string[]): string[] {
 export function resolveSeedSubjects(
   curSubjects: readonly string[] | undefined,
   curSubj: string | null | undefined,
-  fromFilter: string | null | undefined,
+  fromFilter: string | null | undefined | (() => string | null | undefined),
 ): string[] {
   if (curSubjects && curSubjects.length > 0) return normalizeSubjects(curSubjects)
   if (curSubj && curSubj.trim()) return normalizeSubjects([curSubj])
-  return fromFilter ? normalizeSubjects([fromFilter]) : []
+  // Срез читается **только** когда он нужен: обращение к адресу в SSR-рендере
+  // без контекста страницы — ошибка, а не повод менять начальный набор.
+  const filter = typeof fromFilter === 'function' ? fromFilter() : fromFilter
+  return filter ? normalizeSubjects([filter]) : []
 }

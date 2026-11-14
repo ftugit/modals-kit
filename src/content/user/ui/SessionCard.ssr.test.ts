@@ -116,8 +116,13 @@ describe('SessionCard', () => {
 
   test('чужая сессия закрывается экшеном чужого аккаунта', () => {
     addr.url = new URL(`http://localhost/user/sessions/${device.id}?session.exit=confirm`)
+    // Цель передаёт носитель (правило §2.1): карточка не выводит её из данных
+    // строки и не сравнивает с клиентским зеркалом.
     const foreign = render(SessionCard, {
-      props: { detail: { ...other, session: { ...other.session, authId: '99999999-9999-4999-8999-999999999999' } } },
+      props: {
+        detail: { ...other, session: { ...other.session, authId: '99999999-9999-4999-8999-999999999999' } },
+        uid: '99999999-9999-4999-8999-999999999999',
+      },
     })
     expect(foreign.body).toContain('action="/user/99999999-9999-4999-8999-999999999999/sessions?/revoke"')
     // Переименование тоже уходит на чужой роут: экшен чужой страницы достижим.
@@ -139,7 +144,9 @@ describe('SessionCard', () => {
       const own = render(SessionCard, { props: { detail: other } })
       expect(own.body, `own rename on ${base}`).toContain(`action="/user/sessions/${device.id}?/rename"`)
       expect(own.body, `own exit on ${base}`).toContain('action="/user/sessions?/revoke"')
-      const foreign = render(SessionCard, { props: { detail: foreignDetail } })
+      const foreign = render(SessionCard, {
+        props: { detail: foreignDetail, uid: '99999999-9999-4999-8999-999999999999' },
+      })
       expect(foreign.body, `foreign rename on ${base}`).toContain(
         'action="/user/99999999-9999-4999-8999-999999999999/sessions/11111111-1111-4111-8111-111111111111?/rename"',
       )

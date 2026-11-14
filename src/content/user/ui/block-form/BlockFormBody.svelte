@@ -129,7 +129,9 @@
     curSubjects: readonly string[] | undefined,
     curSubj: string | null | undefined,
   ): string[] {
-    return resolveSeedSubjects(curSubjects, curSubj, String(currentSearch()['blocks.uids'] ?? ''))
+    return resolveSeedSubjects(curSubjects, curSubj, () =>
+      String(currentSearch()['blocks.uids'] ?? ''),
+    )
   }
 
   function toDatetimeLocal(ms: number): string {

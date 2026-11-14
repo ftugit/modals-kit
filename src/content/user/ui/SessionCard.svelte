@@ -31,11 +31,17 @@
     backHref?: string
     /** Носитель: страница — шаг в URL, модалка — локальный хост шагов. */
     mode?: 'page' | 'modal'
-    /** Абсолютный POST-адрес переименования своей единицы; по умолчанию — из реестра по аккаунту строки. */
+    /** Абсолютный POST-адрес переименования своей единицы; по умолчанию — из реестра по цели. */
     actionHref?: string
+    /**
+     * Цель-аккаунт: её передаёт носитель (список чужого аккаунта, модалка с `uid`).
+     * `null`/не задано — свои устройства. Клиентское зеркало в выборе адреса не
+     * участвует: правило цели §2.1.
+     */
+    uid?: string | null
   }
 
-  let { detail, notice = null, now = Date.now(), backHref = userSessionsRoute.href(), mode = 'page', actionHref }: Props = $props()
+  let { detail, notice = null, now = Date.now(), backHref = userSessionsRoute.href(), mode = 'page', actionHref, uid = null }: Props = $props()
 
   const session = $derived(detail.session)
   const status = $derived(
@@ -63,11 +69,10 @@
           : 'summary',
   })
   const exitStep = $derived(exitHost.currentKey === 'confirm' ? 'confirm' : 'summary')
-  // Правило цели (S1): адрес карточки, закрытия и шага строится от цели строки —
-  // аккаунта из данных сервера, а не от сравнения с клиентским зеркалом. Зеркало
-  // в выборе адреса не участвует: иначе пустое или отставшее зеркало уводило бы
-  // своё устройство на адрес чужого аккаунта.
-  const targetId = $derived(session.authId ?? null)
+  // Правило цели (S1): адрес карточки, закрытия и шага строится от переданной
+  // цели (`uid` носителя), а не от сравнения с клиентским зеркалом. Своя строка
+  // в своём списке остаётся на своих адресах, чужая — на адресах цели.
+  const targetId = $derived(uid?.trim() || null)
   const cardRoute = $derived(
     targetId ? userAccountSessionRoute.href({ id: targetId, sessionId: id }) : userSessionRoute.href({ id }),
   )

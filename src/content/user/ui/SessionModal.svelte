@@ -45,6 +45,7 @@
       notice={ldr.data.notice}
       {backHref}
       {actionHref}
+      {uid}
       mode="modal"
     />
   {/if}

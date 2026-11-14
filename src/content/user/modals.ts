@@ -9,6 +9,7 @@
 // перекрёстных импортов между ядрами `#lib/modals` и `#lib/address`.
 import { registerModal } from '#lib/modals/index.js'
 import { lazy } from '#lib/modals/svelte/index.js'
+import { parseSessionDeleteVariant } from './session-delete.js'
 import {
   blocksCreateRoute,
   blocksDeleteRoute,
@@ -36,6 +37,8 @@ import {
   userProfileRoute,
   userAccountSessionRoute,
   userAccountSessionsRoute,
+  userSessionsDeleteRoute,
+  userAccountSessionsDeleteRoute,
 } from './routes.js'
 
 registerModal({
@@ -237,6 +240,24 @@ registerModal({
   },
   size: { width: 460, height: 440 },
 })
+// Закрытие набора устройств — единица `user.session.delete` (план сессий §8.1):
+// **один** ключ и **два** адреса. Цель — `uid` (аккаунт), набор — `ids`,
+// вариант — `delete` / `logout`. У адреса цели `id` занят сегментом пути,
+// поэтому набор везде едет `ids`.
+registerModal({
+  name: 'user.session.delete',
+  component: lazy(() => import('./ui/SessionDeleteModal.svelte')),
+  defaultParams: { ids: '', variant: 'delete' },
+  route: (p: { ids?: string; variant?: string; uid?: string }) => {
+    const ids = p?.ids ? String(p.ids).trim() : null
+    const variant = parseSessionDeleteVariant(p?.variant)
+    return p?.uid
+      ? userAccountSessionsDeleteRoute.href({ id: String(p.uid) }, { ids, variant })
+      : userSessionsDeleteRoute.href({ ids, variant })
+  },
+  size: { width: 460, height: 440 },
+})
+
 // Настройки пользователя (`{ id? }`): без `id` — свои настройки (`/user/config`),
 // с `id` — настройки целевого аккаунта (`/user/[id]/config`).
 registerModal({
