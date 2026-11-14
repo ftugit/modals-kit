@@ -223,3 +223,32 @@ POST <любой маршрут> (__form_id = user-seed | user-profile)
 делить имя. Сервер резолвит `del.list`/`blk.list` тем же правом, что и список, поэтому подделанный
 адрес не расширяет набор. Кнопки набора — в `ui/SeedUsersList.svelte` (режим отметок): цели
 списком (`uids`, `ids`) или весь срез (`list`), когда отметок нет.
+
+## Наборные действия над блокировками (S19)
+
+Двери в `blocks-admin.ts` — над теми же моделями, без нового права:
+
+| Дверь | Право | Что делает |
+|---|---|---|
+| `resolveBlockSlice` | как список (`block.read`) | постранично (`listBlocksPage`, по 100, предел 500) превращает условия среза в id записей; больше предела — `auth.limit` |
+| `liftBlocksBySet` | `grants(block).update` (`moderator` / `block.edit` / `admin`) | ставит `until = сейчас`; уже снятая или истёкшая — «без изменений» |
+| `deleteBlocksBySet` | `grants(block).delete` (`moderator` / `block.edit` / `admin`) | мягкая метка удаления; повтор — «без изменений»; `hard` в наборе нет |
+
+Снять и удалить — **разные** двери: снятие оставляет запись в истории (меняет срок),
+удаление помечает строку. Поэтому экран говорит «сняты» и «помечены удалёнными», а не
+одно слово на оба случая. Тест `blocks-admin.test.ts` держит это отдельно
+(«разблокировка не удаляет запись»).
+
+| Файл | Роль |
+|---|---|
+| `ui/blocks-bulk/form.ts` | одно описание формы с двумя действиями (`intent`: `lift` / `delete`), поля `ids` и среза; тексты и правило удержания — чистые функции |
+| `ui/blocks-bulk/blocks-bulk.form.server.ts` | компонентная форма: набор уходит в `liftBlocksBySet` / `deleteBlocksBySet`, предел — отказ до записи |
+| `ui/blocks-bulk/BlocksBulk.svelte` | подтверждение: слова и число набора, кнопки по правам, состояния `done/pending/forbidden/too-many` |
+| `ui/BlocksBulkModal.svelte` | модалка ключа `user.blocks.bulk` (`ids`, `list`) |
+| `routes/(site)/(app)/blocks/bulk/` | страница-fallback той же формы |
+
+Адрес — `blocksBulkRoute` `/blocks/bulk?bb.ids=&bb.list=`; срез едет адресом списка.
+Цель персонального списка (`/user/<id>/blocks`) живёт в пути, поэтому загрузчик
+переводит её в поле среза `uid`. Режим выбора включает `BlocksList`: чекбоксы строк,
+`data-testid` `blocks-select-toggle` / `blocks-selected-count`, действие открывает
+единицу с `ids` или (без отметок) с адресом среза.

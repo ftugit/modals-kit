@@ -354,6 +354,32 @@ export const blocksCreateRoute = kitRoute('/blocks/new', {
   })),
 })
 
+/**
+ * Наборные действия над блокировками (`user.blocks.bulk`): снять или мягко
+ * удалить записи набора. Срез едет адресом списка (`bb.list`) — ключи списка
+ * (`blocks.*`) не пересказываются здесь по одному; явный набор — `bb.ids`.
+ * Префиксы `bb.*` нужны, потому что `list` и `ids` забронированы другими адресами.
+ */
+export interface BlocksBulkSearchInput extends Record<string, unknown> {
+  'bb.list'?: string | null
+  'bb.ids'?: string | null
+}
+
+export interface BlocksBulkSearchOutput {
+  'bb.list': string | null
+  'bb.ids': string | null
+}
+
+export const blocksBulkRoute = kitRoute('/blocks/bulk', {
+  owner: 'blocks.bulk',
+  keys: ['bb.list', 'bb.ids'],
+  defaults: { 'bb.list': null, 'bb.ids': null },
+  search: querySchema<BlocksBulkSearchInput, BlocksBulkSearchOutput>((raw) => ({
+    'bb.list': localPath(typeof raw['bb.list'] === 'string' ? raw['bb.list'] : null),
+    'bb.ids': typeof raw['bb.ids'] === 'string' && raw['bb.ids'] ? raw['bb.ids'] : null,
+  })),
+})
+
 /** Создание блокировки конкретного пользователя (`/user/[id]/blocks/new`). */
 export const userBlocksCreateRoute = kitRoute('/(site)/(app)/user/[id=uuid]/blocks/new', {
   dynamic: true,

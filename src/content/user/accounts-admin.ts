@@ -44,7 +44,7 @@ export async function resolveAccountSlice(
     const r = await listSeedUsers(ports, accessToken, { ...slice, page, pageSize })
     if (!r.ok) return r
     for (const item of r.value.items) seen.add(item.id)
-    if (seen.size >= limit) return ok([...seen].slice(0, limit + 1))
+    if (seen.size > limit) return ok([...seen].slice(0, limit + 1))
     if (seen.size >= r.value.total || r.value.items.length < pageSize) break
   }
   return ok([...seen])

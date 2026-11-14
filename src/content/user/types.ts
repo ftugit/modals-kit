@@ -393,6 +393,25 @@ export type AccountsDeleteRouteData = {
   fact: AuthErrorCode | null
 }
 
+/** Данные загрузчика единицы наборных действий над блокировками (`user.blocks.bulk`). */
+export type BlocksBulkRouteData = {
+  enabled: boolean
+  /** Снять блокировки: те же права, что у правки записи (`moderator`/`block.edit`/`admin`). */
+  canLift: boolean
+  /** Мягко удалить записи: право мягкого удаления (`moderator`/`block.edit`/`admin`). */
+  canDelete: boolean
+  /** Явный набор из адреса (`bb.ids`). */
+  ids: string[]
+  /** Набор в адресе больше предела: форма отказывает, а не усекает. */
+  tooMany: boolean
+  /** Непустые условия среза — те же имена, что у списка (`state`, `scopes`, …). */
+  sliceFields: Record<string, string> | null
+  /** Сколько записей в срезе (`null` — среза нет или права не хватило). */
+  count: number | null
+  holdSeconds: number
+  fact: AuthErrorCode | null
+}
+
 /** Доверенный principal — из содержимого временного токена без похода в БД. */
 export type Principal = { id: string }
 

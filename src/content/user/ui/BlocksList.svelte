@@ -11,7 +11,7 @@
   import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing, ListingRow } from '#components/listing/index.js'
   import { Skeleton } from '#components/paginator/index.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Checkbox } from '#components/ui/index.js'
   import { grants } from '#lib/db/index.js'
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
     import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
@@ -72,6 +72,12 @@
   const asModalLink = useModalLink()
   const fixedUid = $derived(uid?.trim() || null)
   const createBlockGrant = useGrants(grants(blockResource).insert)
+  // Действия набора держат те же двери, что строки: снятие — правка записи,
+  // удаление — мягкое удаление. Показ не заменяет решение сервера.
+  const bulkGrants = useGrants({
+    canLift: grants(blockResource).update,
+    canDelete: grants(blockResource).delete,
+  })
 
   const route = $derived(fixedUid ? `/user/${encodeURIComponent(fixedUid)}/blocks` : '/blocks')
   const omitKeys = $derived(fixedUid ? [`${BLOCKS_PAGE_PARAM}.uids`] : [])
@@ -250,6 +256,41 @@
     {/if}
   {/snippet}
   {#snippet controls({ extra, payload })}
+    <Button
+      variant="outline"
+      size="sm"
+      data-testid="blocks-select-toggle"
+      onclick={() => (selection.mode ? selection.exit() : selection.enter())}
+    >
+      {selection.mode ? 'Готово' : 'Выбрать'}
+    </Button>
+    {#if selection.mode}
+      <span class="text-sm text-muted-foreground" data-testid="blocks-selected-count">
+        Выбрано: {selection.count}
+      </span>
+      {#if bulkGrants.canLift || bulkGrants.canDelete}
+        {#if selection.count > 0}
+          <Button
+            {...asModalLink('user.blocks.bulk', { ids: [...selection.ids].join(',') })}
+            variant="outline"
+            size="sm"
+            data-testid="blocks-bulk-selected"
+          >
+            Снять или удалить
+          </Button>
+        {:else}
+          <!-- Срез без отметок: набор считает сервер по адресу списка. -->
+          <Button
+            {...asModalLink('user.blocks.bulk', { list: listFrom })}
+            variant="outline"
+            size="sm"
+            data-testid="blocks-bulk-slice"
+          >
+            Снять или удалить всё в срезе
+          </Button>
+        {/if}
+      {/if}
+    {/if}
     {#if canCreate(payload as BlocksRouteData)}
       {@const picked = filterUids(extra)}
       <Button
@@ -264,10 +305,23 @@
       </Button>
     {/if}
   {/snippet}
-  {#snippet row(item)}
-    <ListingRow attrs={rowAttrs(item)} id={item.id} testId="block-row">
-      <BlockCard item={item} showTarget={!fixedUid} />
-    </ListingRow>
+  {#snippet row(item, ctx)}
+    {#if selection.mode}
+      <label class="flex items-center gap-2">
+        <Checkbox
+          checked={selection.isSelected(item.id)}
+          onchange={() => selection.toggle(item.id)}
+          data-testid="block-checkbox"
+        />
+        <ListingRow attrs={rowAttrs(item)} id={item.id} testId="block-row" selected={ctx.selected}>
+          <BlockCard item={item} showTarget={!fixedUid} />
+        </ListingRow>
+      </label>
+    {:else}
+      <ListingRow attrs={rowAttrs(item)} id={item.id} testId="block-row" selected={ctx.selected}>
+        <BlockCard item={item} showTarget={!fixedUid} />
+      </ListingRow>
+    {/if}
   {/snippet}
   {#snippet skeleton()}
     <div class="flex w-full items-center gap-3 px-2 py-2" data-testid="block-skeleton">

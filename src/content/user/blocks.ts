@@ -39,6 +39,10 @@ export const canSeeDeletedBlocks = (perms: readonly string[]): boolean =>
 export const canEditBlockReason = (perms: readonly string[]): boolean =>
   checkGrants({ roles: perms }, gBlock.fields.reason!.update)
 
+/** Мягкое удаление записи: `grants(block).delete` (`moderator`/`block.edit`/`admin`). */
+export const canSoftDeleteBlock = (perms: readonly string[]): boolean =>
+  checkGrants({ roles: perms }, gBlock.delete)
+
 /** Окончательное удаление (`hard: true`): `grants(block).hardDelete` (`block.edit` + `block.readDeleted` или `admin`). */
 export const canHardDeleteBlock = (perms: readonly string[]): boolean =>
   checkGrants({ roles: perms }, gBlock.hardDelete)

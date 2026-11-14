@@ -11,6 +11,7 @@ import { registerModal } from '#lib/modals/index.js'
 import { lazy } from '#lib/modals/svelte/index.js'
 import { parseSessionDeleteVariant } from './session-delete.js'
 import {
+  blocksBulkRoute,
   blocksCreateRoute,
   blocksDeleteRoute,
   blocksEditRoute,
@@ -257,6 +258,20 @@ registerModal({
       : blocksDeleteRoute.href({ blockId })
   },
   size: { width: 460, height: 440 },
+})
+// Наборные действия над блокировками (`{ ids, list }`): адрес — `/blocks/bulk`,
+// без JS туда же ведёт ссылка и оттуда уходит POST формы. `list` — адрес
+// списка, из которого сервер берёт срез; `ids` — отмеченные строки.
+registerModal({
+  name: 'user.blocks.bulk',
+  component: lazy(() => import('./ui/BlocksBulkModal.svelte')),
+  defaultParams: { ids: '', list: '' },
+  route: (p: { ids?: string; list?: string }) =>
+    blocksBulkRoute.href({
+      'bb.ids': p?.ids ? String(p.ids) : null,
+      'bb.list': p?.list ? String(p.list) : null,
+    }),
+  size: { width: 480, height: 480 },
 })
 // Закрытие набора устройств — единица `user.session.delete` (план сессий §8.1):
 // **один** ключ и **два** адреса. Цель — `uid` (аккаунт), набор — `ids`,

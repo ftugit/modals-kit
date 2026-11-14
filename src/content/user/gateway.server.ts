@@ -72,6 +72,14 @@ import {
   type ListBlocksPageArgs,
 } from './blocks.js'
 import {
+  deleteBlocksBySet as coreDeleteBlocksBySet,
+  liftBlocksBySet as coreLiftBlocksBySet,
+  resolveBlockSlice as coreResolveBlockSlice,
+  type BlocksBulkArgs,
+  type BlocksBulkResult,
+  type BlocksSlice,
+} from './blocks-admin.js'
+import {
   listUserConfig as coreListUserConfig,
   saveUserConfig as coreSaveUserConfig,
   type SaveUserConfigArgs,
@@ -726,6 +734,12 @@ export function auth(event: AuthEvent): {
   addBlock(args: { targetId: string; scope: string; reason: string; forever?: boolean; until?: number | null }): Promise<UserResult<{ id: string }>>
   /** Снять активную блокировку цели правкой её срока. */
   liftBlock(args: { targetId: string; blockId: string }): Promise<UserResult<{ id: string }>>
+  /** Набор блокировок по срезу списка: `id`/`ids`/срез, одна форма. Резолвит сервер. */
+  resolveBlockSlice(args?: BlocksSlice): Promise<UserResult<string[]>>
+  /** Снять блокировки набора (история остаётся: `until = сейчас`). */
+  liftBlocksBySet(args: BlocksBulkArgs): Promise<UserResult<BlocksBulkResult>>
+  /** Мягко удалить записи набора; окончательное стирание — дверь строки. */
+  deleteBlocksBySet(args: BlocksBulkArgs): Promise<UserResult<BlocksBulkResult>>
   /** Порция списка блокировок (по пользователю `uid` или глобально). */
   listBlocksPage(args?: ListBlocksPageArgs): Promise<UserResult<BlocksPage>>
   /** Метаданные создания блокировки (доступные сферы и флаги). */
@@ -924,6 +938,11 @@ export function auth(event: AuthEvent): {
       coreSaveUserConfig(ports, await freshAccessOrCurrent(), args),
     addBlock: async (args) => coreAddBlock(ports, await freshAccessOrCurrent(), args),
     liftBlock: async (args) => coreLiftBlock(ports, await freshAccessOrCurrent(), args),
+    resolveBlockSlice: async (args) =>
+      coreResolveBlockSlice(ports, await freshAccessOrCurrent(), args ?? {}),
+    liftBlocksBySet: async (args) => coreLiftBlocksBySet(ports, await freshAccessOrCurrent(), args),
+    deleteBlocksBySet: async (args) =>
+      coreDeleteBlocksBySet(ports, await freshAccessOrCurrent(), args),
     listBlocksPage: async (args) => coreListBlocksPage(ports, await freshAccessOrCurrent(), args),
     blockCreateMeta: async (targetId) => coreBlockCreateMeta(ports, await freshAccessOrCurrent(), targetId),
     readBlockDetail: async (args) => coreReadBlockDetail(ports, await freshAccessOrCurrent(), args),
