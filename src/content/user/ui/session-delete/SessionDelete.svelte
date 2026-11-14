@@ -69,12 +69,13 @@
   })
 
   // Локальный выход (только logout): куки снимаются, сессия живёт.
-  const localBound = untrack(() => variant) === 'logout'
-    ? bindComponentForm(forms, logoutLocalForm, {
-        action: untrack(() => localAction) ?? '/user/logout?/local',
-        session: userSession,
-      })
-    : null
+  const localBound =
+    untrack(() => variant) === 'logout'
+      ? bindComponentForm(forms, logoutLocalForm, {
+          action: untrack(() => localAction) ?? '/user/logout?/local',
+          session: userSession,
+        })
+      : null
 
   mirrorToField(bound, 'ids', () => ids.join(','))
   mirrorToField(bound, 'variant', () => variant)
@@ -148,6 +149,10 @@
   <p class={cn('text-sm text-destructive', className)} data-testid="session-delete-too-many">
     Устройств в наборе больше предела ({initial.ids.length}). Сократите выбор — набор не усекается молча.
   </p>
+{:else if initial && !initial.enabled}
+  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', className)} data-testid="session-delete-no-read">
+    <p class="text-sm text-muted-foreground">Сессию прочитать не удалось — доступен только выход на этом устройстве.</p>
+  </div>
 {:else if unknown}
   <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', className)} data-testid="session-delete-unknown">
     <h2 class="text-lg font-semibold leading-tight tracking-tight">Исход неизвестен</h2>
@@ -233,23 +238,23 @@
 
     </div>
   </Form>
+{/if}
 
-  {#if variant === 'logout' && localBound}
-    <Form
-      id="user-logout-local"
-      form={localBound}
-      hiddenFields={localBound.hidden()}
-      class="mx-auto flex w-full max-w-sm flex-col gap-2 border-t border-border pt-4"
+{#if variant === 'logout' && localBound}
+  <Form
+    id="user-logout-local"
+    form={localBound}
+    hiddenFields={localBound.hidden()}
+    class="mx-auto flex w-full max-w-sm flex-col gap-2 border-t border-border pt-4"
+  >
+    <button
+      type="submit"
+      name="intent"
+      value="local"
+      class="self-start rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+      data-testid="session-delete-local"
     >
-      <button
-        type="submit"
-        name="intent"
-        value="local"
-        class="self-start rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
-        data-testid="session-delete-local"
-      >
-        Только на этом устройстве
-      </button>
-    </Form>
-  {/if}
+      Только на этом устройстве
+    </button>
+  </Form>
 {/if}
