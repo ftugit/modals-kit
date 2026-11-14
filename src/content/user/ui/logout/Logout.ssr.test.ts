@@ -28,10 +28,9 @@ describe('Logout: выход через вариант удаления', () => 
     expect(body).toContain('Выйти')
   })
 
-  test('есть локальный выход', () => {
+  test('чекбокс «закрыть все сессии» на одном экране', () => {
     const { body } = render(Logout, { props: { sessionId: SESSION, total: 3 } })
-    expect(body).toContain('data-testid="session-delete-local"')
-    expect(body).toContain('Только на этом устройстве')
+    expect(body).toContain('Закрыть все сессии')
   })
 
   test('адрес экшена абсолютный', () => {

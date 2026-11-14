@@ -67,10 +67,18 @@ export function sliceFieldName(key: string): string {
  * строят его одной функцией, иначе ревизии разъедутся и форма не примет POST.
  * Набор и срез приходят значениями скрытых полей, а не новой формой.
  */
-export function sessionDeleteForm() {
-  const fields: Record<string, ReturnType<typeof field.hidden>> = {
+export function sessionDeleteForm(opts: { variant?: SessionDeleteVariant } = {}) {
+  const variant = opts.variant ?? 'delete'
+  const fields: Record<string, any> = {
     ids: field.hidden({ defaultValue: '', validate: [] }),
-    variant: field.hidden({ defaultValue: 'delete', validate: [] }),
+    variant: field.hidden({ defaultValue: variant, validate: [] }),
+  }
+  if (variant === 'logout') {
+    fields.include_current = field.checkbox({
+      label: 'Закрыть все сессии',
+      defaultValue: false,
+    })
+    fields.spread = field.hidden({ defaultValue: '1', validate: [] })
   }
   // Срез едет теми же ключами, что у списка: домен уже умеет их разбирать.
   for (const key of SESSION_DELETE_SLICE_KEYS) {
@@ -78,7 +86,7 @@ export function sessionDeleteForm() {
   }
   return defineForm({
     id: SESSION_DELETE_FORM_ID,
-    revision: 1,
+    revision: 2,
     messages: { ...AUTH_MESSAGES },
     actions: [{ id: 'delete', label: 'Закрыть', validate: 'none' }],
     fields,

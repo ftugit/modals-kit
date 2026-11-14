@@ -62,7 +62,7 @@
   const summary = $derived(sessionDeleteSummary({ count, slice, variant }))
   const holdSeconds = $derived(initial?.holdSeconds ?? 2)
 
-  const bound = bindComponentForm(forms, sessionDeleteForm(), {
+  const bound = bindComponentForm(forms, sessionDeleteForm({ variant: untrack(() => variant) }), {
     action: untrack(() => action),
     continuation: untrack(() => form?.result ?? undefined),
     session: userSession,
@@ -152,6 +152,24 @@
 {:else if initial && !initial.enabled}
   <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', className)} data-testid="session-delete-no-read">
     <p class="text-sm text-muted-foreground">Сессию прочитать не удалось — доступен только выход на этом устройстве.</p>
+    {#if localBound}
+      <Form
+        id="user-logout-local"
+        form={localBound}
+        hiddenFields={localBound.hidden()}
+        class="inline-flex"
+      >
+        <button
+          type="submit"
+          name="intent"
+          value="local"
+          class="self-start rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+          data-testid="session-delete-local"
+        >
+          Выйти только здесь
+        </button>
+      </Form>
+    {/if}
   </div>
 {:else if unknown}
   <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', className)} data-testid="session-delete-unknown">
@@ -210,6 +228,10 @@
       </h2>
       <p class="text-sm text-muted-foreground" data-testid="session-delete-detail">{summary.detail}</p>
 
+      {#if variant === 'logout'}
+        <Field of={bound.f.include_current} />
+      {/if}
+
       {#if summary.hold}
         <HoldButton
           type="submit"
@@ -237,24 +259,5 @@
       {/if}
 
     </div>
-  </Form>
-{/if}
-
-{#if variant === 'logout' && localBound}
-  <Form
-    id="user-logout-local"
-    form={localBound}
-    hiddenFields={localBound.hidden()}
-    class="mx-auto flex w-full max-w-sm flex-col gap-2 border-t border-border pt-4"
-  >
-    <button
-      type="submit"
-      name="intent"
-      value="local"
-      class="self-start rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-muted"
-      data-testid="session-delete-local"
-    >
-      Только на этом устройстве
-    </button>
   </Form>
 {/if}
