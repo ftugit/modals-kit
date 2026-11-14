@@ -1,6 +1,6 @@
 import { render } from 'svelte/server'
 import { describe, expect, test, vi } from 'vitest'
-import SessionsList from './SessionsList.svelte'
+import SessionsList from './SessionsDomain.svelte'
 import type { SessionDeviceView, SessionsRouteData } from '../types.js'
 import { sessionsSnapshot } from './sessions-list/source.js'
 

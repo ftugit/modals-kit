@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { mount, tick, unmount } from 'svelte'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import SessionsList from './SessionsList.svelte'
+import SessionsList from './SessionsDomain.svelte'
 import type { SessionDeviceView, SessionsRouteData } from '../types.js'
 import { sessionsSnapshot } from './sessions-list/source.js'
 import { resetClientStore } from '#lib/paginate/index.js'

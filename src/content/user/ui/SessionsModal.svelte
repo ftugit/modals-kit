@@ -10,7 +10,7 @@
   import { Surface } from '#components/ui/index.js'
   import type { SessionsRouteData, SessionsTarget } from '../types.js'
   import Acl from './Acl.svelte'
-  import SessionsList from './SessionsList.svelte'
+  import SessionsDomain from './SessionsDomain.svelte'
 
   const modal = useModal<{ id?: string }>()
   const ldr = useLoader<SessionsRouteData>()
@@ -34,7 +34,7 @@
     <Acl status={ldr.data?.fact} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
     {#key target.kind === 'account' ? target.uid : target.kind}
-      <SessionsList {target} {initial} mode="modal" url={false} variant="plain" class="min-h-0 flex-1" />
+      <SessionsDomain {target} {initial} mode="modal" url={false} variant="plain" class="min-h-0 flex-1" />
     {/key}
   {/if}
 </Surface>

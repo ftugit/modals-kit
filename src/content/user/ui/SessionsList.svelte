@@ -32,7 +32,6 @@
   import type { SessionDeviceView, SessionsListNotice, SessionsRouteData, SessionsTarget } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SessionRow from './SessionRow.svelte'
-  import ExitSteps from './sessions-list/ExitSteps.svelte'
   import SessionsFiltersForm, { type SessionsFilterValues } from './SessionsFiltersForm.svelte'
   import { sessionsFilterLabels, sessionsFilterText } from './sessions-list/filters-form.js'
   import {
@@ -283,22 +282,6 @@
     </p>
   {/if}
 
-  {#if exitStep === 'confirm' && !journal}
-    <ExitSteps
-      filters={exitFilters}
-      {currentId}
-      total={exitTotal}
-      step="confirm"
-      backHref={exitBackHref}
-      onBack={stepsMode === 'modal' ? () => exitHost.set('summary') : undefined}
-      action={`${route}?/others`}
-      heading="Завершение сессий"
-      summary="Будут завершены все устройства, показанные в этом списке — с учётом фильтра."
-      confirmLabel="Завершить сессии"
-      testId="bulk-exit"
-    />
-  {/if}
-
 <Listing
   name={SESSIONS_NAME}
   pageParam={SESSIONS_PAGE_PARAM}
@@ -346,43 +329,6 @@
           />
         {/key}
       </div>
-    {/if}
-  {/snippet}
-  {#snippet controls({ payload })}
-    {@const view = payload as unknown as SessionsRouteData}
-    {#if !journal && !fixedUid && view.canReadOthers}
-      <!-- Журнал — своя пара `user.sessions.journal`: вход слоем, а не переходом.
-           Адрес без JS приходит из реестра через пару, не из разметки. -->
-      <Button
-        {...asModalLink('user.sessions.journal')}
-        variant="outline"
-        size="sm"
-        data-testid="sessions-journal-open"
-      >
-        Все сессии
-      </Button>
-    {/if}
-    {#if journal}
-      <!-- Обратно к своим — той же механикой: слой `user.sessions` поверх журнала. -->
-      <Button
-        {...asModalLink('user.sessions')}
-        variant="outline"
-        size="sm"
-        data-testid="sessions-own-open"
-      >
-        Свои устройства
-      </Button>
-    {/if}
-    {#if !journal && view.canRevoke && othersOf(view)}
-      {#if stepsMode === 'modal'}
-        <Button type="button" onclick={toggleExit} variant="outline" size="sm" data-testid="sessions-revoke-others">
-          {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
-        </Button>
-      {:else}
-        <Button href={exitStep === 'confirm' ? exitBackHref : exitNextHref} variant="outline" size="sm" data-testid="sessions-revoke-others">
-          {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
-        </Button>
-      {/if}
     {/if}
   {/snippet}
   {#snippet row(item)}
