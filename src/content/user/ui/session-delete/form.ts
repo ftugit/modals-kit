@@ -8,8 +8,11 @@
  */
 import { defineForm, field } from '#lib/form/index.js'
 import { AUTH_MESSAGES } from '../../messages.js'
-import { SESSIONS_FILTER_KEYS } from '../sessions-list/source.js'
-import { MAX_SESSION_DELETE_IDS, type SessionDeleteVariant } from '../../session-delete.js'
+import {
+  MAX_SESSION_DELETE_IDS,
+  SESSION_DELETE_SLICE_KEYS,
+  type SessionDeleteVariant,
+} from '../../session-delete.js'
 
 export const SESSION_DELETE_FORM_ID = 'user-session-delete'
 
@@ -70,7 +73,7 @@ export function sessionDeleteForm() {
     variant: field.hidden({ defaultValue: 'delete', validate: [] }),
   }
   // Срез едет теми же ключами, что у списка: домен уже умеет их разбирать.
-  for (const key of SESSIONS_FILTER_KEYS) {
+  for (const key of SESSION_DELETE_SLICE_KEYS) {
     fields[sliceFieldName(key)] = field.hidden({ defaultValue: '', validate: [] })
   }
   return defineForm({

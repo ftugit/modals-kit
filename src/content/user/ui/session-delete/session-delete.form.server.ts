@@ -6,9 +6,12 @@ import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { auth } from '../../gateway.server.js'
 import { instruction } from '../../index.js'
 import { userAccountSessionsRoute, userSessionsRoute } from '../../routes.js'
-import { parseSessionDeleteIds, parseSessionDeleteVariant } from '../../session-delete.js'
+import {
+  SESSION_DELETE_SLICE_KEYS,
+  parseSessionDeleteIds,
+  parseSessionDeleteVariant,
+} from '../../session-delete.js'
 import { runBulkExit, sessionFormError } from '../../sessions-exit.server.js'
-import { SESSIONS_FILTER_KEYS } from '../sessions-list/source.js'
 import { sessionDeleteForm, sliceFieldName } from './form.js'
 
 registerComponentForm({
@@ -27,7 +30,7 @@ registerComponentForm({
 
     // Срез: набор считает домен по фильтру в момент отправки.
     const sliceField = Object.fromEntries(
-      SESSIONS_FILTER_KEYS.map((key) => [key, String(values[sliceFieldName(key)] ?? '')]),
+      SESSION_DELETE_SLICE_KEYS.map((key) => [key, String(values[sliceFieldName(key)] ?? '')]),
     )
     const isSlice = Object.values(sliceField).some((v) => v.trim() !== '')
 

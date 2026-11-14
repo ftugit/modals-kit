@@ -13,9 +13,9 @@
  * закрыл сто устройств, закрыв пятьдесят.
  */
 
-/** Вариант сессионной единицы: обычное закрытие или «выйти здесь». */
 import { SESSIONS_BULK_IDS_LIMIT } from './types.js'
 
+/** Вариант сессионной единицы: обычное закрытие или «выйти здесь». */
 export type SessionDeleteVariant = 'delete' | 'logout'
 
 /** Закрытый набор вариантов: незнакомое значение — не режим, а `delete`. */
@@ -29,6 +29,24 @@ export const SESSION_DELETE_VARIANTS: ReadonlySet<string> = new Set<SessionDelet
  * чтобы адрес, ключ и вариант жили в одном месте и не разъезжались.
  */
 export const SESSION_DELETE_MODAL_KEY = 'user.session.delete'
+
+/**
+ * Ключи среза, которые единица переносит из носителя: закрытый список, а не
+ * «всё, что придёт». Совпадает с ключами фильтров списка — это контракт адреса,
+ * поэтому список свой и короткий: импорт модуля списка тянул бы в чанк единицы
+ * весь его источник (порции, размеры страниц, схему).
+ */
+export const SESSION_DELETE_SLICE_KEYS = [
+  'state',
+  'net',
+  'country',
+  'cfrom',
+  'cto',
+  'sfrom',
+  'sto',
+] as const
+
+export type SessionDeleteSliceKey = (typeof SESSION_DELETE_SLICE_KEYS)[number]
 
 /**
  * Предел числа `ids` в наборе одной отправки сессий — **то же** объявление, что

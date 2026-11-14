@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { sessionDeleteForm, sessionDeleteSummary, sliceFieldName } from './form.js'
-import { SESSIONS_FILTER_KEYS } from '../sessions-list/source.js'
+import { SESSION_DELETE_SLICE_KEYS } from '../../session-delete.js'
 
 describe('подтверждение закрытия устройств', () => {
   it('одно устройство — словами, без удержания', () => {
@@ -42,8 +42,8 @@ describe('описание формы', () => {
     const names = form.fields.map((f) => f.name)
     expect(names).toContain('ids')
     expect(names).toContain('variant')
-    for (const key of SESSIONS_FILTER_KEYS) expect(names).toContain(sliceFieldName(key))
-    expect(names).toHaveLength(2 + SESSIONS_FILTER_KEYS.length)
+    for (const key of SESSION_DELETE_SLICE_KEYS) expect(names).toContain(sliceFieldName(key))
+    expect(names).toHaveLength(2 + SESSION_DELETE_SLICE_KEYS.length)
   })
 
   it('строится одинаково при повторном вызове (ревизия не зависит от адреса)', () => {

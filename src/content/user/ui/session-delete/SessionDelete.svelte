@@ -16,16 +16,15 @@
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
   import HoldButton from '#components/ui/button/HoldButton.svelte'
-  import { Button, Skeleton } from '#components/ui/index.js'
+  import { asLink } from '#hooks/links/index.js'
   import { cn } from '#components/utils.js'
   import { invalidatePaginator } from '#lib/paginate/index.js'
-  import type { SessionDeleteRouteData } from '../../types.js'
-  import type { SessionDeleteVariant } from '../../session-delete.js'
-  import { userSession } from '../../vault.svelte.js'
   import { SESSIONS_NAME } from '../sessions-list/source.js'
+  import type { SessionDeleteRouteData } from '../../types.js'
+  import { SESSION_DELETE_SLICE_KEYS, type SessionDeleteVariant } from '../../session-delete.js'
+  import { userSession } from '../../vault.svelte.js'
   import { mirrorToField } from '../field-mirror.svelte.js'
   import { sessionDeleteForm, sessionDeleteSummary, sliceFieldName } from './form.js'
-  import { SESSIONS_FILTER_KEYS } from '../sessions-list/source.js'
 
   interface Props {
     /** Явный набор: одна строка карточки или отмеченные строки списка. */
@@ -68,7 +67,7 @@
 
   mirrorToField(bound, 'ids', () => ids.join(','))
   mirrorToField(bound, 'variant', () => variant)
-  for (const key of SESSIONS_FILTER_KEYS) {
+  for (const key of SESSION_DELETE_SLICE_KEYS) {
     mirrorToField(bound, sliceFieldName(key), () => String(sliceFields?.[key] ?? ''))
   }
 
@@ -104,14 +103,12 @@
       {/if}
     </p>
     {#if doneHref}
-      <Button href={doneHref} variant="outline" class="self-start">К устройствам</Button>
+      <a {...asLink(doneHref)} class="self-start text-sm underline">К устройствам</a>
     {/if}
   </div>
 {:else if !initial}
   <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3', className)} aria-busy="true" data-testid="session-delete-pending">
-    <Skeleton class="h-5 w-44" />
-    <Skeleton class="h-14 w-full" />
-    <Skeleton class="h-9 w-48" />
+    <p class="text-sm text-muted-foreground">Загружаем набор…</p>
   </div>
 {:else if initial.tooMany}
   <p class={cn('text-sm text-destructive', className)} data-testid="session-delete-too-many">
@@ -130,7 +127,7 @@
     <div hidden aria-hidden="true">
       <Field of={bound.f.ids} />
       <Field of={bound.f.variant} />
-      {#each SESSIONS_FILTER_KEYS as key (key)}
+      {#each SESSION_DELETE_SLICE_KEYS as key (key)}
         <Field of={bound.f[sliceFieldName(key) as keyof typeof bound.f]} />
       {/each}
     </div>
@@ -156,9 +153,15 @@
           Удерживайте, чтобы закрыть
         </HoldButton>
       {:else}
-        <Button type="submit" name="intent" value="delete" variant="destructive" class="self-start" data-testid="session-delete-submit">
+        <button
+          type="submit"
+          name="intent"
+          value="delete"
+          class="self-start rounded-md bg-destructive px-3 py-1.5 text-sm font-medium text-destructive-foreground hover:bg-destructive/90"
+          data-testid="session-delete-submit"
+        >
           {variant === 'logout' ? 'Выйти' : 'Закрыть'}
-        </Button>
+        </button>
       {/if}
     </div>
   </Form>
