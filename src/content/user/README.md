@@ -153,3 +153,26 @@ POST <любой маршрут> (__form_id = user-seed | user-profile)
 Пакетный отзыв (`revokeBulkSessions`) принимает серверный срез `where` (тот же построитель `sessionsWhere`, что у списка), исключения `except` и флаг `includeCurrent`. Предел исключений — `SESSIONS_BULK_IDS_LIMIT` (одно объявление в `types.ts`): больше — отказ `auth.limit`, а не усечение. Исключения собираются объявленным оператором `notIn` по `session.id` порциями по `db.limits.inValues` (боевой лимит — 100 значений на узел), а не сотнями отдельных `ne`: 500 `ne` превышают `filterNodes` драйвера и падают validation ещё до SQL (P1-8). Порция ≤ `inValues` — один узел фильтра на кусок, 500 id → 5 узлов; ядро БД и его лимиты не меняются. Замер серверного набора (цикл `select`/`delete`, `count`, длина SQL и `EXPLAIN`) — `npm run probe:user:sessions-bulk` (`src/content/user/probes/sessions-bulk.probe.mts`, PGlite, срез 5000 строк). Пустой срез — `session.nothing-to-close`. Экран выхода (`onlyCurrent`) закрывает одну текущую сессию, id сервер знает из куки. Итог несёт `requested` (счёт по срезу до удаления) и `revoked` (реально погашено): если `requested > revoked` и текущая сессия зрителя жива, редирект на список несёт `?notice=bulk-exit-partial&requested=N&revoked=M`, и список рисует расхождение «запрошено N, завершено M» (P1-1; после серверного набора P0-3 расхождение существует только post-submit, поэтому показывается объявлением на списке, а не в сводке до отправки). Объявление живёт в данных `load` (`SessionsRouteData.notice`, discriminated union `SessionsListNotice`), компонент берёт его из `initial.notice` — баннер виден и на странице, и в модалке; подделанный адрес с `requested <= revoked` объявления не рисует.
 
 Экран своих сессий показывает по 30 записей; ссылки страниц ведут на `/user/sessions?page=…` и работают без JavaScript (из модалки открывается страница). Статус активности обновляется раз в 30 секунд.
+
+## Закрытие набора устройств: ключ, адреса, вариант (S2)
+
+Единица `user.session.delete` — **один** компонент, **один** ключ модалки и **два** адреса
+(план сессий ред. 6 §8.1). Объявления живут в `session-delete.ts`:
+
+| Что | Где | Значение |
+|---|---|---|
+| Ключ модалки | `SESSION_DELETE_MODAL_KEY` | `user.session.delete` |
+| Вариант | `parseSessionDeleteVariant` | закрытый список `delete` / `logout`; незнакомое — `delete` |
+| Предел набора | `MAX_SESSION_DELETE_IDS` | переиспользует `SESSIONS_BULK_IDS_LIMIT` (500), а не второе число |
+| Свой адрес | `userSessionsDeleteRoute` | `/user/sessions/delete?id=&ids=&variant=` |
+| Адрес цели | `userAccountSessionsDeleteRoute` | `/user/[id]/sessions/delete?ids=&variant=` |
+
+У адреса цели ключа `id` нет: `id` там — параметр пути (аккаунт), поэтому набор приходит
+`ids`, а одиночный случай — набором из одного элемента. Иначе поисковый ключ и сегмент пути
+совпали бы, и `href` не смог бы различить их. Разбор адреса не усекает набор: `tooMany`
+возвращается признаком, а отказ формой приходит от доменной двери.
+
+Страницы-fallback обоих адресов пока разбирают только адрес (`contextUid`, `ids`, `tooMany`,
+`variant`, `enabled`, `holdSeconds`); доменная дверь набора и разметка подтверждения —
+этап S3. Регистрация модалки тоже S3: до неё ключ объявлен константой, но компонента нет,
+поэтому deep-link `?modal=user.session.delete` ещё не разрешается.

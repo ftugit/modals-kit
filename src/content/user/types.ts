@@ -1,5 +1,6 @@
 import type { AuthErrorCode } from './error.js'
 import type { PageCaps, SessionSliceCaps } from './caps.js'
+import type { SessionDeleteVariant } from './session-delete.js'
 
 /**
  * Типы модуля пользователя. Ядро (`auth.ts`) не знает ни Request/Response,
@@ -353,6 +354,23 @@ export type BlockDeleteRouteData = {
   blockId: string
   enabled: boolean
   detail: BlockDetailView | null
+  holdSeconds: number
+  fact: AuthErrorCode | null
+}
+
+/**
+ * Данные страницы закрытия набора устройств (оба адреса единицы
+ * `user.session.delete`). `contextUid` — переданная цель: `null` значит «свой
+ * аккаунт». `ids` — разобранный набор из адреса, `tooMany` — набор превысил
+ * предел и подлежит отказу, а не усечению. Доменные строки и механика успеха
+ * приходят на этапе S3.
+ */
+export type SessionDeleteRouteData = {
+  contextUid: string | null
+  ids: string[]
+  tooMany: boolean
+  variant: SessionDeleteVariant
+  enabled: boolean
   holdSeconds: number
   fact: AuthErrorCode | null
 }

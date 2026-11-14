@@ -8,6 +8,7 @@
  */
 import { localPath } from '#lib/address/index.js'
 import { kitRoute, querySchema } from '#lib/address/sveltekit.js'
+import { parseSessionDeleteVariant, type SessionDeleteVariant } from './session-delete.js'
 
 /**
  * Стадии экрана входа, выразимые адресом (`?stage=…`).
@@ -90,6 +91,66 @@ export const userAccountSessionsRoute = kitRoute('/(site)/(app)/user/[id=uuid]/s
  * живут экшены набора: компонент один, POST уходит на этот адрес.
  */
 export const userLogoutRoute = kitRoute('/user/logout')
+
+/** Вход и выход адреса закрытия набора: `id`, `ids` и вариант. */
+export interface SessionDeleteSearchInput extends Record<string, unknown> {
+  id?: string | null
+  ids?: string | null
+  variant?: SessionDeleteVariant
+}
+
+export interface SessionDeleteSearchOutput {
+  id: string | null
+  ids: string | null
+  variant: SessionDeleteVariant
+}
+
+/**
+ * Разбор адреса закрытия набора.
+ *
+ * Набор едет строкой `ids` (CSV) — её форму и предел разбирает
+ * `parseSessionDeleteIds`, а здесь только «пусто → null»: предел проверяется в
+ * загрузчике, чтобы отказ был кодом формы, а не тихой обрезкой адреса. Вариант
+ * идёт закрытым списком (`delete` / `logout`).
+ */
+const sessionDeleteSearch = querySchema<SessionDeleteSearchInput, SessionDeleteSearchOutput>((raw) => ({
+  id: typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : null,
+  ids: typeof raw.ids === 'string' && raw.ids.trim() ? raw.ids.trim() : null,
+  variant: parseSessionDeleteVariant(raw.variant),
+}))
+
+/**
+ * Закрытие устройств своего аккаунта (`/user/sessions/delete`) — один из двух
+ * адресов единицы `user.session.delete` (план сессий §8.1).
+ *
+ * Это **не** карточка устройства: набор приходит адресом (`id`/`ids`), цель —
+ * своя. Переданная цель живёт на втором адресе, `/user/[id]/sessions/delete`.
+ */
+export const userSessionsDeleteRoute = kitRoute('/user/sessions/delete', {
+  owner: 'sessions.delete',
+  keys: ['id', 'ids', 'variant'],
+  defaults: { id: null, ids: null, variant: 'delete' },
+  search: sessionDeleteSearch,
+})
+
+/**
+ * Закрытие устройств переданного аккаунта (`/user/[id]/sessions/delete`) —
+ * второй адрес той же единицы. Цель — `id` пути, набор — `ids` адресом.
+ */
+export const userAccountSessionsDeleteRoute = kitRoute(
+  '/(site)/(app)/user/[id=uuid]/sessions/delete',
+  {
+    dynamic: true,
+    id: '/user/[id]/sessions/delete',
+    owner: 'sessions.delete',
+    // Ключа `id` у этого адреса нет: `id` здесь — параметр пути (цель-аккаунт).
+    // Набор едет `ids`, одиночный случай — набор из одного элемента; иначе имя
+    // поискового ключа совпало бы с сегментом и `href` не смог бы различить их.
+    keys: ['ids', 'variant'],
+    defaults: { ids: null, variant: 'delete' },
+    search: sessionDeleteSearch,
+  },
+)
 
 /** Общий журнал устройств (`/sessions`): все сессии, которые зритель вправе читать. */
 export const sessionsJournalRoute = kitRoute('/sessions')
