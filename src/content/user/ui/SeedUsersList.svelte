@@ -26,7 +26,7 @@
   import { vault } from '../vault.svelte.js'
   import { session as sessionResource } from '../schema.js'
   import { useListSelection } from '#hooks/use-list-selection.svelte.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Checkbox } from '#components/ui/index.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
   import { seedFilterLabels, seedFilterText } from './seed-users/filters-form.js'
@@ -239,11 +239,20 @@
     {/if}
   {/snippet}
   {#snippet controls()}
+    <Button
+      variant="outline"
+      size="sm"
+      data-testid="seed-users-select-toggle"
+      onclick={() => (selection.mode ? selection.exit() : selection.enter())}
+    >
+      {selection.mode ? 'Готово' : 'Выбрать'}
+    </Button>
+    {#if selection.mode}
+      <span class="text-sm text-muted-foreground" data-testid="seed-users-selected-count">
+        Выбрано: {selection.count}
+      </span>
+    {/if}
     {#if canReadSessions}
-      <!-- Журнал всех сессий: строку рисует хост через `ListingRow` — это ссылка
-           (`<a>`), и вложенный интерактивный элемент внутрь неё недопустим
-           (невалидная разметка). Поэтому вход живёт в правой зоне списка
-           (`controls`), а не внутри строки. -->
       <Button
         {...asModalLink('user.sessions.journal')}
         variant="outline"
@@ -255,9 +264,22 @@
     {/if}
   {/snippet}
   {#snippet row(user, ctx)}
-    <ListingRow attrs={attrsOf(user)} id={user.id} testId="seed-user-row" selected={ctx.selected}>
-      <SeedUserCard item={user} selected={ctx.selected} />
-    </ListingRow>
+    {#if selection.mode}
+      <label class="flex items-center gap-2">
+        <Checkbox
+          checked={selection.isSelected(user.id)}
+          onchange={() => selection.toggle(user.id)}
+          data-testid="seed-user-checkbox"
+        />
+        <ListingRow attrs={attrsOf(user)} id={user.id} testId="seed-user-row" selected={ctx.selected}>
+          <SeedUserCard item={user} selected={ctx.selected} />
+        </ListingRow>
+      </label>
+    {:else}
+      <ListingRow attrs={attrsOf(user)} id={user.id} testId="seed-user-row" selected={ctx.selected}>
+        <SeedUserCard item={user} selected={ctx.selected} />
+      </ListingRow>
+    {/if}
   {/snippet}
   {#snippet skeleton(extra)}
     <!--
