@@ -19,6 +19,7 @@
   import { storageServer } from '#hooks/storage-schema.js'
   import { forms } from '#components/form/forms.config.js'
   import StorageServerForm from '#components/storage-servers/StorageServerForm.svelte'
+  import ServerCard from './storage-servers/ServerCard.svelte'
   import { Badge, Button, Skeleton, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
   import type { AuthErrorCode } from '#content/user/error.js'
@@ -174,71 +175,48 @@
       </div>
     {:else}
       {#each currentSlice.items as srv (srv.id)}
-        <div
-          class="flex flex-col gap-2 rounded-lg border border-border p-3"
-          data-testid={`storage-server-card-${srv.slot}`}
-        >
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="font-mono text-sm font-semibold">{srv.slot}</span>
-              <Badge variant="outline">{srv.meta.protocol.toUpperCase()}</Badge>
-              <Badge variant="outline">Приоритет {srv.priority}</Badge>
-              {#if srv.meta.encrypted}
-                <Badge variant="secondary">AES-256-GCM</Badge>
-              {/if}
-              {#if srv.meta.readOnly}
-                <Badge variant="outline">Только чтение</Badge>
-              {/if}
-              {#if !srv.meta.allowSplit}
-                <Badge variant="outline">Без split</Badge>
-              {/if}
-            </div>
+        <ServerCard {srv}>
+          {#snippet actions()}
             {#if editable}
-              <div class="flex items-center gap-1.5">
-                {#if onDone}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onclick={() => loadIntoEditor(srv)}
-                    data-testid={`storage-server-edit-${srv.slot}`}
-                  >
-                    Изменить
-                  </Button>
-                {:else}
-                  <Button
-                    href={`/storage-servers?edit=${encodeURIComponent(srv.id)}`}
-                    variant="outline"
-                    size="sm"
-                    onclick={(e: MouseEvent) => {
-                      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
-                      e.preventDefault()
-                      loadIntoEditor(srv)
-                    }}
-                    data-testid={`storage-server-edit-${srv.slot}`}
-                  >
-                    Изменить
-                  </Button>
-                {/if}
+              {#if onDone}
                 <Button
-                  type="submit"
-                  name="intent"
-                  value={`delete:${srv.id}`}
-                  variant="ghost"
+                  type="button"
+                  variant="outline"
                   size="sm"
-                  task={formTask(bound.state, `delete:${srv.id}`)}
-                  data-testid={`storage-server-delete-${srv.slot}`}
+                  onclick={() => loadIntoEditor(srv)}
+                  data-testid={`storage-server-edit-${srv.slot}`}
                 >
-                  Удалить
+                  Изменить
                 </Button>
-              </div>
+              {:else}
+                <Button
+                  href={`/storage-servers?edit=${encodeURIComponent(srv.id)}`}
+                  variant="outline"
+                  size="sm"
+                  onclick={(e: MouseEvent) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                    e.preventDefault()
+                    loadIntoEditor(srv)
+                  }}
+                  data-testid={`storage-server-edit-${srv.slot}`}
+                >
+                  Изменить
+                </Button>
+              {/if}
+              <Button
+                type="submit"
+                name="intent"
+                value={`delete:${srv.id}`}
+                variant="ghost"
+                size="sm"
+                task={formTask(bound.state, `delete:${srv.id}`)}
+                data-testid={`storage-server-delete-${srv.slot}`}
+              >
+                Удалить
+              </Button>
             {/if}
-          </div>
-          <p class="truncate font-mono text-xs text-muted-foreground">{srv.meta.summary}</p>
-          <p class="text-xs text-muted-foreground">
-            Квота: {srv.meta.storageMb} МБ · Макс. файл: {srv.meta.fileMb} МБ
-          </p>
-        </div>
+          {/snippet}
+        </ServerCard>
       {/each}
     {/if}
   </div>

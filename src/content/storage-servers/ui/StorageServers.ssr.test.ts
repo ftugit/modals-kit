@@ -64,3 +64,35 @@ describe('StorageServersView SSR (STORAGE_ACL)', () => {
     expect((body.match(/<form\b/g) ?? []).length).toBe(1)
   })
 })
+
+describe('StorageServersView: parity с эталоном по применимым возможностям (S20)', () => {
+  const facts = ['s3_primary', 'S3', 'Приоритет 10', '10240', '512', 's3://***@s3.example.com/bucket/app']
+
+  it('читатель и редактор видят одни и те же факты строки — оформление общее', () => {
+    const reader = render(StorageServersView, {
+      props: { authorized: true, enabled: true, initial: sampleRouteData(false) },
+    }).body
+    const editor = render(StorageServersView, {
+      props: { authorized: true, enabled: true, initial: sampleRouteData(true) },
+    }).body
+
+    for (const fact of facts) {
+      expect(reader).toContain(fact)
+      expect(editor).toContain(fact)
+    }
+    // Негативный контроль: кнопки — не оформление, их набор зависит от права.
+    expect(reader).not.toContain('storage-server-edit-s3_primary')
+    expect(editor).toContain('storage-server-edit-s3_primary')
+  })
+
+  it('пул не получает порций и фильтров: их контракта у модуля нет', () => {
+    const body = render(StorageServersView, {
+      props: { authorized: true, enabled: true, initial: sampleRouteData(true) },
+    }).body
+
+    expect(body).not.toContain('storage-servers-paginator')
+    expect(body).not.toContain('storage-servers-filters')
+    // Единственный тег формы — тег пула: кнопки строк подчиняются ему.
+    expect((body.match(/<form\b/g) ?? []).length).toBe(1)
+  })
+})
