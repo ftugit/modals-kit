@@ -204,3 +204,22 @@ echo done
 - Профили как отдельного листа нет; поиск по никнейму — как `q` у пагинатора.
 
 Использовать эти механизмы, а не создавать новые.
+
+## 11. Сопоставление требований и родных возможностей
+
+| Требование | Родная возможность / компонент | Как переиспользовать |
+| --- | --- | --- |
+| A. Выход | `LogoutModal.svelte`, `src/content/user/ui/logout/*`, `SessionDeleteModal.svelte` | Один контракт формы; не дублировать экшен выхода; успех/отсутствие сессии разделить в `LogoutModal` |
+| B1. Один блок на главной | `SiteListsEntry.svelte`, `site-entries.ts` | Добавить кнопки в существующий блок, не новые карточки |
+| B2. Блокировки модалкой с главной | `BlocksModal.svelte`, `BlocksList.svelte` | Тот же носитель: модалка + страница |
+| B3. Один вход в сессии | `Profile.svelte`, `SiteListsEntry.svelte` | Удалить лишние кнопки, оставить профиль (uid) и главную |
+| B5. Лист профилей | `SeedUsersList.svelte`, `Listing.svelte`, `Paginator` | Скопировать носитель seed-списка, убрать seed-права и фильтры, добавить поиск `q` |
+| C. Метки фильтров | `FilterChips.svelte`, `Listing.svelte`, `Floating` | Один компонент меток; реестр блоков `sidebar.ts` |
+| D. Настройки + сессии | `UserConfig.svelte`, `SessionsDomain.svelte`, `Listing`, `Surface`, `Steps`, `Acl.svelte` | Встроенный режим Listing; шаги внутри группы «Безопасность» |
+| D4/D5. Steps без JS и разнос | `Steps.svelte`, `useSteps`, демо `/steps` | Режимы `url`/`hybrid` для страниц; ACL по прямой ссылке |
+| E. Подтверждения | `SessionDeleteModal.svelte`, `BlocksBulkModal.svelte`, `BlocksDeleteModal.svelte` | Отдельные модалки, карточка остаётся входом |
+| F. Сверка | `docs/plan-sessions-components.md` | Пункты 1–12 сверены, новые помечены [Н] |
+| G. Шрифты | `setup-playwright.sh` | Добавить fonts/fontconfig |
+| Демо (шаги) | `src/routes/(app)/steps` | Переиспользовать режимы и ключи брони |
+| Демо (поиск) | `src/routes/(app)/paginator` (`usePaginatorSearch`) | Ключ `q`, fuzzy |
+| Демо (фильтры) | `FiltersPanel`, `FilterChips`, `ActiveFilters`, `FilterLabels` | Не создавать новый механизм меток |
