@@ -54,12 +54,6 @@ describe('load списка сессий: объявление из query ред
     expect(data.notice).toBeNull()
   })
 
-  test('revoke-failed — объявление сбоя', async () => {
-    ok()
-    const data = await loadSessionsRouteData(event('http://localhost/user/sessions?notice=revoke-failed'), null)
-    expect(data.notice).toEqual({ kind: 'revoke-failed' })
-  })
-
   test('без notice — объявления нет', async () => {
     ok()
     const data = await loadSessionsRouteData(event('http://localhost/user/sessions'), null)

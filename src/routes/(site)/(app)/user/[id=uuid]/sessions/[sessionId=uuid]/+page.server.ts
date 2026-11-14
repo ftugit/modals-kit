@@ -3,7 +3,7 @@
 // `/user/sessions/<id>`: цель задаёт адрес, а не данные. Расхождение адреса и
 // аккаунта устройства — отказ, иначе под адресом чужого аккаунта открывалась
 // бы строка, к нему не относящаяся.
-import { redirect } from '@sveltejs/kit'
+import { fail, redirect } from '@sveltejs/kit'
 import { auth } from '#content/user/gateway.server.js'
 import { userAccountSessionRoute, userAccountSessionsRoute } from '#content/user/routes.js'
 import { sessionRenameForm } from '#content/user/sessions.form.js'
@@ -75,11 +75,7 @@ export const actions: Actions = {
         return { redirect: list }
       },
     })(event.request, 'action', event)
-    redirect(
-      303,
-      handled.result.ok && handled.result.redirect
-        ? handled.result.redirect
-        : `${userAccountSessionRoute.href({ id: uid, sessionId: id })}?notice=rename-failed`,
-    )
+    if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
+    return fail(handled.status, { result: handled.result })
   },
 }

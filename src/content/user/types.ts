@@ -178,13 +178,12 @@ export type SessionsTarget =
   | { kind: 'journal' }
 
 /**
- * Объявление списка устройств после действия. `revoke-failed` — отзыв не
- * удался; `bulk-exit-partial` — серверный набор закрыт не целиком: `requested`
- * строк попало в срез до удаления, `revoked` реально погашено (часть закрыли
- * между счётом и отзывом). Расхождение показывается, только когда оно есть.
+ * Объявление списка устройств после действия. `bulk-exit-partial` — серверный
+ * набор закрыт не целиком: `requested` строк попало в срез до удаления,
+ * `revoked` реально погашено (часть закрыли между счётом и отзывом).
+ * Расхождение показывается, только когда оно есть.
  */
 export type SessionsListNotice =
-  | { kind: 'revoke-failed' }
   | { kind: 'bulk-exit-partial'; requested: number; revoked: number }
 
 export type SessionsRouteData = {

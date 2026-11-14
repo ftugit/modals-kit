@@ -47,7 +47,6 @@ const dateMs = (raw: string | null): number | null => {
  */
 function noticeOf(sp: URLSearchParams): SessionsListNotice | null {
   const kind = sp.get('notice')
-  if (kind === 'revoke-failed') return { kind: 'revoke-failed' }
   if (kind === 'bulk-exit-partial') {
     const requested = num(sp.get('requested'), 0, 0, 1_000_000)
     const revoked = num(sp.get('revoked'), 0, 0, 1_000_000)

@@ -270,11 +270,7 @@
   }
 </script>
 
-  {#if activeNotice?.kind === 'revoke-failed'}
-    <p class="text-sm text-destructive" role="alert" data-testid="sessions-list-notice">
-      Не удалось завершить сессии — попробуйте ещё раз.
-    </p>
-  {:else if activeNotice?.kind === 'bulk-exit-partial'}
+  {#if activeNotice?.kind === 'bulk-exit-partial'}
     <!-- Набор закрыт не целиком: часть строк погасили между счётом и отзывом.
          Показываем расхождение, а не молчим (P1-1). -->
     <p class="text-sm text-muted-foreground" role="status" data-testid="sessions-list-partial">

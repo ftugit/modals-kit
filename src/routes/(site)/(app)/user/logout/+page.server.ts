@@ -57,7 +57,7 @@ export const actions: Actions = {
     })(event.request, 'action', event)
     if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
     if (handled.result.outcome === 'unknown') return fail(handled.status, { result: handled.result })
-    redirect(303, `${here}?notice=revoke-failed`)
+    return fail(handled.status, { result: handled.result })
   },
   local: async (event) => {
     const handled = await createFormHandler({

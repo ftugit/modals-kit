@@ -1,7 +1,7 @@
 // Карточка одного устройства (`/user/sessions/<id>`) — страница-fallback
 // модалки `user.session`. Переименование — именованный экшен: без JS форма
 // компонента отправляется обычным POST и возвращается на список.
-import { redirect } from '@sveltejs/kit'
+import { fail, redirect } from '@sveltejs/kit'
 import { auth } from '#content/user/gateway.server.js'
 import { sessionRenameForm } from '#content/user/sessions.form.js'
 import { userSessionRoute, userSessionsRoute } from '#content/user/routes.js'
@@ -63,9 +63,7 @@ export const actions: Actions = {
         return { redirect: list }
       },
     })(event.request, 'action', event)
-    redirect(
-      303,
-      handled.result.ok && handled.result.redirect ? handled.result.redirect : `${userSessionRoute.href({ id })}?notice=rename-failed`,
-    )
+    if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
+    return fail(handled.status, { result: handled.result })
   },
 }

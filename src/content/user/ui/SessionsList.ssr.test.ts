@@ -305,15 +305,6 @@ describe('SessionsList: объявление после действия бер�
     expect(body).toContain('завершено: 3')
   })
 
-  test('сбой отзыва — объявление revoke-failed', () => {
-    addr.url = new URL('http://localhost/user/sessions')
-    const { body } = render(SessionsList, {
-      props: { initial: routeData([device], { notice: { kind: 'revoke-failed' } }) },
-    })
-    expect(body).toContain('data-testid="sessions-list-notice"')
-    expect(body).toContain('Не удалось завершить сессии')
-  })
-
   test('без объявления — ни одного баннера', () => {
     addr.url = new URL('http://localhost/user/sessions')
     const { body } = render(SessionsList, { props: { initial: routeData([device], { notice: null }) } })

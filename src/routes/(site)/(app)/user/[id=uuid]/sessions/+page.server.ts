@@ -32,8 +32,7 @@ export const actions: Actions = {
       },
     })(event.request, 'action', event)
     if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
-    if (handled.result.outcome === 'unknown') return fail(handled.status, { result: handled.result })
-    redirect(303, `${list}?notice=revoke-failed`)
+    return fail(handled.status, { result: handled.result })
   },
   others: async (event) => {
     const target = sessionsTargetOf(event)
@@ -56,9 +55,6 @@ export const actions: Actions = {
       },
     })(event.request, 'action', event)
     if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
-    // Исход неизвестен (коммит начался) — не глухой редирект: форма получает
-    // результат и статус, экран рисует ошибку. Прочий отказ — notice на списке.
-    if (handled.result.outcome === 'unknown') return fail(handled.status, { result: handled.result })
-    redirect(303, `${list}?notice=revoke-failed`)
+    return fail(handled.status, { result: handled.result })
   },
 }
