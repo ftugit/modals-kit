@@ -21,6 +21,7 @@
   import { auth as authResource, block as blockResource } from '../schema.js'
   import type { BlockView } from '../types.js'
   import { vault } from '../vault.svelte.js'
+  import { useListSelection } from '#hooks/use-list-selection.svelte.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import BlocksFiltersForm, { type BlocksFilterValues } from './BlocksFiltersForm.svelte'
   import { blocksFilterLabels, blocksFilterText } from './blocks-list/filters-form.js'
@@ -65,6 +66,8 @@
   }: Props = $props()
 
   ensureBlocksPaginator()
+
+  const selection = useListSelection({ sliceKey: () => `${vault.principal ?? ''}:blocks:${fixedUid ?? ''}` })
 
   const asModalLink = useModalLink()
   const fixedUid = $derived(uid?.trim() || null)
