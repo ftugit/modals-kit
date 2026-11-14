@@ -29,6 +29,7 @@
     userSessionsRoute,
   } from '../routes.js'
   import { vault } from '../vault.svelte.js'
+  import { useListSelection } from '#hooks/use-list-selection.svelte.js'
   import type { SessionDeviceView, SessionsListNotice, SessionsRouteData, SessionsTarget } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SessionRow from './SessionRow.svelte'
@@ -80,6 +81,8 @@
 
   // Регистрация — в том же бандле, что и хост пагинатора внутри `Listing`.
   ensureSessionsPaginator()
+
+  const selection = useListSelection({ sliceKey: () => `${vault.principal ?? ''}:${target?.kind ?? 'own'}` })
 
   // Объявление живёт в данных `load` (`initial.notice`): страницы и модалка
   // передают `initial`, отдельный проп никто не подаёт — поэтому берём из
@@ -311,6 +314,7 @@
 
   pendingTestId="sessions-pending"
   actor={vault.principal}
+  isSelected={selection.isSelected}
   {sidebar}
   filters={{
     modal: 'user.sessions.filters',
