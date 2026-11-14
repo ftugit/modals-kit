@@ -64,11 +64,12 @@
 seed-поля не показываются. Публичность — только если ACL готов (приватность
 `all`), иначе отдельным этапом.
 
-2.6 `SessionsList.svelte` не удалять. Это один компонент: по умолчанию показывает
-все сессии, при переданном `uid` — сессии пользователя. Фильтры одинаковые.
-В фильтрах должна быть возможность выбрать пользователей и показать их сессии
-(как в блокировках). Отличается от `SessionsDomain` только сценарием (uid vs
-все), а не разметкой.
+2.6 Канонический компонент — `SessionsList.svelte`. Текущий `SessionsDomain.svelte`
+должен быть переименован в `SessionsList.svelte` (или стать его обёрткой), а
+старый дубль `SessionsList.svelte` — удалён/слит. Один компонент: по умолчанию
+показывает все сессии, при переданном `uid` — сессии пользователя. Фильтры
+одинаковые. В фильтрах должна быть возможность выбрать пользователей и показать
+их сессии (как в блокировках).
 
 ## 3. Метки фильтров
 
@@ -106,7 +107,7 @@ seed-поля не показываются. Публичность — толь
 слева steps настроек, справа controls активного listing, тело переключается.
 
 4.4 `Listing` получает встроенный/«без шапки» режим: отдаёт шапку (controls,
-фильтры, счётчик) и тело (paginator) родителю. `SessionsDomain` строится на
+фильтры, счётчик) и тело (paginator) родителю. Канонический `SessionsList` строится на
 `Listing` и в встроенном режиме отдаёт свои controls родителю.
 
 4.5 `Surface` — общий хост: `start` = steps настроек, `end` = controls
@@ -215,7 +216,7 @@ echo done
 | B3. Один вход в сессии | `Profile.svelte`, `SiteListsEntry.svelte` | Удалить лишние кнопки, оставить профиль (uid) и главную |
 | B5. Лист профилей | `SeedUsersList.svelte`, `Listing.svelte`, `Paginator` | Скопировать носитель seed-списка, убрать seed-права и фильтры, добавить поиск `q` |
 | C. Метки фильтров | `FilterChips.svelte`, `Listing.svelte`, `Floating` | Один компонент меток; реестр блоков `sidebar.ts` |
-| D. Настройки + сессии | `UserConfig.svelte`, `SessionsDomain.svelte`, `Listing`, `Surface`, `Steps`, `Acl.svelte` | Встроенный режим Listing; шаги внутри группы «Безопасность» |
+| D. Настройки + сессии | `UserConfig.svelte`, `SessionsList.svelte` (канон; сейчас `SessionsDomain`), `Listing`, `Surface`, `Steps`, `Acl.svelte` | Встроенный режим Listing; шаги внутри группы «Безопасность» |
 | D4/D5. Steps без JS и разнос | `Steps.svelte`, `useSteps`, демо `/steps` | Режимы `url`/`hybrid` для страниц; ACL по прямой ссылке |
 | E. Подтверждения | `SessionDeleteModal.svelte`, `BlocksBulkModal.svelte`, `BlocksDeleteModal.svelte` | Отдельные модалки, карточка остаётся входом |
 | F. Сверка | `docs/plan-sessions-components.md` | Пункты 1–12 сверены, новые помечены [Н] |
