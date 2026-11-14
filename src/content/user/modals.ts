@@ -25,6 +25,7 @@ import {
   userConfigRoute,
   userListFiltersRoute,
   userListRoute,
+  usersDeleteRoute,
   userLogoutRoute,
   sessionsJournalRoute,
   userMenuRoute,
@@ -165,6 +166,20 @@ registerModal({
   route: () => userListFiltersRoute.href(),
   size: { width: 420, height: 560 },
 })
+// Удаление аккаунтов набором (`{ ids, list }`): адрес — `/users/delete`, без JS
+// туда же ведёт ссылка и оттуда уходит POST формы. `list` — адрес списка, из
+// которого сервер берёт срез; `ids` — отмеченные строки.
+registerModal({
+  name: 'user.accounts.delete',
+  component: lazy(() => import('./ui/UsersDeleteModal.svelte')),
+  defaultParams: { ids: '', list: '' },
+  route: (p: { ids?: string; list?: string }) =>
+    usersDeleteRoute.href({
+      'del.ids': p?.ids ? String(p.ids) : null,
+      'del.list': p?.list ? String(p.list) : null,
+    }),
+  size: { width: 480, height: 480 },
+})
 // Выбор одного или нескольких пользователей поверх `SeedUsersList`
 // (живёт в памяти без записи в адресную строку; без JS — страница `/users/pick`
 // с возвратом по `from`).
@@ -207,10 +222,13 @@ registerModal({
   name: 'user.blocks.create',
   component: lazy(() => import('./ui/BlockCreateModal.svelte')),
   defaultParams: { uids: '' },
-  route: (p: { uid?: string; uids?: string }) => {
+  route: (p: { uid?: string; uids?: string; list?: string }) => {
     if (p?.uid) return userBlocksCreateRoute.href({ id: String(p.uid) })
     const uids = p?.uids ? String(p.uids).trim() : ''
-    return blocksCreateRoute.href({ uids: uids || null })
+    return blocksCreateRoute.href({
+      uids: uids || null,
+      'blk.list': p?.list ? String(p.list) : null,
+    })
   },
   size: { width: 480, height: 560 },
 })

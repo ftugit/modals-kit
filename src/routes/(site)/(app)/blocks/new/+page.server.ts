@@ -1,6 +1,13 @@
 import type { PageServerLoad } from './$types'
+import { localPath } from '#lib/address/index.js'
+import { BULK_IDS_LIMIT } from '#content/user/bulk.js'
 import { auth, resolveVault } from '#content/user/gateway.server.js'
 import type { BlockCreateRouteData } from '#content/user/types.js'
+import {
+  accountsSliceFrom,
+  accountsSliceReader,
+  hasSliceFields,
+} from '#content/user/ui/accounts-delete/form.js'
 
 export const load: PageServerLoad = async (
   event,
@@ -29,6 +36,25 @@ export const load: PageServerLoad = async (
     }
   }
 
+  // Срез: адрес списка в `blk.list`, цели — те же аккаунты, что видел человек.
+  // Резолвит сервер тем же правом, что список; предел набора — отказ, не усечение.
+  const list = localPath(sp.get('blk.list'))
+  let sliceFact: BlockCreateRouteData['fact'] = null
+  if (initialSubjects.length === 0 && list && u.enabled) {
+    const read = accountsSliceReader(new URL(list, event.url).searchParams)
+    if (hasSliceFields(read)) {
+      const resolved = await u.resolveAccountSlice(accountsSliceFrom(read))
+      if (!resolved.ok) sliceFact = resolved.fact.code
+      else if (resolved.value.length > BULK_IDS_LIMIT) sliceFact = 'auth.limit'
+      else {
+        for (const id of resolved.value) {
+          if (viewerId && id === viewerId) continue
+          initialSubjects.push(id)
+        }
+      }
+    }
+  }
+
   const qs = sp.toString()
 
   return {
@@ -38,7 +64,7 @@ export const load: PageServerLoad = async (
     canPickUsers: r.ok ? r.value.canPickUsers : false,
     assignableScopes: r.ok ? r.value.assignableScopes : [],
     holdSeconds: r.ok ? r.value.holdSeconds : 2,
-    fact: r.ok ? null : r.fact.code,
+    fact: sliceFact ?? (r.ok ? null : r.fact.code),
     initialSubjects,
     initialSubject: initialSubjects[0] ?? '',
     selfHref: qs ? `${event.url.pathname}?${qs}` : event.url.pathname,

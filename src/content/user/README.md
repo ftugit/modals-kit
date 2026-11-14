@@ -190,3 +190,36 @@ POST <любой маршрут> (__form_id = user-seed | user-profile)
 Явный набор из нескольких строк пока закрывается по одной двери строки (права перепроверяются
 на каждой); доменный набор одним вызовом — этап S15. Ссылки на единицу из карточки и списков
 появятся на этапе 3 (§8.2: действия списков умирают, карточка становится входом).
+
+## Наборные действия над аккаунтами (S18)
+
+Общий контракт набора живёт в `bulk.ts`: `parseBulkInput` (один `id`, список `ids`, срез из
+адреса списка; смешивание форм — `auth.confirm`, больше `BULK_IDS_LIMIT` (500) — `auth.limit`,
+не усечение), `bulkIds`, `hasSlice`, `emptyCounts`/`addCounts` для чисел исхода.
+
+`accounts-admin.ts` — доменные двери над моделями, без нового права:
+
+| Дверь | Право | Что делает |
+|---|---|---|
+| `resolveAccountSlice` | как список (`admin` / `account.read`) | постранично (`listSeedUsers`, по 100, предел 500) превращает условия среза в id; больше предела — `auth.limit` |
+| `deleteAccountsBySet` | `gAuth.delete` (`admin` / `server`) | мягкая метка `deletedAt` каждому аккаунту набора, отзыв всех его сессий; себя и последнего администратора не трогает |
+
+Удаление аккаунтов — **только** мягкая метка «удаление запрошено»: физического стирания нет,
+текст экрана этого и не обещает. Строки, которые отказ не пустил, остаются в `rows` с
+`outcome: 'rejected'`, поэтому частичный исход виден счётчиками `requested/changed/unchanged/rejected`.
+
+| Файл | Роль |
+|---|---|
+| `ui/accounts-delete/form.ts` | описание формы: `ids` и ключи среза `filter_*`; тексты и правило удержания — чистые функции |
+| `ui/accounts-delete/accounts-delete.form.server.ts` | компонентная форма: набор из `deleteAccountsBySet`, предел — отказ до записи |
+| `ui/accounts-delete/AccountsDelete.svelte` | подтверждение: слова и число набора, состояния `done/pending/forbidden/too-many` |
+| `ui/UsersDeleteModal.svelte` | модалка ключа `user.accounts.delete` (`ids`, `list`) |
+| `routes/(site)/(app)/users/delete/` | страница-fallback той же формы |
+
+Адреса (`routes.ts`) держат срез в одном ключе — адресе списка-носителя, а не набором фильтров:
+`usersDeleteRoute` `/users/delete?del.list=&del.id=&del.ids=` и `blocksCreateRoute`
+`/blocks/new?uids=&subjects=&subject=&blk.list=`. Ключи префиксованы владельцем: `list` и `id`
+забронированы другими адресами (`user.filters`, `sessions.delete`), и реестр брони не даёт
+делить имя. Сервер резолвит `del.list`/`blk.list` тем же правом, что и список, поэтому подделанный
+адрес не расширяет набор. Кнопки набора — в `ui/SeedUsersList.svelte` (режим отметок): цели
+списком (`uids`, `ids`) или весь срез (`list`), когда отметок нет.

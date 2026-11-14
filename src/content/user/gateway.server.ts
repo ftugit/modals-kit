@@ -48,6 +48,13 @@ import {
 import { sign, verify } from './keys.js'
 import { listSeedUsers as coreListSeedUsers, type ListSeedUsersArgs } from './accounts.js'
 import {
+  deleteAccountsBySet as coreDeleteAccountsBySet,
+  resolveAccountSlice as coreResolveAccountSlice,
+  type AccountsSlice,
+  type DeleteAccountsArgs,
+  type DeleteAccountsResult,
+} from './accounts-admin.js'
+import {
   deleteProfile as coreDeleteProfile,
   profile as coreProfile,
   publicProfile as corePublicProfile,
@@ -698,6 +705,13 @@ export function auth(event: AuthEvent): {
   revokeBulkSessions(args: RevokeBulkArgs): Promise<UserResult<SessionBulkRevokeResult>>
   /** Порция списка seed-юзеров (нужны `admin` или `account.read`). */
   listSeedUsers(args?: ListSeedUsersArgs): Promise<UserResult<SeedUsersPage>>
+  /**
+   * Набор аккаунтов по срезу списка: `id`/`ids`/срез, одна форма. Резолвит
+   * сервер теми же правами, что список; предел набора — отказ, не усечение.
+   */
+  resolveAccountSlice(args?: AccountsSlice): Promise<UserResult<string[]>>
+  /** Мягко удалить набор аккаунтов («удаление запрошено»): цель — набор или срез. */
+  deleteAccountsBySet(args: DeleteAccountsArgs): Promise<UserResult<DeleteAccountsResult>>
   /** Свой профиль; `subject` — чужой (нужны права `profile.read`/`admin`). */
   profile(subject?: string): Promise<UserResult<ProfileRead>>
   /** Публичный показ чужого профиля проекцией (гость допустим), если уровень видимости разрешает. */
@@ -897,6 +911,9 @@ export function auth(event: AuthEvent): {
       return r
     },
     listSeedUsers: async (args) => coreListSeedUsers(ports, await freshAccessOrCurrent(), args),
+    resolveAccountSlice: async (args) =>
+      coreResolveAccountSlice(ports, await freshAccessOrCurrent(), args ?? {}),
+    deleteAccountsBySet: async (args) => coreDeleteAccountsBySet(ports, await freshAccessOrCurrent(), args),
     profile: async (subject?: string) => coreProfile(ports, await freshAccessOrCurrent(), subject),
     publicProfile: async (subject: string) => corePublicProfile(ports, access(), subject),
     setProfileVisibility: async (level: string) =>

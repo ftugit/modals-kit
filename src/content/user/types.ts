@@ -374,6 +374,25 @@ export type SessionDeleteRouteData = {
   fact: AuthErrorCode | null
 }
 
+/**
+ * Данные единицы удаления аккаунтов (`user.accounts.delete`): набор или срез
+ * приносит адрес, число строк среза считает сервер тем же правом, что список.
+ */
+export type AccountsDeleteRouteData = {
+  enabled: boolean
+  canDelete: boolean
+  /** Явный набор из адреса (`id`/`ids`). */
+  ids: string[]
+  /** Набор в адресе больше предела: форма отказывает, а не усекает. */
+  tooMany: boolean
+  /** Непустые условия среза — те же имена, что у списка (`q`, `state`, …). */
+  sliceFields: Record<string, string> | null
+  /** Сколько аккаунтов в срезе (`null` — среза нет или права не хватило). */
+  count: number | null
+  holdSeconds: number
+  fact: AuthErrorCode | null
+}
+
 /** Доверенный principal — из содержимого временного токена без похода в БД. */
 export type Principal = { id: string }
 

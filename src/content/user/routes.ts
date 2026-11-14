@@ -254,6 +254,35 @@ export const userListFiltersRoute = kitRoute('/users/filters', {
   })),
 })
 
+export interface UsersDeleteSearchInput extends Record<string, unknown> {
+  /** Адрес списка-носителя: из него берутся условия среза (`users.*`). */
+  'del.list'?: string | null
+  'del.id'?: string | null
+  'del.ids'?: string | null
+}
+
+export interface UsersDeleteSearchOutput {
+  'del.list': string | null
+  'del.id': string | null
+  'del.ids': string | null
+}
+
+/**
+ * Удаление аккаунтов набором (`/users/delete`) — адрес единицы
+ * `user.accounts.delete`. Набор (`id`/`ids`) или адрес списка (`list`) передаёт
+ * носитель; срез из `list` считает сервер; страница — fallback модалки.
+ */
+export const usersDeleteRoute = kitRoute('/users/delete', {
+  owner: 'users.delete',
+  keys: ['del.list', 'del.id', 'del.ids'],
+  defaults: { 'del.list': null, 'del.id': null, 'del.ids': null },
+  search: querySchema<UsersDeleteSearchInput, UsersDeleteSearchOutput>((raw) => ({
+    'del.list': localPath(typeof raw['del.list'] === 'string' ? raw['del.list'] : null),
+    'del.id': typeof raw['del.id'] === 'string' && raw['del.id'] ? raw['del.id'] : null,
+    'del.ids': typeof raw['del.ids'] === 'string' && raw['del.ids'] ? raw['del.ids'] : null,
+  })),
+})
+
 /**
  * Фильтры списка устройств: страница-fallback модалки `user.sessions.filters`.
  * Как у фильтров seed-списка — адрес носителя в параметре `from`.
@@ -301,23 +330,27 @@ export interface BlocksCreateSearchInput extends Record<string, unknown> {
   uids?: string | null
   subjects?: string | null
   subject?: string | null
+  'blk.list'?: string | null
 }
 
 export interface BlocksCreateSearchOutput {
   uids: string | null
   subjects: string | null
   subject: string | null
+  /** Адрес списка-носителя: из него берётся срез, когда целей списком нет. */
+  'blk.list': string | null
 }
 
 /** Создание блокировки из глобального списка (`/blocks/new`). */
 export const blocksCreateRoute = kitRoute('/blocks/new', {
   owner: 'blocks.create',
-  keys: ['uids', 'subjects', 'subject'],
-  defaults: { uids: null, subjects: null, subject: null },
+  keys: ['uids', 'subjects', 'subject', 'blk.list'],
+  defaults: { uids: null, subjects: null, subject: null, 'blk.list': null },
   search: querySchema<BlocksCreateSearchInput, BlocksCreateSearchOutput>((raw) => ({
     uids: typeof raw.uids === 'string' && raw.uids ? raw.uids : null,
     subjects: typeof raw.subjects === 'string' && raw.subjects ? raw.subjects : null,
     subject: typeof raw.subject === 'string' && raw.subject ? raw.subject : null,
+    'blk.list': localPath(typeof raw['blk.list'] === 'string' ? raw['blk.list'] : null),
   })),
 })
 

@@ -251,6 +251,45 @@
       <span class="text-sm text-muted-foreground" data-testid="seed-users-selected-count">
         Выбрано: {selection.count}
       </span>
+      {#if selection.count > 0}
+        <Button
+          {...asModalLink('user.blocks.create', { uids: [...selection.ids].join(',') })}
+          variant="outline"
+          size="sm"
+          data-testid="seed-users-block"
+        >
+          Заблокировать
+        </Button>
+        <Button
+          {...asModalLink('user.accounts.delete', {
+            ids: [...selection.ids].join(','),
+            list: listFrom,
+          })}
+          variant="destructive"
+          size="sm"
+          data-testid="seed-users-delete"
+        >
+          Удалить
+        </Button>
+      {:else}
+        <!-- Срез без отметок: набор считает сервер по адресу списка. -->
+        <Button
+          {...asModalLink('user.blocks.create', { list: listFrom })}
+          variant="outline"
+          size="sm"
+          data-testid="seed-users-block-slice"
+        >
+          Заблокировать всё в срезе
+        </Button>
+        <Button
+          {...asModalLink('user.accounts.delete', { list: listFrom })}
+          variant="destructive"
+          size="sm"
+          data-testid="seed-users-delete-slice"
+        >
+          Удалить всё в срезе
+        </Button>
+      {/if}
     {/if}
     {#if canReadSessions}
       <Button
