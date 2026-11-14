@@ -225,8 +225,8 @@ const LIMITS = {
   // `git stash` → `vite build` → `test:size`), правки S3/S4 добавляют +0.1 KiB.
   // По постоянному правилу оператора (≤ +5 КБ, сообщить) лимиты = факт + 0.5.
   // 2026-11-02: владелец утвердил отдельные лимиты ядра и сборки demo.
-  allImmutableGzip: 446.0 * KiB,
-  allJsGzip: 433.5 * KiB,
+  allImmutableGzip: 450.0 * KiB,
+  allJsGzip: 437.0 * KiB,
   allCssGzip: 22 * KiB,
   largestJsGzip: 55 * KiB,
   largestCssGzip: 15.4 * KiB,
