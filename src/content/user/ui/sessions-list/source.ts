@@ -159,6 +159,7 @@ export function ensureSessionsPaginator(): string {
       // Любой extra-ключ (адресный или внутренний) — новая выдача с первой
       // порции; состав выведен из одного описания SESSIONS_EXTRAS (P2-2).
       reloadKeys: [...SESSIONS_EXTRAS.reloadKeys],
+      pageSize: SESSIONS_PAGE_SIZE,
       adapter: createUrlAdapter({
         name: SESSIONS_NAME,
         source: sessionsSource,

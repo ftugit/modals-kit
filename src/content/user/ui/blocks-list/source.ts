@@ -158,6 +158,7 @@ export function ensureBlocksPaginator(): string {
       name: BLOCKS_NAME,
       // Состав выведен из одного описания BLOCKS_EXTRAS (P2-2).
       reloadKeys: [...BLOCKS_EXTRAS.reloadKeys],
+      pageSize: BLOCKS_PAGE_SIZE,
       adapter: createUrlAdapter({
         name: BLOCKS_NAME,
         source: blocksSource,

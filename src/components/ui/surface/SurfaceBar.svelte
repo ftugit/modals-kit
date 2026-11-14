@@ -31,10 +31,10 @@
   // Общий вид одной зоны: не даём содержимому распирать ряд и прячем
   // скроллбар — прокрутка остаётся, полоса нет.
   const zone =
-    'flex min-w-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+    'flex min-w-0 items-center gap-1.5 whitespace-nowrap'
 </script>
 
-<div class={cn('flex w-full flex-wrap items-center gap-x-2 gap-y-1.5', cls)}>
+<div class={cn('flex w-full flex-nowrap items-center gap-x-2 overflow-x-auto', cls)}>
   {#if leading}
     <div class={zone} data-surface-zone="leading">
       {@render leading()}

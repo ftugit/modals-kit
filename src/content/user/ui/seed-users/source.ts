@@ -196,6 +196,7 @@ export function ensureSeedUsersPaginator(): string {
       // из одного описания SEED_USERS_EXTRAS (P2-2). Без `reloadKeys` `setExtra`
       // только правил бы состояние: ни перезапроса, ни смены адреса.
       reloadKeys: [...SEED_USERS_EXTRAS.reloadKeys],
+      pageSize: SEED_USERS_PAGE_SIZE,
       adapter: createUrlAdapter({
         name: SEED_USERS_NAME,
         source: seedUsersSource,
