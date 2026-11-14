@@ -46,7 +46,13 @@ export default defineConfig(async ({ command, isPreview }) => {
   const kit = {
     adapter: await createAdapter(platform.id),
     // Node и Cloudflare: origin задаётся в рантайме. Vercel сохраняет прежний контракт сборки.
-    paths: { origin: platform.bakeOrigin ? process.env.ORIGIN || undefined : undefined },
+    // `relative: false` — адреса реестра абсолютны в рантайме. Без этого `resolve()`
+    // внутри запроса отдавал относительный путь, `safeRedirect` его отбрасывал, и
+    // успешное действие чужого аккаунта объявлялось ошибкой (S0 плана сессий).
+    paths: {
+      origin: platform.bakeOrigin ? process.env.ORIGIN || undefined : undefined,
+      relative: false,
+    },
     preprocess: vitePreprocess(),
     csrf: { trustedOrigins: trustedOrigins(getEnv, { dev: isDev }).exact },
     csp: {

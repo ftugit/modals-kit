@@ -31,7 +31,7 @@ export const actions: Actions = {
         return { redirect: r.value.current ? '/user/auth' : list }
       },
     })(event.request, 'action', event)
-    if (handled.result.ok && handled.result.redirect?.startsWith('/')) redirect(303, handled.result.redirect)
+    if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
     if (handled.result.outcome === 'unknown') return fail(handled.status, { result: handled.result })
     redirect(303, `${list}?notice=revoke-failed`)
   },
@@ -55,7 +55,7 @@ export const actions: Actions = {
         return { redirect: r.redirect }
       },
     })(event.request, 'action', event)
-    if (handled.result.ok && handled.result.redirect?.startsWith('/')) redirect(303, handled.result.redirect)
+    if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
     // Исход неизвестен (коммит начался) — не глухой редирект: форма получает
     // результат и статус, экран рисует ошибку. Прочий отказ — notice на списке.
     if (handled.result.outcome === 'unknown') return fail(handled.status, { result: handled.result })

@@ -77,7 +77,7 @@ export const actions: Actions = {
     })(event.request, 'action', event)
     redirect(
       303,
-      handled.result.ok && handled.result.redirect?.startsWith('/')
+      handled.result.ok && handled.result.redirect
         ? handled.result.redirect
         : `${userAccountSessionRoute.href({ id: uid, sessionId: id })}?notice=rename-failed`,
     )

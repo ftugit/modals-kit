@@ -65,7 +65,7 @@ export const actions: Actions = {
     })(event.request, 'action', event)
     redirect(
       303,
-      handled.result.ok && handled.result.redirect?.startsWith('/') ? handled.result.redirect : `${userSessionRoute.href({ id })}?notice=rename-failed`,
+      handled.result.ok && handled.result.redirect ? handled.result.redirect : `${userSessionRoute.href({ id })}?notice=rename-failed`,
     )
   },
 }
