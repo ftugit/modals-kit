@@ -63,26 +63,28 @@
           : 'summary',
   })
   const exitStep = $derived(exitHost.currentKey === 'confirm' ? 'confirm' : 'summary')
+  // Правило цели (S1): адрес карточки, закрытия и шага строится от цели строки —
+  // аккаунта из данных сервера, а не от сравнения с клиентским зеркалом. Зеркало
+  // в выборе адреса не участвует: иначе пустое или отставшее зеркало уводило бы
+  // своё устройство на адрес чужого аккаунта.
+  const targetId = $derived(session.authId ?? null)
   const cardRoute = $derived(
-    session.authId && session.authId !== vault.principal
-      ? userAccountSessionRoute.href({ id: session.authId, sessionId: id })
-      : userSessionRoute.href({ id }),
+    targetId ? userAccountSessionRoute.href({ id: targetId, sessionId: id }) : userSessionRoute.href({ id }),
   )
   const exitNextHref = $derived(stepsMode === 'modal' ? `${cardRoute}?${exitKey}=confirm` : exitHost.href('confirm'))
   const exitBackHref = $derived(stepsMode === 'modal' ? cardRoute : exitHost.blankHref())
   const closable = $derived(detail.canRevoke && session.deletedAt == null && !session.current)
-  // Цель отзыва — аккаунт строки, а не зрителя: чужая сессия закрывается
-  // экшеном чужого списка, иначе набор не найдёт её в своём аккаунте.
-  const foreign = $derived(Boolean(session.authId && session.authId !== vault.principal))
+  // Цель отзыва — аккаунт строки, не зритель: экшен читает id из формы, а права
+  // проверяет сервер. Клиентское зеркало здесь не участвует вовсе.
   const exitAction = $derived(
-    foreign ? `${userAccountSessionsRoute.href({ id: session.authId! })}?/revoke` : `${actionHref ?? userSessionsRoute.href()}?/revoke`,
+    targetId ? `${userAccountSessionsRoute.href({ id: targetId })}?/revoke` : `${actionHref ?? userSessionsRoute.href()}?/revoke`,
   )
   // Переименование уходит на экшен своей единицы: чужая строка — на чужой
   // роут, поэтому `actions.rename` чужой страницы достижим и не удаляется.
   const renameAction = $derived(
     actionHref ??
-      (foreign
-        ? `${userAccountSessionRoute.href({ id: session.authId!, sessionId: id })}?/rename`
+      (targetId
+        ? `${userAccountSessionRoute.href({ id: targetId, sessionId: id })}?/rename`
         : `${userSessionRoute.href({ id })}?/rename`),
   )
   const form = bind(forms, sessionRenameForm(id), {

@@ -23,7 +23,9 @@
       ? String(modal.params.uids)
           .split(',')
           .map((s) => s.trim())
-          .filter((s) => Boolean(s) && s !== vault.principal)
+          // Правило цели (S1): набор не правится молча. Своя цель остаётся в списке —
+          // сервер отказывает внятным кодом, а человек видит, что выбрал себя.
+          .filter((s) => Boolean(s))
       : undefined,
   )
 

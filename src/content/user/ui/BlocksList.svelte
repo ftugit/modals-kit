@@ -83,11 +83,13 @@
 
   function filterUids(extra: Record<string, unknown>): string {
     if (fixedUid) return ''
-    const selfId = vault.principal
+    // Правило цели (S1): фильтр уходит без клиентской правки. Своя цель в срезе —
+    // законный запрос; строки режет сервер по правам, а недопустимая цель даёт
+    // серверный отказ, а не тихое уменьшение набора.
     return String(extra.uids ?? '')
       .split(',')
       .map((s) => s.trim())
-      .filter((id) => Boolean(id) && id !== selfId)
+      .filter(Boolean)
       .join(',')
   }
 
