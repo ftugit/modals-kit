@@ -25,6 +25,7 @@
   import type { SeedUserView } from '../types.js'
   import { vault } from '../vault.svelte.js'
   import { session as sessionResource } from '../schema.js'
+  import { useListSelection } from '#hooks/use-list-selection.svelte.js'
   import { Button } from '#components/ui/index.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
@@ -76,6 +77,8 @@
 
   // Регистрация — в том же бандле, что и хост пагинатора внутри `Listing`.
   ensureSeedUsersPaginator()
+
+  const selection = useListSelection({ sliceKey: () => `${vault.principal ?? ''}:seed-users` })
 
   // Вход в журнал сессий — только тому, кто вправе читать чужие устройства
   // (круг журнала). Право смотрит та же модель, что и сам экран.
