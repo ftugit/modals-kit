@@ -8,15 +8,13 @@
    * карточке нет: `jti` и версию сервер не отдаёт.
    */
   import { untrack } from 'svelte'
-  import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { useSteps } from '#components/steps/index.js'
-  import { asLink } from '#hooks/links/index.js'
+  import { asLink, useModalLink } from '#hooks/links/index.js'
   import Field from '#components/form/Field.svelte'
   import { forms } from '#components/form/forms.config.js'
   import { Badge, Button, TimeAgo } from '#components/ui/index.js'
   import Common from '#components/form/Common.svelte'
   import { bind, Form } from '#lib/form/svelte/index.js'
-  import { sessionRenameForm, sessionRevokeForm } from '../sessions.form.js'
+  import { sessionRenameForm } from '../sessions.form.js'
   import { userAccountSessionRoute, userAccountSessionsRoute, userSessionRoute, userSessionsRoute } from '../routes.js'
   import type { SessionDetail } from '../types.js'
   import { vault } from '../vault.svelte.js'
@@ -49,41 +47,12 @@
   )
   const id = untrack(() => detail.session.id)
 
-  // Закрыть карточку — отзыв одной строки (`?/revoke`), а не массовый набор.
-  // Свою текущую сессию здесь не закрывают вовсе: для неё есть выход в меню.
-  const stepsMode = untrack(() => mode)
-  const exitKey = 'session.exit'
-  const exitHost = useSteps({
-    owner: 'user-session-exit',
-    key: exitKey,
-    mode: stepsMode === 'modal' ? 'local' : 'url',
-    steps: () => [
-      { key: 'summary', label: 'Сводка', filled: true },
-      { key: 'confirm', label: 'Подтверждение', filled: true },
-    ],
-    current: () =>
-      stepsMode === 'modal'
-        ? 'summary'
-        : visibleAddress().url.searchParams.get(exitKey) === 'confirm'
-          ? 'confirm'
-          : 'summary',
-  })
-  const exitStep = $derived(exitHost.currentKey === 'confirm' ? 'confirm' : 'summary')
-  // Правило цели (S1): адрес карточки, закрытия и шага строится от переданной
+  // Правило цели (S1): адрес карточки строится от переданной
   // цели (`uid` носителя), а не от сравнения с клиентским зеркалом. Своя строка
   // в своём списке остаётся на своих адресах, чужая — на адресах цели.
   const targetId = $derived(uid?.trim() || null)
-  const cardRoute = $derived(
-    targetId ? userAccountSessionRoute.href({ id: targetId, sessionId: id }) : userSessionRoute.href({ id }),
-  )
-  const exitNextHref = $derived(stepsMode === 'modal' ? `${cardRoute}?${exitKey}=confirm` : exitHost.href('confirm'))
-  const exitBackHref = $derived(stepsMode === 'modal' ? cardRoute : exitHost.blankHref())
+  const asModalLink = useModalLink()
   const closable = $derived(detail.canRevoke && session.deletedAt == null && !session.current)
-  // Цель отзыва — аккаунт строки, не зритель: экшен читает id из формы, а права
-  // проверяет сервер. Клиентское зеркало здесь не участвует вовсе.
-  const exitAction = $derived(
-    targetId ? `${userAccountSessionsRoute.href({ id: targetId })}?/revoke` : `${actionHref ?? userSessionsRoute.href()}?/revoke`,
-  )
   // Переименование уходит на экшен своей единицы: чужая строка — на чужой
   // роут, поэтому `actions.rename` чужой страницы достижим и не удаляется.
   const renameAction = $derived(
@@ -96,15 +65,6 @@
     action: untrack(() => renameAction),
     intercept: false,
   })
-  const revokeForm = bind(forms, sessionRevokeForm(id), {
-    action: untrack(() => exitAction),
-    intercept: false,
-  })
-  function localBack(e: MouseEvent) {
-    if (stepsMode !== 'modal' || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-    e.preventDefault()
-    exitHost.set('summary')
-  }
 </script>
 
 <div class="flex flex-col gap-4" data-testid="session-card">
@@ -162,38 +122,20 @@
   {/if}
 
   {#if closable}
-    <div class="flex flex-col gap-3 border-t border-border pt-3">
-      {#if exitStep === 'confirm'}
-        <Form
-          form={revokeForm}
-          hiddenFields={revokeForm.hidden()}
-          class="flex flex-col gap-3"
-          data-testid="session-card-exit"
-        >
-          <div hidden><Field of={revokeForm.f.id} /></div>
-          <Common errors={revokeForm.common} title="Не получилось завершить сессию" />
-          <h3 class="text-base font-semibold">Завершение сессии</h3>
-          <p class="text-sm text-muted-foreground">Устройство потеряет доступ: войти придётся заново.</p>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button type="submit" variant="destructive" size="sm" data-testid="session-card-exit-submit">Завершить сессию</Button>
-            <Button href={exitBackHref} onclick={localBack} variant="outline" size="sm" data-testid="session-card-exit-back">Назад</Button>
-          </div>
-        </Form>
-      {:else}
-        <div class="flex items-center justify-between gap-3">
-          {#if stepsMode === 'modal'}
-            <Button type="button" onclick={() => exitHost.set('confirm')} variant="outline" size="sm" data-testid="session-card-revoke">
-              Заблокировать
-            </Button>
-          {:else}
-            <Button href={exitNextHref} variant="outline" size="sm" data-testid="session-card-revoke">
-              Заблокировать
-            </Button>
-          {/if}
-          {#if detail.canHardDelete}
-            <span class="text-xs text-muted-foreground">Полное удаление доступно администратору.</span>
-          {/if}
-        </div>
+    <div class="flex items-center justify-between gap-3 border-t border-border pt-3">
+      <Button
+        {...asModalLink('user.session.delete', {
+          ids: session.id,
+          ...(targetId ? { uid: targetId } : {}),
+        })}
+        variant="outline"
+        size="sm"
+        data-testid="session-card-revoke"
+      >
+        Заблокировать
+      </Button>
+      {#if detail.canHardDelete}
+        <span class="text-xs text-muted-foreground">Полное удаление доступно администратору.</span>
       {/if}
     </div>
   {/if}
