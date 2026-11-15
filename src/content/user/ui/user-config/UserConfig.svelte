@@ -168,7 +168,7 @@
   <Surface
     {variant}
     class={cn('mx-auto w-full max-w-md', className)}
-    title={slice ? (slice.isOwn ? specConfig.ownTitle : specConfig.foreignTitle) : undefined}
+    title={slice && !slice.isOwn ? specConfig.foreignTitle : undefined}
     description={slice && !slice.isOwn ? configTarget : undefined}
     controls={slice?.isOwn || showStepsNav
       ? {
