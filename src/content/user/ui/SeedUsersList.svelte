@@ -24,7 +24,6 @@
   import { auth as authResource, profile as profileResource } from '../schema.js'
   import type { SeedUserView } from '../types.js'
   import { vault } from '../vault.svelte.js'
-  import { session as sessionResource } from '../schema.js'
   import { useListSelection } from '#hooks/use-list-selection.svelte.js'
   import { Button, Checkbox } from '#components/ui/index.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
@@ -102,16 +101,8 @@
     onPicked?.(togglePicked([...pickedSet], id))
   }
 
-  // Вход в журнал сессий — только тому, кто вправе читать чужие устройства
-  // (круг журнала). Право смотрит та же модель, что и сам экран.
-  const gSession = grants(sessionResource)
-  const readSessionsGrant = useGrants(gSession.select)
-
   // До гидратации право берётся из `load` (как `canSeeDeleted`/`canSeeNickname`),
   // после — уточняется реактивным `useGrants`. Без этого SSR/no-JS не рисовал вход.
-  const canReadSessions = $derived(
-    vault.principal !== null ? readSessionsGrant.current : initial?.canReadSessions === true,
-  )
 
   const asModalLink = useModalLink()
   const attrsOf = (user: SeedUserView): LinkAttrs =>
@@ -314,16 +305,6 @@
           Удалить всё в срезе
         </Button>
       {/if}
-    {/if}
-    {#if canReadSessions}
-      <Button
-        {...asModalLink('user.sessions.journal')}
-        variant="outline"
-        size="sm"
-        data-testid="seed-users-sessions-open"
-      >
-        Все сессии
-      </Button>
     {/if}
   {/snippet}
   {#snippet row(user, ctx)}

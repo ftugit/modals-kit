@@ -54,8 +54,9 @@ export const actions: Actions = {
         if (!r.ok && r.error?.code !== 'session.nothing-to-close' && r.error?.code !== 'auth.forbidden') {
           return fail([r.error ?? sessionFormError('auth.unavailable')])
         }
+        await auth(event).logoutLocal()
         commit()
-        return { redirect: r.ok ? r.redirect : '/' }
+        return { redirect: '/' }
       },
     })(event.request, 'action', event)
     if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)

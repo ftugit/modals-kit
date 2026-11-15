@@ -399,18 +399,6 @@
         </Button>
       {/if}
     {/if}
-    {#if !journal && !fixedUid && view.canReadOthers}
-      <!-- Журнал — своя пара `user.sessions.journal`: вход слоем, а не переходом.
-           Адрес без JS приходит из реестра через пару, не из разметки. -->
-      <Button
-        {...asModalLink('user.sessions.journal')}
-        variant="outline"
-        size="sm"
-        data-testid="sessions-journal-open"
-      >
-        Все сессии
-      </Button>
-    {/if}
     {#if journal}
       <!-- Обратно к своим — той же механикой: слой `user.sessions` поверх журнала. -->
       <Button

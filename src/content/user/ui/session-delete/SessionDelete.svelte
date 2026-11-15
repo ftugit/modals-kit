@@ -113,7 +113,7 @@
     if (variant === 'logout') {
       vault.clear()
       onDone?.()
-      if (doneHref) void goto(doneHref, { invalidateAll: true })
+      if (doneHref) void goto(doneHref, { invalidateAll: true }) // session-delete-ok: явный выход уводит на главную
       return
     }
     onDone?.()

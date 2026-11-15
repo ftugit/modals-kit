@@ -47,6 +47,7 @@ registerComponentForm({
         },
       )
       if (!r.ok) return fail([r.error ?? sessionFormError('auth.unavailable')])
+      if (variant === 'logout') await u.logoutLocal()
       commit()
       return { data: { step: 'done', variant, revoked: null, requested: null } }
     }
@@ -62,6 +63,7 @@ registerComponentForm({
     const logoutOk = variant === 'logout' && !r.ok && (r.fact.code === 'session.nothing-to-close' || r.fact.code === 'auth.forbidden')
     if (!r.ok && !logoutOk) return fail([sessionFormError(r.fact.code)])
     const result = r.ok ? r.value : { revoked: 0, requested: 0 }
+    if (variant === 'logout') await u.logoutLocal()
     commit()
     return { data: { step: 'done', variant, revoked: result.revoked, requested: result.requested } }
   },

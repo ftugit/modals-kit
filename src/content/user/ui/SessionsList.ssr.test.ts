@@ -164,8 +164,6 @@ describe('SessionsList', () => {
     const own = render(SessionsList, {
       props: { initial: routeData([device, other], { canReadOthers: true }) },
     })
-    expect(own.body).toContain('data-testid="sessions-journal-open"')
-    expect(own.body).toContain('href="/sessions"')
     expect(own.body).toContain('sessions-revoke-others')
   })
 
@@ -219,57 +217,6 @@ describe('SessionsList', () => {
     const filters = links.calls.find((c) => c.name === 'user.sessions.filters')
     expect(filters?.params).toEqual({ uid })
     expect(body).toContain(`href="/user/sessions/filters?uid=${uid}"`)
-  })
-
-  test('вход в журнал и возврат к своим — модалками, а не переходами', () => {
-    // Атрибуты одной кнопки: по `data-testid` находим её ссылку и смотрим,
-    // что это механика модалок (`data-modal-link`), а не простой `href`.
-    const attrsOf = (body: string, testId: string): string =>
-      new RegExp(`<a(?=[^>]*data-testid="${testId}")[^>]*>`).exec(body)?.[0] ?? ''
-
-    links.calls.length = 0
-    // `body` — геттер: SSR-рендер ленивый, разметка (и вызовы модалок)
-    // появляются только при обращении к нему.
-    const { body: ownBody } = render(SessionsList, {
-      props: { initial: routeData([device, other], { canReadOthers: true }) },
-    })
-    const open = links.calls.find((c) => c.name === 'user.sessions.journal')
-    expect(open).toBeDefined()
-    const openAttrs = attrsOf(ownBody, 'sessions-journal-open')
-    expect(openAttrs).toContain('data-modal-link')
-    expect(openAttrs).toContain('href="/sessions"')
-
-    // Внутри журнала входа в журнал нет, а возврат к своим — тоже модалкой.
-    links.calls.length = 0
-    const { body: journalBody } = render(SessionsList, {
-      props: { target: { kind: 'journal' }, initial: routeData([device, other], { target: { kind: 'journal' }, canReadOthers: true }) },
-    })
-    expect(journalBody).not.toContain('sessions-journal-open')
-    expect(links.calls.some((c) => c.name === 'user.sessions.journal')).toBe(false)
-    expect(links.calls.some((c) => c.name === 'user.sessions')).toBe(true)
-    const backAttrs = attrsOf(journalBody, 'sessions-own-open')
-    expect(backAttrs).toContain('data-modal-link')
-    expect(backAttrs).toContain('href="/user/sessions"')
-  })
-
-  test('вход в журнал только по праву на чужие устройства', () => {
-    // Кнопка журнала ведёт на чужие сессии: без права на них её быть не должно,
-    // в противном случае ссылка показывает заведомый отказ.
-    const own = render(SessionsList, { props: { initial: routeData([device, other]) } })
-    expect(own.body).not.toContain('data-testid="sessions-journal-open"')
-    expect(own.body).not.toContain('href="/sessions"')
-
-    const journal = render(SessionsList, {
-      props: { target: { kind: 'journal' }, initial: routeData([device, other], { target: { kind: 'journal' } }) },
-    })
-    expect(journal.body).not.toContain('data-testid="sessions-journal-open"')
-
-    // Позитивный контроль: право есть — вход появляется.
-    const allowed = render(SessionsList, {
-      props: { initial: routeData([device, other], { canReadOthers: true }) },
-    })
-    expect(allowed.body).toContain('data-testid="sessions-journal-open"')
-    expect(allowed.body).toContain('href="/sessions"')
   })
 
   test('без права отзыва кнопки остальных нет', () => {
