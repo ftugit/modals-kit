@@ -32,7 +32,7 @@ describe('ProfilesList SSR', () => {
     const initial: ProfilesRouteData = {
       snapshot: profilesSnapshot(
         {
-          items: [{ id: 'p1', authId: 'a1', nickname: 'alice', avatarUrl: null, createdAt: 1000, updatedAt: 1000 }],
+          items: [{ id: 'a1', nickname: 'alice', avatarUrl: null, createdAt: 1000 }],
           total: 1,
           page: 1,
           pageSize: 30,

@@ -85,24 +85,30 @@ export type ListSessionsPageArgs = SessionsWhereArgs & {
  * Одна форма на вызов: `ids` — положительный allowlist, `where`/`except` —
  * серверный срез. Смешение форм — отказ разбора, а не тихий выбор.
  */
-export type RevokeBulkArgs = {
+type RevokeBulkBase = {
   /** Пусто — свой аккаунт. */
   authId?: string | null
-  /** Дискриминант формы набора. Отсутствует — форма выводится из полей. */
-  kind?: 'ids' | 'slice'
-  /** Явный набор выбранных строк: положительный allowlist, один доменный вызов. */
-  ids?: readonly string[] | string | null
-  /** Срез списка: те же поля, что у `listSessionsPage` (алиас `where`). */
-  where?: SessionsWhereArgs
-  /** Единственные клиентские id — исключения («всё, кроме»). Мусор и повторы отбрасываются. */
-  except?: readonly string[]
-  /** Включать текущую сессию актора в набор. Снят — она исключается сервером. */
-  includeCurrent?: boolean
-  /**
-   * Только текущая сессия актора (экран выхода, снятый чекбокс). Id сервер
-   * знает сам из куки; клиентский идентификатор сюда не попадает.
-   */
-  onlyCurrent?: boolean
+}
+
+/** Одна форма набора: явный allowlist или серверный срез. */
+export type RevokeBulkArgs =
+  | (RevokeBulkBase & {
+      kind: 'ids'
+      /** Явный набор выбранных строк: положительный allowlist. */
+      ids: readonly string[] | string | null
+    })
+  | (RevokeBulkBase & {
+      kind: 'slice'
+      where?: SessionsWhereArgs
+      except?: readonly string[]
+      includeCurrent?: boolean
+      onlyCurrent?: boolean
+    })
+
+/** Есть ли в аргументах поля чужой формы (в т.ч. лишние из JS). */
+function hasAnyField(args: unknown, keys: readonly string[]): boolean {
+  const value = args as Record<string, unknown>
+  return keys.some((key) => value[key] !== undefined)
 }
 
 const ctxOf = (actor: SessionActor): DataContext =>
@@ -432,22 +438,20 @@ export async function revokeBulkSessions(
   deps: SessionDeps,
 ): Promise<UserResult<SessionBulkRevokeResult>> {
   const targetAuth = args.authId?.trim() || null
-  const idsRaw = args.ids
-  // Явный набор определяется полем `ids`, а не отдельным дискриминантом:
-  // `kind` не добавляет информации сверх того, что уже есть в `ids`.
-  const hasIds =
-    args.kind === 'ids' ||
-    (args.kind !== 'slice' &&
-      idsRaw != null &&
-      !(typeof idsRaw === 'string' && idsRaw.trim() === '') &&
-      (!Array.isArray(idsRaw) || idsRaw.length > 0))
+
+  // Смешение форм — отказ до любых чтений/удалений: union защищает
+  // TypeScript, guard — вызовы из формы/JS, где лишнее поле могло остаться.
+  if (args.kind === 'ids' && hasAnyField(args, ['where', 'except', 'includeCurrent', 'onlyCurrent'])) {
+    return fail({ code: 'auth.confirm' })
+  }
+  if (args.kind !== 'ids' && hasAnyField(args, ['ids'])) return fail({ code: 'auth.confirm' })
 
   // Явный набор выбранных строк: один доменный вызов/транзакция. Права
   // проверяются по каждой строке (чужая/отозванная строка не видна актору и
   // просто не попадает в набор), предел — отказ, а не усечение.
-  if (hasIds) {
+  if (args.kind === 'ids') {
     const ids = normalizeSessionIds(
-      typeof idsRaw === 'string' ? idsRaw.split(',') : (idsRaw as readonly string[] | undefined),
+      typeof args.ids === 'string' ? args.ids.split(',') : (args.ids ?? undefined),
     )
     if (ids.length > SESSIONS_BULK_IDS_LIMIT) return fail({ code: 'auth.limit' })
     if (ids.length === 0) return fail({ code: 'session.nothing-to-close' })
@@ -483,8 +487,7 @@ export async function revokeBulkSessions(
     return ok({ revoked, current, requested: candidates.length })
   }
 
-  // Срез: прежний путь. Поддерживаем и `RevokeIntent` (`kind: 'slice'`,
-  // `filters`), и старый контракт (`where`/`except`/флаги).
+  // Срез: прежний путь.
   const requestedTarget = targetAuth
   const own = requestedTarget === null || requestedTarget === actor.id
   const target = own ? actor.id : requestedTarget

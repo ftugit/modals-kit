@@ -28,7 +28,7 @@
     userSessionsRoute,
   } from '../routes.js'
   import { vault } from '../vault.svelte.js'
-  import { useListSelection } from '#hooks/use-list-selection.svelte.js'
+  import { selectionSliceKey, useListSelection } from '#hooks/use-list-selection.svelte.js'
   import type { SessionDeviceView, SessionsListNotice, SessionsRouteData, SessionsTarget } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SessionRow from './SessionRow.svelte'
@@ -169,7 +169,13 @@
   )
   // Набор сбрасывается при смене актора, цели или фильтров, но не страницы.
   const selection = useListSelection({
-    sliceKey: () => `${vault.principal ?? ''}:${target.kind}:${fixedUid ?? ''}:${appliedKey}`,
+    sliceKey: () =>
+      selectionSliceKey({
+        actor: vault.principal ?? '',
+        target: target.kind,
+        uid: fixedUid ?? '',
+        filters: appliedKey,
+      }),
   })
   // Живые строки/счёт из стора пагинатора: getState сам по себе не реактивен,
   // поэтому набор для выхода обновляется подпиской, а не чтением один раз.

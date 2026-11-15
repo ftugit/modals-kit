@@ -13,6 +13,24 @@ export interface UseListSelectionOptions {
   sliceKey: () => string
 }
 
+/**
+ * Стабильный ключ среза: порядок ключей не зависит от порядка объекта,
+ * массивы сортируются, пустые значения не участвуют. Один helper на все
+ * списки, чтобы `|` в значениях не склеивал разные срезы в один.
+ */
+export function selectionSliceKey(parts: Record<string, unknown>): string {
+  const entries: string[] = []
+  for (const [key, value] of Object.entries(parts)) {
+    if (value === null || value === undefined || value === '') continue
+    const text = Array.isArray(value)
+      ? [...value].map((item) => String(item)).sort().join(',')
+      : String(value)
+    if (text === '') continue
+    entries.push(`${encodeURIComponent(key)}=${encodeURIComponent(text)}`)
+  }
+  return entries.sort().join('&')
+}
+
 export function useListSelection(options: UseListSelectionOptions) {
   let mode = $state(false)
   let ids = $state<Set<string>>(new Set())

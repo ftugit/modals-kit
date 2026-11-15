@@ -11,7 +11,7 @@ import { auth as authResource, block as blockResource, profile as profileResourc
 import { VISIBILITY_KEY } from './spec-config.js'
 import { activeBlock, longestFullBlock } from './spec-block.js'
 import type { AuthPorts } from './ports.js'
-import type { BlockView, ProfileRead, ProfileView, PublicProfileView, VisibilityLevel } from './types.js'
+import type { BlockView, ProfileListView, ProfileRead, ProfileView, PublicProfileView, VisibilityLevel } from './types.js'
 
 const gProfile = grants(profileResource)
 const gBlock = grants(blockResource)
@@ -111,7 +111,7 @@ export async function profile(
  * Нет строки и «нельзя» — один факт `auth.identity-unknown`.
  */
 export interface ProfilesPage {
-  items: ProfileView[]
+  items: ProfileListView[]
   total: number
   page: number
   pageSize: number

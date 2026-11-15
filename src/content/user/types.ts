@@ -444,6 +444,18 @@ export type ProfileView = {
   updatedAt: number
 }
 
+/**
+ * Публичная строка списка профилей: только поля показа и навигации.
+ * `id` — это `authId` аккаунта (ключ строки и адрес профиля); технические
+ * `id` строки, `authId` и `updatedAt` в публичную выдачу не попадают.
+ */
+export type ProfileListView = {
+  id: string
+  nickname: string | null
+  avatarUrl: string | null
+  createdAt: number
+}
+
 /** Уровень видимости профиля (ключ конфига `profile.visibility`). */
 export type VisibilityLevel = 'all' | 'users' | 'nobody'
 

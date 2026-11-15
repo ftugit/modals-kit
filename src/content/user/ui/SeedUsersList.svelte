@@ -24,7 +24,7 @@
   import { auth as authResource, profile as profileResource } from '../schema.js'
   import type { SeedUserView } from '../types.js'
   import { vault } from '../vault.svelte.js'
-  import { useListSelection } from '#hooks/use-list-selection.svelte.js'
+  import { selectionSliceKey, useListSelection } from '#hooks/use-list-selection.svelte.js'
   import { Button, Checkbox } from '#components/ui/index.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SeedUsersFiltersForm, { type SeedUsersFilterValues } from './SeedUsersFiltersForm.svelte'
@@ -88,7 +88,14 @@
   // Регистрация — в том же бандле, что и хост пагинатора внутри `Listing`.
   ensureSeedUsersPaginator()
 
-  const selection = useListSelection({ sliceKey: () => `${vault.principal ?? ''}:seed-users` })
+  const selection = useListSelection({
+    sliceKey: () =>
+      selectionSliceKey({
+        actor: vault.principal ?? '',
+        list: 'seed-users',
+        filters: appliedKey,
+      }),
+  })
 
   // Внешний набор: список в режиме отметок, состояние — у носителя (пикер).
   const external = $derived(onPicked !== undefined && picked !== null)

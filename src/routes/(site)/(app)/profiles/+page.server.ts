@@ -3,6 +3,7 @@ import { auth } from '#content/user/gateway.server.js'
 import {
   PROFILES_PAGE_PARAM,
   PROFILES_PAGE_SIZE,
+  PROFILES_PAGE_SIZES,
   profilesSnapshot,
   type ProfilesRouteData,
 } from '#content/user/ui/profiles/source.js'
@@ -13,13 +14,19 @@ const num = (raw: string | null, fallback: number, min: number, max: number): nu
   return Number.isFinite(v) ? Math.min(max, Math.max(min, Math.trunc(v))) : fallback
 }
 
+/** Значение размера страницы — только из объявленного набора; иначе ближайший меньший. */
+const pageSizeOf = (raw: string | null): number => {
+  const v = Number(raw)
+  return PROFILES_PAGE_SIZES.filter((size) => size <= v).at(-1) ?? PROFILES_PAGE_SIZE
+}
+
 export const load: PageServerLoad = async (event): Promise<ProfilesRouteData> => {
   event.setHeaders({ 'cache-control': 'private, no-store' })
   const sp = event.url.searchParams
   const key = (k: string) => sp.get(`${PROFILES_PAGE_PARAM}.${k}`)
 
   const page = num(sp.get(PROFILES_PAGE_PARAM), 1, 1, 10_000)
-  const pageSize = num(key('size'), PROFILES_PAGE_SIZE, 30, 100)
+  const pageSize = pageSizeOf(key('size'))
   const q = key('q')
 
   const u = auth(event)

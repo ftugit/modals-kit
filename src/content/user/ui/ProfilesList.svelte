@@ -3,8 +3,9 @@
   import { Skeleton } from '#components/paginator/index.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import type { AuthErrorCode } from '../error.js'
+  import { profilesListRoute } from '../routes.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
-  import type { ProfileView } from '../types.js'
+  import type { ProfileListView } from '../types.js'
   import {
     ensureProfilesPaginator,
     PROFILES_EXTRA_DEFAULTS,
@@ -20,7 +21,7 @@
     scope?: string | null
     url?: boolean
     onAcl?: (fact: AuthErrorCode) => void
-    rowAttrs?: (p: ProfileView) => LinkAttrs
+    rowAttrs?: (p: ProfileListView) => LinkAttrs
     variant?: UserSurfaceVariant
     class?: string
   }
@@ -38,14 +39,15 @@
   ensureProfilesPaginator()
 
   const asModalLink = useModalLink()
-  const attrsOf = (p: ProfileView): LinkAttrs =>
-    rowAttrs?.(p) ?? { ...asModalLink('user.profile', { id: p.authId }), title: 'Открыть профиль' }
+  const attrsOf = (p: ProfileListView): LinkAttrs =>
+    rowAttrs?.(p) ?? { ...asModalLink('user.profile', { id: p.id }), title: 'Открыть профиль' }
+  const dateFmt = new Intl.DateTimeFormat('ru-RU', { timeZone: 'UTC' })
 </script>
 
 <Listing
   name={PROFILES_NAME}
   pageParam={PROFILES_PAGE_PARAM}
-  route="/profiles"
+  route={profilesListRoute.href()}
   loadError="auth.expired"
   ariaLabel="Список профилей"
   title="Профили"
@@ -61,7 +63,7 @@
     placeholder: () => 'Подстрока никнейма…',
   }}
 >
-  {#snippet row(p: ProfileView, ctx)}
+  {#snippet row(p: ProfileListView, ctx)}
     <ListingRow attrs={attrsOf(p)} id={p.id} testId="profile-row" selected={ctx.selected}>
       <div class="flex items-center gap-3">
         {#if p.avatarUrl}
@@ -69,7 +71,7 @@
         {/if}
         <div class="flex flex-col">
           <span class="font-medium">{p.nickname ?? '—'}</span>
-          <span class="text-xs text-muted-foreground">{new Date(p.createdAt).toLocaleDateString('ru-RU')}</span>
+          <span class="text-xs text-muted-foreground">{dateFmt.format(new Date(p.createdAt))}</span>
         </div>
       </div>
     </ListingRow>

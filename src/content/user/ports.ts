@@ -126,7 +126,7 @@ export interface ProfileStorePort {
   create(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void>
   get(ctx: DataContext, authId: string, fields?: readonly string[]): Promise<import('./types.js').ProfileView | undefined>
   /** Порция профилей для листа: страница (с 1), размер, поиск по никнейму, общее число. */
-  listPage?(ctx: DataContext, args: { page: number; pageSize: number; search?: string }): Promise<{ rows: import('./types.js').ProfileView[]; total: number }>
+  listPage?(ctx: DataContext, args: { page: number; pageSize: number; search?: string }): Promise<{ rows: import('./types.js').ProfileListView[]; total: number }>
   update(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void>
   /** Исполнитель удаления (конечная смерть аккаунта уносит профиль цепочкой). */
   remove(ctx: DataContext, authId: string): Promise<void>

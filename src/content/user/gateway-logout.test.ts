@@ -96,7 +96,7 @@ describe('revokeBulkSessions: куки снимает только текуща�
     const { event, jar, deleted } = fakeEvent({ renewal: false })
     revokeBulkSessions.mockResolvedValueOnce({ ok: true, value: { revoked: 2, current: false, requested: 2 } })
 
-    const r = await auth(event).revokeBulkSessions({ authId: '33333333-3333-4333-8333-333333333333', where: { state: 'active' } })
+    const r = await auth(event).revokeBulkSessions({ kind: 'slice', authId: '33333333-3333-4333-8333-333333333333', where: { state: 'active' } })
 
     expect(r.ok).toBe(true)
     expect(jar.get(ACCESS_COOKIE)).toBe('access-token')
@@ -107,7 +107,7 @@ describe('revokeBulkSessions: куки снимает только текуща�
     const { event, jar, deleted } = fakeEvent({ renewal: false })
     revokeBulkSessions.mockResolvedValueOnce({ ok: true, value: { revoked: 1, current: true, requested: 1 } })
 
-    const r = await auth(event).revokeBulkSessions({ where: { state: 'all' }, includeCurrent: true })
+    const r = await auth(event).revokeBulkSessions({ kind: 'slice', where: { state: 'all' }, includeCurrent: true })
 
     expect(r.ok).toBe(true)
     expect(jar.get(ACCESS_COOKIE)).toBe('access-token')
@@ -118,7 +118,7 @@ describe('revokeBulkSessions: куки снимает только текуща�
     const { event, jar, deleted } = fakeEvent({ renewal: false })
     revokeBulkSessions.mockResolvedValueOnce({ ok: false, fact: { code: 'session.nothing-to-close' } })
 
-    const r = await auth(event).revokeBulkSessions({ where: { state: 'active' } })
+    const r = await auth(event).revokeBulkSessions({ kind: 'slice', where: { state: 'active' } })
 
     expect(r.ok).toBe(false)
     expect(jar.get(ACCESS_COOKIE)).toBe('access-token')

@@ -5,18 +5,20 @@
   import { asLink } from '#hooks/links/index.js'
   import FilterBlockPopup from './FilterBlockPopup.svelte'
   import { useFilterBlocks } from './filter-blocks.svelte.js'
-  import type { CatalogFilterChip } from '#lib/paginate/filters/index.js'
+  import type { CatalogFilterChip, CatalogFilterPatch } from '#lib/paginate/filters/index.js'
 
   interface Props {
     chips: readonly CatalogFilterChip[]
     count?: number
     onRemove?: (chip: CatalogFilterChip) => boolean | void
+    /** Снять всю группу значений поля одним патчем. */
+    onRemoveGroup?: (patch: CatalogFilterPatch) => void
     /** Прямой commit черновика формы (валидация + применение) при автопримене. */
     onCommitDraft?: (form: HTMLFormElement) => void
     class?: string
   }
 
-  let { chips, count, onRemove, onCommitDraft, class: cls = '' }: Props = $props()
+  let { chips, count, onRemove, onRemoveGroup, onCommitDraft, class: cls = '' }: Props = $props()
 
   const ctx = useFilterBlocks()
   const host = tryUseModals()
@@ -188,6 +190,15 @@
     event.preventDefault()
   }
 
+  /** Снять все значения группы: один патч, а не гонка нескольких setExtra. */
+  function removeGroup(event: MouseEvent, group: CatalogFilterChip[]) {
+    event.preventDefault()
+    event.stopPropagation()
+    const patch: CatalogFilterPatch = {}
+    for (const chip of group) Object.assign(patch, chip.patch)
+    onRemoveGroup?.(patch)
+  }
+
   function chipAttrs(chip: CatalogFilterChip) {
     return {
       'data-testid': 'active-filter',
@@ -220,18 +231,33 @@
     {#if hasBlock(key)}
       {@const cut = client && host && ctx?.blocks[key]}
       {#if cut}
-        <button
-          type="button"
-          class="inline-flex max-lg:shrink-0 items-center gap-1 rounded-md border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-medium transition-colors hover:bg-muted"
-          data-testid="active-filter"
-          data-filter-label={key}
-          data-filter-label-popup="true"
-          aria-expanded={openKey === key}
-          aria-haspopup="dialog"
-          aria-controls={openKey === key ? popupNode?.id : undefined}
-          {@attach remember(key)}
-          onclick={() => toggle(key)}
-        >{combinedLabel(key, group)}</button>
+        <span
+          class="inline-flex max-lg:shrink-0 items-center overflow-hidden rounded-md border border-border bg-muted/60 text-xs font-medium"
+        >
+          <button
+            type="button"
+            class="inline-flex items-center px-2.5 py-0.5 transition-colors hover:bg-muted"
+            data-testid="active-filter"
+            data-filter-label={key}
+            data-filter-label-popup="true"
+            aria-expanded={openKey === key}
+            aria-haspopup="dialog"
+            aria-controls={openKey === key ? popupNode?.id : undefined}
+            {@attach remember(key)}
+            onclick={() => toggle(key)}
+          >{combinedLabel(key, group)}</button>
+          {#if onRemoveGroup}
+            <button
+              type="button"
+              class="inline-flex items-center border-l border-border/70 px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              data-testid="active-filter-remove"
+              data-filter-label-remove={key}
+              aria-label={`Снять фильтр «${group[0]?.fieldLabel ?? key}»`}
+              title="Снять все значения поля"
+              onclick={(event) => removeGroup(event, group)}
+            >×</button>
+          {/if}
+        </span>
       {:else}
         <span
           class="inline-flex max-lg:shrink-0 items-center gap-1 rounded-md border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-medium"

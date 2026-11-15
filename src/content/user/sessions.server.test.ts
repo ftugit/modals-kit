@@ -209,14 +209,14 @@ test('чужой uuid не отличим от пустого; серверны�
     expect(before.ok && before.value.items).toHaveLength(2)
 
     // includeCurrent снят: текущая исключается сервером, без клиентских ids.
-    const kept = await revokeBulkSessions(meActor, { where: { state: 'all' } }, deps)
+    const kept = await revokeBulkSessions(meActor, { kind: 'slice', where: { state: 'all' } }, deps)
     expect(kept.ok).toBe(true)
     if (!kept.ok) return
     expect(kept.value).toEqual({ revoked: 1, current: false, requested: 1 })
     const live = await listSessionsPage(meActor, { state: 'all' }, deps)
     expect(live.ok && live.value.items.map((item) => item.id)).toEqual([current])
 
-    const all = await revokeBulkSessions(meActor, { where: { state: 'all' }, includeCurrent: true }, deps)
+    const all = await revokeBulkSessions(meActor, { kind: 'slice', where: { state: 'all' }, includeCurrent: true }, deps)
     expect(all.ok).toBe(true)
     if (!all.ok) return
     expect(all.value.current).toBe(true)
@@ -238,7 +238,7 @@ test('серверный набор по фильтру: две из пяти, �
     const filtered = await listSessionsPage(meActor, { country: ['RU'], state: 'active' }, deps)
     expect(filtered.ok && filtered.value.items.map((i) => i.id).sort()).toEqual([current, ru2].sort())
 
-    const r = await revokeBulkSessions(meActor, { where: { country: ['RU'], state: 'active' }, includeCurrent: true }, deps)
+    const r = await revokeBulkSessions(meActor, { kind: 'slice', where: { country: ['RU'], state: 'active' }, includeCurrent: true }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.value.requested).toBe(2)
@@ -257,10 +257,10 @@ test('IDOR: серверный набор чужого аккаунта не з�
     const mine = await device(deps.db, me, { jti: 'scope-mine-token-00211', name: 'моя', country: 'RU' })
     const theirs = await device(deps.db, them, { jti: 'scope-their-token-0021', name: 'их', country: 'RU' })
 
-    const denied = await revokeBulkSessions(actor(me, []), { authId: them, where: { country: ['RU'] } }, deps)
+    const denied = await revokeBulkSessions(actor(me, []), { kind: 'slice', authId: them, where: { country: ['RU'] } }, deps)
     expect(denied).toMatchObject({ ok: false, fact: { code: 'auth.forbidden' } })
 
-    const admin = await revokeBulkSessions(actor(me, ['admin']), { authId: them, where: { country: ['RU'] }, includeCurrent: true }, deps)
+    const admin = await revokeBulkSessions(actor(me, ['admin']), { kind: 'slice', authId: them, where: { country: ['RU'] }, includeCurrent: true }, deps)
     expect(admin.ok).toBe(true)
     if (!admin.ok) return
     expect(admin.value.revoked).toBe(1)
@@ -273,6 +273,39 @@ test('IDOR: серверный набор чужого аккаунта не з�
   })
 })
 
+test('смешение forms набора — auth.confirm, ни одна строка не удалена', async () => {
+  await withDb(async (deps) => {
+    const me = await account(deps.db, '9'.repeat(43))
+    const one = await device(deps.db, me, { jti: 'mix-one-token-00211111', name: 'эта' })
+    await device(deps.db, me, { jti: 'mix-two-token-00211111', name: 'та' })
+    const meActor = actor(me, [], one)
+
+    const idsAndWhere = await revokeBulkSessions(
+      meActor,
+      { kind: 'ids', ids: [one], where: { state: 'all' } } as any,
+      deps,
+    )
+    expect(idsAndWhere).toMatchObject({ ok: false, fact: { code: 'auth.confirm' } })
+
+    const sliceAndIds = await revokeBulkSessions(
+      meActor,
+      { kind: 'slice', ids: [one], where: { state: 'all' } } as any,
+      deps,
+    )
+    expect(sliceAndIds).toMatchObject({ ok: false, fact: { code: 'auth.confirm' } })
+
+    const legacyMixed = await revokeBulkSessions(
+      meActor,
+      { ids: [one], where: { state: 'all' } } as any,
+      deps,
+    )
+    expect(legacyMixed).toMatchObject({ ok: false, fact: { code: 'auth.confirm' } })
+
+    const left = await listSessionsPage(meActor, { state: 'all' }, deps)
+    expect(left.ok && left.value.items).toHaveLength(2)
+  })
+})
+
 test('except: всё кроме перечисленных; предел исключений — отказ, а не усечение', async () => {
   await withDb(async (deps) => {
     const me = await account(deps.db, 'a'.repeat(43))
@@ -280,14 +313,14 @@ test('except: всё кроме перечисленных; предел иск�
     const other = await device(deps.db, me, { jti: 'exc-other-token-00211', name: 'та' })
     const meActor = actor(me, [], current)
 
-    const keepCurrent = await revokeBulkSessions(meActor, { where: { state: 'all' }, except: [current], includeCurrent: true }, deps)
+    const keepCurrent = await revokeBulkSessions(meActor, { kind: 'slice', where: { state: 'all' }, except: [current], includeCurrent: true }, deps)
     expect(keepCurrent.ok).toBe(true)
     if (!keepCurrent.ok) return
     expect(keepCurrent.value.revoked).toBe(1)
     expect(keepCurrent.value.current).toBe(false)
 
     const over = Array.from({ length: SESSIONS_BULK_IDS_LIMIT + 1 }, () => crypto.randomUUID())
-    const denied = await revokeBulkSessions(meActor, { where: { state: 'all' }, except: over, includeCurrent: true }, deps)
+    const denied = await revokeBulkSessions(meActor, { kind: 'slice', where: { state: 'all' }, except: over, includeCurrent: true }, deps)
     expect(denied).toMatchObject({ ok: false, fact: { code: 'auth.limit' } })
     const left = await listSessionsPage(meActor, { state: 'all' }, deps)
     expect(left.ok && left.value.items.map((i) => i.id)).toEqual([current])
@@ -302,14 +335,14 @@ test('onlyCurrent: экран выхода закрывает одну теку�
     await device(deps.db, me, { jti: 'lim-other-token-00211', name: 'та' })
     const meActor = actor(me, [], current)
 
-    const one = await revokeBulkSessions(meActor, { onlyCurrent: true }, deps)
+    const one = await revokeBulkSessions(meActor, { kind: 'slice', onlyCurrent: true }, deps)
     expect(one.ok).toBe(true)
     if (!one.ok) return
     expect(one.value).toEqual({ revoked: 1, current: true, requested: 1 })
     const left = await listSessionsPage(meActor, { state: 'all' }, deps)
     expect(left.ok && left.value.items).toHaveLength(1)
 
-    const noSession = await revokeBulkSessions(actor(me, []), { onlyCurrent: true }, deps)
+    const noSession = await revokeBulkSessions(actor(me, []), { kind: 'slice', onlyCurrent: true }, deps)
     expect(noSession).toMatchObject({ ok: false, fact: { code: 'session.nothing-to-close' } })
   })
 })
@@ -318,7 +351,7 @@ test('пустой срез — session.nothing-to-close, а не тихий у�
   await withDb(async (deps) => {
     const me = await account(deps.db, 'f'.repeat(43))
     const current = await device(deps.db, me, { jti: 'empty-current-token-021', name: 'эта', country: 'DE' })
-    const r = await revokeBulkSessions(actor(me, [], current), { where: { country: ['RU'] }, includeCurrent: true }, deps)
+    const r = await revokeBulkSessions(actor(me, [], current), { kind: 'slice', where: { country: ['RU'] }, includeCurrent: true }, deps)
     expect(r).toMatchObject({ ok: false, fact: { code: 'session.nothing-to-close' } })
     const left = await listSessionsPage(actor(me, [], current), { state: 'all' }, deps)
     expect(left.ok && left.value.items).toHaveLength(1)
@@ -429,7 +462,7 @@ test('except: 101 исключение — две порции notIn, всё к�
     }
     const keep = ids.slice(0, 101) // 101 > inValues(100) → порции 100 + 1
     const meActor = actor(me, [], ids[0])
-    const r = await revokeBulkSessions(meActor, { where: { state: 'all' }, except: keep, includeCurrent: true }, deps)
+    const r = await revokeBulkSessions(meActor, { kind: 'slice', where: { state: 'all' }, except: keep, includeCurrent: true }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.value.revoked).toBe(19)
@@ -452,7 +485,7 @@ test('except: 250 исключений — три порции notIn, а не 25
     }
     const keep = ids.slice(0, 250) // 250 → порции 100 + 100 + 50
     const meActor = actor(me, [], ids[0])
-    const r = await revokeBulkSessions(meActor, { where: { state: 'all' }, except: keep, includeCurrent: true }, deps)
+    const r = await revokeBulkSessions(meActor, { kind: 'slice', where: { state: 'all' }, except: keep, includeCurrent: true }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.value.revoked).toBe(10)
@@ -469,7 +502,7 @@ test('except: ровно SESSIONS_BULK_IDS_LIMIT принят — фильтр �
     // 500 случайных uuid не совпадают с реальной строкой: срез не пуст,
     // отзыв должен пройти (5 порций notIn), а не упасть validation/auth.limit.
     const except = Array.from({ length: SESSIONS_BULK_IDS_LIMIT }, () => crypto.randomUUID())
-    const r = await revokeBulkSessions(actor(me, []), { where: { state: 'all' }, except, includeCurrent: true }, deps)
+    const r = await revokeBulkSessions(actor(me, []), { kind: 'slice', where: { state: 'all' }, except, includeCurrent: true }, deps)
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.value.revoked).toBe(1)

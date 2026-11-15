@@ -112,6 +112,7 @@ export function bulkExitArgs(
   values: Record<string, unknown>,
   currentId: string | null,
 ): {
+  kind: 'slice'
   where: SessionsWhereArgs
   except: readonly string[]
   includeCurrent: boolean
@@ -125,7 +126,13 @@ export function bulkExitArgs(
   // Экран выхода: снятый чекбокс — одна текущая сессия (id сервер знает сам),
   // отмеченный — весь активный срез аккаунта. Клиентские ids не участвуют.
   if (spread) {
-    return { where: { state: 'active' }, except: [], includeCurrent: include, onlyCurrent: !include }
+    return {
+      kind: 'slice',
+      where: { state: 'active' },
+      except: [],
+      includeCurrent: include,
+      onlyCurrent: !include,
+    }
   }
 
   const stateRaw = str('state')
@@ -139,6 +146,7 @@ export function bulkExitArgs(
   const sfrom = str('sfrom')
   const sto = str('sto')
   return {
+    kind: 'slice',
     where: {
       state,
       country,

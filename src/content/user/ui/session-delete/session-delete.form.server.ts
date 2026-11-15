@@ -34,6 +34,12 @@ registerComponentForm({
     )
     const isSlice = Object.values(sliceField).some((v) => v.trim() !== '')
 
+    // Формы набора взаимоисключающие: и ids, и срез в одном POST — отказ,
+    // а не тихий выбор среза в пользу одной из форм.
+    if (isSlice && ids.length > 0) {
+      return fail([sessionFormError('auth.confirm', 'Выберите одну форму набора: устройства или срез')])
+    }
+
     if (isSlice) {
       const r = await runBulkExit(
         event,
@@ -47,7 +53,10 @@ registerComponentForm({
         },
       )
       if (!r.ok) return fail([r.error ?? sessionFormError('auth.unavailable')])
-      if (variant === 'logout') await u.logoutLocal()
+      if (variant === 'logout') {
+        const out = await u.logoutLocal()
+        if (!out.ok) return fail([sessionFormError(out.fact.code)])
+      }
       commit()
       return { data: { step: 'done', variant, revoked: null, requested: null } }
     }
@@ -57,13 +66,16 @@ registerComponentForm({
     }
 
     // Явный набор: один доменный вызов, права и частичный исход считает домен.
-    const r = await u.revokeBulkSessions({ ids, authId: targetId })
+    const r = await u.revokeBulkSessions({ kind: 'ids', ids, authId: targetId })
     // Выход: отсутствие сессии или прав не блокирует успех — выход всё равно
     // считается выполненным и ведёт на главную.
     const logoutOk = variant === 'logout' && !r.ok && (r.fact.code === 'session.nothing-to-close' || r.fact.code === 'auth.forbidden')
     if (!r.ok && !logoutOk) return fail([sessionFormError(r.fact.code)])
     const result = r.ok ? r.value : { revoked: 0, requested: 0 }
-    if (variant === 'logout') await u.logoutLocal()
+    if (variant === 'logout') {
+      const out = await u.logoutLocal()
+      if (!out.ok) return fail([sessionFormError(out.fact.code)])
+    }
     commit()
     return { data: { step: 'done', variant, revoked: result.revoked, requested: result.requested } }
   },

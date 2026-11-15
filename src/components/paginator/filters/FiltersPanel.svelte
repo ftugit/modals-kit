@@ -145,9 +145,14 @@
     apply(next)
   }
 
-  /** Снятие одного значения (клик по чипу) — тем же каналом состояния. */
+  /** Один канал снятия: чип и группа отличаются только патчем. */
+  function applyPatch(patch: Record<string, string | number | undefined>) {
+    void setExtra(store, name, patch)
+  }
+
+  /** Снятие одного значения (клик по чипу). */
   function remove(chip: { patch: Record<string, string | number | undefined> }): boolean {
-    void setExtra(store, name, chip.patch)
+    applyPatch(chip.patch)
     return true
   }
 
@@ -222,6 +227,12 @@
   </details>
 
   <div class="mt-3">
-    <ActiveFilters chips={view.chips} count={view.count} onRemove={remove} onCommitDraft={commitDraft} />
+    <ActiveFilters
+      chips={view.chips}
+      count={view.count}
+      onRemove={remove}
+      onRemoveGroup={applyPatch}
+      onCommitDraft={commitDraft}
+    />
   </div>
 </section>

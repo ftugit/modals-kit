@@ -126,6 +126,7 @@ async function main() {
     // Каждый прогон — свежий срез; id исключений снимаются ПОСЛЕ reseed,
     // иначе UUID нового среза не совпадут с исключениями прошлого.
     const argsFor = async () => ({
+      kind: 'slice' as const,
       where: { state: 'active' as const },
       includeCurrent: true,
       except: exceptCount ? await ids(exceptCount) : [],

@@ -90,7 +90,7 @@ import type { UserConfigSlice } from './types.js'
 import { auth as authRes, block as blockRes, config as configRes, profile as profileRes, session as sessionRes } from './schema.js'
 import type { AuthPorts, AuthRow, SeedAccountRow } from './ports.js'
 import { normalizeFailure, type DataContext, type Filter, type Order } from '#lib/db/index.js'
-import type { BlockDetailView, BlocksPage, BlockView, Challenge, ConfigKeyRow, ConfigKeySchema, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionBulkRevokeResult, SessionDetail, SessionDeviceView, SessionRecord, SessionRevokeResult, SessionsPage } from './types.js'
+import type { BlockDetailView, BlocksPage, BlockView, Challenge, ConfigKeyRow, ConfigKeySchema, ProfileListView, ProfileRead, ProfileView, PublicProfileView, SeedUsersPage, SessionBulkRevokeResult, SessionDetail, SessionDeviceView, SessionRecord, SessionRevokeResult, SessionsPage } from './types.js'
 import type { Blocked, LoginOutcome } from './types.js'
 import type { VaultSessionMeta } from './vault.js'
 
@@ -398,6 +398,12 @@ function profilesAdapter() {
     createdAt: ms(r.created_at) ?? Date.now(),
     updatedAt: ms(r.updated_at) ?? Date.now(),
   })
+  const listViewOf = (r: Record<string, unknown>): ProfileListView => ({
+    id: String(r.auth_id),
+    nickname: (r.nickname as string | null) ?? null,
+    avatarUrl: (r.avatar_url as string | null) ?? null,
+    createdAt: ms(r.created_at) ?? Date.now(),
+  })
   return {
     async create(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string }): Promise<void> {
       await api().insert(ctx, {
@@ -410,17 +416,23 @@ function profilesAdapter() {
       const row = await byAuth(ctx, authId, fields)
       return row ? viewOf(row) : undefined
     },
-    async listPage(ctx: DataContext, args: { page: number; pageSize: number; search?: string }): Promise<{ rows: ProfileView[]; total: number }> {
+    async listPage(ctx: DataContext, args: { page: number; pageSize: number; search?: string }): Promise<{ rows: ProfileListView[]; total: number }> {
       const page = Math.max(1, Math.trunc(args.page ?? 1) || 1)
       const pageSize = Math.max(1, Math.trunc(args.pageSize ?? 30) || 30)
       const q = (args.search ?? '').trim()
       const filter = q ? { field: 'nickname', op: 'icontains' as const, value: q } : undefined
       const slice = filter ? { filter } : {}
       const [rows, total] = await Promise.all([
-        api().select(ctx, { page, limit: pageSize, order: [['created_at', 'desc']], ...slice } as any),
+        api().select(ctx, {
+          page,
+          limit: pageSize,
+          order: [['created_at', 'desc']],
+          fields: ['auth_id', 'nickname', 'avatar_url', 'created_at'],
+          ...slice,
+        } as any),
         api().count(ctx, slice as any),
       ])
-      return { rows: (rows as unknown as Record<string, unknown>[]).map((r) => viewOf(r)), total }
+      return { rows: (rows as unknown as Record<string, unknown>[]).map((r) => listViewOf(r)), total }
     },
     async update(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void> {
       const row = await byAuth(ctx, authId)
@@ -896,7 +908,11 @@ export function auth(event: AuthEvent): {
     logoutAll: async () => {
       const g = await coreGuard(ports, access())
       if (!('code' in g)) {
-        const r = await coreRevokeBulkSessions(sessionActor(g), { where: { state: 'all' }, includeCurrent: true }, sessionDeps())
+        const r = await coreRevokeBulkSessions(
+          sessionActor(g),
+          { kind: 'slice', where: { state: 'all' }, includeCurrent: true },
+          sessionDeps(),
+        )
         clearCookies()
         return r.ok ? { ok: true, value: null } : r
       }

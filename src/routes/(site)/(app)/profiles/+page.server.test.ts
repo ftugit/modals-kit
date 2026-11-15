@@ -14,7 +14,7 @@ function ok(total = 3) {
   mock.listProfiles.mockResolvedValue({
     ok: true,
     value: {
-      items: [{ id: 'p1', authId: 'a1', nickname: 'nick', avatarUrl: null, createdAt: 1000, updatedAt: 1000 }],
+      items: [{ id: 'a1', nickname: 'nick', avatarUrl: null, createdAt: 1000 }],
       total,
       page: 1,
       pageSize: 30,
@@ -27,6 +27,18 @@ describe('load /profiles', () => {
     ok()
     await load(event('http://localhost/profiles?profiles=2&profiles.size=50&profiles.q=foo'))
     expect(mock.listProfiles).toHaveBeenCalledWith({ page: 2, pageSize: 50, search: 'foo' })
+  })
+
+  test.each([
+    ['31', 30],
+    ['51', 50],
+    ['101', 100],
+    ['0', 30],
+    ['мусор', 30],
+  ])('profiles.size=%s нормализуется в %i', async (raw, expected) => {
+    ok()
+    await load(event(`http://localhost/profiles?profiles.size=${encodeURIComponent(raw)}`))
+    expect(mock.listProfiles).toHaveBeenCalledWith({ page: 1, pageSize: expected, search: undefined })
   })
 
   test('без параметров — defaults', async () => {

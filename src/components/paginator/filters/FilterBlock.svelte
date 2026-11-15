@@ -93,6 +93,30 @@
     releaseFilterList(listName, key, element)
   }
 
+  /**
+   * Высота блока в домашней раскладке. Сам `node` — `display: contents`, у него
+   * нет бокса, поэтому меряем его детей: иначе placeholder схлопнется в 0 и
+   * страница всё равно прыгнет.
+   */
+  function blockHeight(root: HTMLElement): number {
+    const rects = [...root.children]
+      .map((child) => child.getBoundingClientRect())
+      .filter((rect) => rect.width > 0 || rect.height > 0)
+    if (rects.length === 0) return Math.max(0, root.getBoundingClientRect().height)
+    const top = Math.min(...rects.map((rect) => rect.top))
+    const bottom = Math.max(...rects.map((rect) => rect.bottom))
+    return Math.max(0, bottom - top)
+  }
+
+  function reserveHome(root: HTMLElement, homeEl: HTMLElement): HTMLSpanElement {
+    const placeholder = document.createElement('span')
+    placeholder.setAttribute('data-filter-block-placeholder', '')
+    placeholder.setAttribute('aria-hidden', 'true')
+    placeholder.style.cssText = `display:block;width:100%;box-sizing:border-box;height:${blockHeight(root)}px;margin:0;padding:0;border:0;pointer-events:none`
+    homeEl.insertBefore(placeholder, root)
+    return placeholder
+  }
+
   $effect(() => {
     const root = node
     const list = listName ? filterLists[listName] : undefined
@@ -151,13 +175,17 @@
     const mine = open
     if (!root || !homeEl || !mine || !slot) return
     const formId = ensureFormId(root)
+    // Перенос узла не должен менять высоту дома: иначе scroll anchoring
+    // уменьшает scrollTop, а CollapsingHeader читает это как жест «вверх».
+    const placeholder = reserveHome(root, homeEl)
     slot.appendChild(root)
     const stop = formId ? associatePortalControls(root, formId, { cleanup: true }) : undefined
     const field = root.querySelector<HTMLElement>('input, select, textarea')
     field?.focus({ preventScroll: true })
     return () => {
       stop?.()
-      if (root.parentElement !== homeEl) homeEl.appendChild(root)
+      if (root.parentElement !== homeEl) homeEl.insertBefore(root, placeholder)
+      placeholder.remove()
     }
   })
 </script>

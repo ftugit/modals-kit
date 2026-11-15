@@ -12,7 +12,8 @@ import {
 } from '#lib/paginate/index.js'
 import type { AuthErrorCode } from '../../error.js'
 import { AUTH_MESSAGES } from '../../messages.js'
-import type { ProfileView } from '../../types.js'
+import { profilesListRoute } from '../../routes.js'
+import type { ProfileListView } from '../../types.js'
 import type { ProfilesPage } from '../../profile.js'
 
 export const PROFILES_NAME = 'profiles'
@@ -32,7 +33,7 @@ export const PROFILES_EXTRAS = defineListExtras({
 })
 
 export interface ProfilesRouteData {
-  snapshot: PaginatorState<ProfileView> | null
+  snapshot: PaginatorState<ProfileListView> | null
   fact: AuthErrorCode | null
   enabled: boolean
 }
@@ -41,13 +42,13 @@ async function fetchProfilesPage(
   page: number,
   pageSize: number,
   input?: { q?: string },
-): Promise<PageResponse<ProfileView>> {
+): Promise<PageResponse<ProfileListView>> {
   const q = new URLSearchParams({
     [PROFILES_PAGE_PARAM]: String(page),
     [`${PROFILES_PAGE_PARAM}.size`]: String(pageSize),
   })
   if (input?.q) q.set(`${PROFILES_PAGE_PARAM}.q`, input.q)
-  const r = await preloadData(`/profiles?${q}`)
+  const r = await preloadData(`${profilesListRoute.href()}?${q}`)
   if (r.type !== 'loaded') {
     const err = new Error('Не удалось загрузить список') as Error & { code: string }
     err.code = r.type === 'redirect' ? 'auth.expired' : 'load.error'
@@ -69,7 +70,7 @@ async function fetchProfilesPage(
   }
 }
 
-export const profilesSource = defineSource<ProfileView>({
+export const profilesSource = defineSource<ProfileListView>({
   name: 'profiles',
   record: {
     id: (r) => r.id,
@@ -105,7 +106,7 @@ export function ensureProfilesPaginator(): string {
 export function profilesSnapshot(
   p: ProfilesPage,
   extra?: { q?: string | null },
-): PaginatorState<ProfileView> {
+): PaginatorState<ProfileListView> {
   const totalPages = Math.max(1, Math.ceil(p.total / p.pageSize))
   const ex: Record<string, string> = {}
   if (extra?.q) ex.q = extra.q
