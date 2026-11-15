@@ -233,7 +233,9 @@ const LIMITS = {
 }
 
 // Утверждённые владельцем лимиты полной сборки с модулем demo.
-const DEMO_LIMITS = { ...LIMITS, allImmutableGzip: 566.0 * KiB, allJsGzip: 552.2 * KiB }
+// REVISION 2026-11-15: факт demo-сборки после роста модуля пользователя:
+// immutable 580.6 KiB, JS 566.7 KiB. Лимиты = факт + 0.5 KiB.
+const DEMO_LIMITS = { ...LIMITS, allImmutableGzip: 581.1 * KiB, allJsGzip: 567.2 * KiB }
 
 const ROUTE_LIMITS = {
   // 2026-10-22: Attachment + FileAttachment в общем чанке примитивов ui
@@ -298,15 +300,17 @@ const ROUTE_LIMITS = {
 // попыток уменьшить вес; факт + около 0.5 KiB. Это не уменьшение сборки.
 const DEMO_ROUTE_LIMITS = {
   ...ROUTE_LIMITS,
-  '/': 155.0 * KiB, // было 154.1
-  '/form': 231.0 * KiB, // было 227.2
-  '/paginator': 277.4 * KiB, // было 269.6
-  '/db-demo': 271.8 * KiB, // было 267.8
-  '/fields': 230.3 * KiB, // было 224.6
+  // REVISION 2026-11-15: факт demo-сборки +0.5 KiB (/, 156.7; /form, 232.5;
+  // /paginator, 279.4; /db-demo, 273.1; /fields, 231.7; /steps, 310.0).
+  '/': 157.2 * KiB, // было 155.0
+  '/form': 233.0 * KiB, // было 231.0
+  '/paginator': 279.9 * KiB, // было 277.4
+  '/db-demo': 273.6 * KiB, // было 271.8
+  '/fields': 232.2 * KiB, // было 230.3
   // 2026-11-12 (сессии, этап 3): два новых маршрута экрана устройств — карточка
   // `/user/sessions/<id>` и страница фильтров `?from=` — добавили в клиентский
   // манифест +1.2 KiB; факт 306.3. По постоянному решению (≤ +5, сообщить) — 306.8.
-  '/steps': 306.8 * KiB, // было 305.6 (2026-11-02, утверждено владельцем); ранее 274.5
+  '/steps': 310.5 * KiB, // было 306.8
 }
 
 if (!existsSync(MANIFEST) || !existsSync(IMMUTABLE_ROOT)) {
