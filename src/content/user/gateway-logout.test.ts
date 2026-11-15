@@ -20,9 +20,7 @@ const { GUARD, revokeSessionById, revokeBulkSessions } = vi.hoisted(() => ({
     prof: { nickname: null, avatarUrl: null },
     perms: [] as readonly string[],
   },
-  revokeSessionById: vi.fn(async () => {
-    throw new Error('хранилище недоступно')
-  }),
+  revokeSessionById: vi.fn(),
   revokeBulkSessions: vi.fn(),
 }))
 
@@ -77,6 +75,9 @@ test('logoutLocal снимает обе куки и не трогает хран
 test('при броске домена выход отвергается, а куки остаются', async () => {
   const { event, jar } = fakeEvent()
   revokeSessionById.mockClear()
+  revokeSessionById.mockImplementationOnce(async () => {
+    throw new Error('хранилище недоступно')
+  })
 
   await expect(auth(event).logout()).rejects.toThrow('хранилище недоступно')
 
@@ -123,4 +124,29 @@ describe('revokeBulkSessions: куки снимает только текуща�
     expect(jar.get(ACCESS_COOKIE)).toBe('access-token')
     expect(deleted).toEqual([])
   })
+})
+
+test('logout снимает обе куки при успешном отзыве текущей сессии', async () => {
+  revokeSessionById.mockResolvedValueOnce({
+    ok: true,
+    value: { id: '22222222-2222-4222-8222-222222222222', current: true, hard: false },
+  })
+  const { event, jar } = fakeEvent()
+
+  const r = await auth(event).logout()
+
+  expect(r).toEqual({ ok: true, value: null })
+  expect(jar.has(ACCESS_COOKIE)).toBe(false)
+  expect(jar.has(RENEWAL_COOKIE)).toBe(false)
+})
+
+test('logoutAll снимает обе куки при успешном пакетном отзыве', async () => {
+  revokeBulkSessions.mockResolvedValueOnce({ ok: true, value: { revoked: 1, current: true, requested: 1 } })
+  const { event, jar } = fakeEvent()
+
+  const r = await auth(event).logoutAll()
+
+  expect(r).toEqual({ ok: true, value: null })
+  expect(jar.has(ACCESS_COOKIE)).toBe(false)
+  expect(jar.has(RENEWAL_COOKIE)).toBe(false)
 })

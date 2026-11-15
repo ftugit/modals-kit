@@ -43,7 +43,6 @@ import {
   revokeSessionById as coreRevokeSessionById,
   type ListSessionsPageArgs,
   type RevokeBulkArgs,
-  type RevokeIntent,
   type SessionActor,
 } from './sessions.server.js'
 import { sign, verify } from './keys.js'
@@ -712,10 +711,6 @@ export function auth(event: AuthEvent): {
   renameSessionDevice(id: string, deviceName: string | null): Promise<UserResult<SessionDeviceView>>
   revokeSessionById(id: string, opts?: { hard?: boolean }): Promise<UserResult<SessionRevokeResult>>
   revokeBulkSessions(args: RevokeBulkArgs): Promise<UserResult<SessionBulkRevokeResult>>
-  /** Алиас явного набора выбранных строк: один доменный вызов. */
-  revokeSessionsByIntent(args: RevokeBulkArgs | RevokeIntent): Promise<UserResult<SessionBulkRevokeResult>>
-  revokeSessionsByIds(ids: readonly string[] | string | null, opts?: { authId?: string | null }): Promise<UserResult<SessionBulkRevokeResult>>
-  revokeBulkByIds(ids: readonly string[] | string | null, opts?: { authId?: string | null }): Promise<UserResult<SessionBulkRevokeResult>>
   /** Порция списка seed-юзеров (нужны `admin` или `account.read`). */
   listSeedUsers(args?: ListSeedUsersArgs): Promise<UserResult<SeedUsersPage>>
   /**
@@ -926,21 +921,6 @@ export function auth(event: AuthEvent): {
       if ('code' in g) return { ok: false, fact: g }
       const r = await coreRevokeBulkSessions(sessionActor(g), args, sessionDeps())
       return r
-    },
-    revokeSessionsByIntent: async (args) => {
-      const g = await coreGuard(ports, await freshAccessOrCurrent())
-      if ('code' in g) return { ok: false, fact: g }
-      return coreRevokeBulkSessions(sessionActor(g), args as RevokeBulkArgs, sessionDeps())
-    },
-    revokeSessionsByIds: async (ids, opts) => {
-      const g = await coreGuard(ports, await freshAccessOrCurrent())
-      if ('code' in g) return { ok: false, fact: g }
-      return coreRevokeBulkSessions(sessionActor(g), { ids, authId: opts?.authId ?? null }, sessionDeps())
-    },
-    revokeBulkByIds: async (ids, opts) => {
-      const g = await coreGuard(ports, await freshAccessOrCurrent())
-      if ('code' in g) return { ok: false, fact: g }
-      return coreRevokeBulkSessions(sessionActor(g), { ids, authId: opts?.authId ?? null }, sessionDeps())
     },
     listSeedUsers: async (args) => coreListSeedUsers(ports, await freshAccessOrCurrent(), args),
     resolveAccountSlice: async (args) =>
