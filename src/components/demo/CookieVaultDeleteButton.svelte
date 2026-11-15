@@ -31,28 +31,20 @@
     },
   })
 
-  let confirming = $state(false)
 </script>
 
 <Form {form} hiddenFields={form.hidden()} class="inline-flex">
   <Field of={form.f.slot_id} />
-  {#if confirming}
-    <span class="text-xs text-muted-foreground">Удалить сервер?</span>
-    <Button
-      type="submit"
-      variant="destructive"
-      size="sm"
-      task={formTask(form.state)}
-      data-testid={`vault-delete-${slotId}`}
-    >
-      Удалить
-    </Button>
-    <Button type="button" variant="outline" size="sm" onclick={() => (confirming = false)}>
-      Отмена
-    </Button>
-  {:else}
-    <Button type="button" variant="outline" size="sm" onclick={() => (confirming = true)} data-testid={`vault-delete-${slotId}`}>
-      Удалить
-    </Button>
-  {/if}
+  <Button
+    type="submit"
+    variant="outline"
+    size="sm"
+    task={formTask(form.state)}
+    data-testid={`vault-delete-${slotId}`}
+    onclick={(e) => {
+      if (!confirm('Удалить сервер?')) e.preventDefault()
+    }}
+  >
+    Удалить
+  </Button>
 </Form>
