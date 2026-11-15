@@ -62,6 +62,8 @@
     class?: string
     /** Зона sidebar. Страница передаёт, модалка — нет. */
     sidebar?: SidebarPlace
+    /** Встроенный режим: отдавать шапку и тело родителю через `frame`. */
+    frame?: (parts: { header: import('svelte').Snippet; body: import('svelte').Snippet }) => unknown
   }
 
   let {
@@ -75,6 +77,7 @@
     variant = 'plain',
     class: className,
     sidebar,
+    frame,
   }: Props = $props()
 
   // Регистрация — в том же бандле, что и хост пагинатора внутри `Listing`.
@@ -293,6 +296,7 @@
   actor={vault.principal}
   isSelected={selection.isSelected}
   {sidebar}
+  {frame}
   filters={{
     modal: 'user.sessions.filters',
     path: userSessionsFiltersRoute.href(),

@@ -6,7 +6,6 @@
   import { setModalsContext, type HostFloatingApi, type ModalsContext } from '#lib/modals/svelte/index.js'
   import type { CatalogFilterSchema } from '#lib/paginate/filters/index.js'
   import FilterBlock from './FilterBlock.svelte'
-  import FilterLabels from './FilterLabels.svelte'
   import { provideFilterBlocks } from './filter-blocks.svelte.js'
 
   let { floating, schema }: { floating?: HostFloatingApi; schema: CatalogFilterSchema } = $props()
@@ -40,4 +39,3 @@
   </FilterBlock>
   <Field of={bound.field('page.filters.kind')} />
 </Form>
-<FilterLabels />

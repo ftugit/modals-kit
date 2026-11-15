@@ -110,4 +110,12 @@ export interface ListingProps<Item extends { id: string }> {
   actor?: string | null
   skeleton?: Snippet<[Record<string, unknown>]>
   controls?: Snippet<[ListingFrame<Item>]>
+  /**
+   * Встроенный/«без шапки» режим: оболочка отдаёт шапку (controls, кнопка
+   * фильтров, счётчик) и тело (поиск, чипы, пагинатор) родителю через этот
+   * сниппет. Родитель рисует свой `Surface` и размещает их у себя.
+   * Без `frame` оболочка рисует текущий `Surface` — поведение не меняется.
+   * Получает и pending-ветку (скелетон), чтобы список не терял загрузку.
+   */
+  frame?: (parts: { header: Snippet; body: Snippet }) => unknown
 }

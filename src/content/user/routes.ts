@@ -235,6 +235,9 @@ export const userProfileDeleteRoute = kitRoute('/(site)/(app)/user/[id=uuid]/del
  */
 export const userListRoute = kitRoute('/users')
 
+/** Список профилей — статический адрес `/profiles`. */
+export const profilesListRoute = kitRoute('/profiles')
+
 export interface ListFiltersSearchInput extends Record<string, unknown> {
   from?: string | null
 }

@@ -16,6 +16,7 @@ vi.mock('$app/state', () => ({
   navigating: { to: null, from: null, type: null },
 }))
 
+import { page } from '$app/state'
 import Profile from './Profile.svelte'
 import { UserConfig } from './user-config/index.js'
 import type { ProfileView, UserConfigRouteData } from '../types.js'
@@ -187,7 +188,66 @@ describe('UserConfig: редактируемые поля и read-only стро�
     expect(body).not.toContain('name="session_ip_lock"')
     expect(body).toContain('data-testid="config-save-submit"')
     expect(body).toContain('data-testid="config-sessions-open"')
-    expect(body).toContain('href="/user/sessions"')
+    expect(body).toContain('user_config_step=security.sessions')
+  })
+
+  test('при шаге security.sessions рендерит встроенные сессии и no-JS-ссылку «Настройки» на security', () => {
+    const initial: UserConfigRouteData = {
+      uid: TARGET_UID,
+      enabled: true,
+      fact: null,
+      slice: {
+        uid: TARGET_UID,
+        isOwn: true,
+        canSave: true,
+        items: [
+          {
+            key: 'profile.visibility',
+            fieldName: 'profile_visibility',
+            group: 'profile',
+            kind: 'select',
+            title: 'Кто видит профиль',
+            description: 'Публичная видимость карточки профиля.',
+            value: 'users',
+            defaultValue: 'nobody',
+            overridden: true,
+            editable: true,
+            deletable: true,
+          },
+          {
+            key: 'session.ipLock',
+            fieldName: 'session_ip_lock',
+            group: 'security',
+            kind: 'checkbox',
+            title: 'Автовыход при смене IP',
+            description: 'Сессия завершается при смене IP.',
+            value: true,
+            defaultValue: false,
+            overridden: true,
+            editable: false,
+            deletable: false,
+          },
+        ],
+      },
+    }
+
+    const prevUrl = page['url']
+    page['url'] = new URL('http://localhost/user/config?user_config_step=security.sessions')
+    try {
+      const { body } = render(UserConfig, {
+        props: {
+          initial,
+          authorized: true,
+          enabled: true,
+        },
+      })
+      // Встроенный список сессий отрендерил тело (pending-скелетон в SSR).
+      expect(body).toContain('data-testid="config-sessions-back"')
+      expect(body).toContain('href="/user/config?user_config_step=security"')
+      expect(body).toContain('data-testid="skeleton"')
+    } finally {
+      page['url'] = prevUrl
+    }
   })
 
   test('при canSave = false скрывает кнопку «Сохранить», оставляя read-only просмотр', () => {
@@ -229,5 +289,51 @@ describe('UserConfig: редактируемые поля и read-only стро�
     expect(body).toContain(TARGET_UID)
     expect(body).toContain('data-testid="config-readonly-profile.visibility"')
     expect(body).not.toContain('data-testid="config-save-submit"')
+  })
+})
+
+describe('UserConfig: запрещённый шаг по прямой ссылке (§4.9)', () => {
+  test('при URL user_config_step=security и отсутствии группы security в срезе рендерит ACL-ветвь', () => {
+    const prevUrl = page['url']
+    page['url'] = new URL('http://localhost/user/config?user_config_step=security')
+    try {
+      const initial: UserConfigRouteData = {
+        uid: TARGET_UID,
+        enabled: true,
+        fact: null,
+        slice: {
+          uid: TARGET_UID,
+          isOwn: true,
+          canSave: true,
+          items: [
+            {
+              key: 'profile.visibility',
+              fieldName: 'profile_visibility',
+              group: 'profile',
+              kind: 'select',
+              title: 'Кто видит профиль',
+              description: 'Публичная видимость.',
+              value: 'users',
+              defaultValue: 'nobody',
+              overridden: true,
+              editable: true,
+              deletable: true,
+            },
+          ],
+        },
+      }
+
+      const { body } = render(UserConfig, {
+        props: {
+          initial,
+          authorized: true,
+          enabled: true,
+        },
+      })
+
+      expect(body).toContain('data-acl-code="role_forbidden"')
+    } finally {
+      page['url'] = prevUrl
+    }
   })
 })

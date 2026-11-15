@@ -2,9 +2,13 @@
   /**
    * Единый вход в пользовательские списки на главной (план §2.1).
    *
-   * Одна карточка с кнопками по правам: seed-юзеры (по факту входа),
-   * журнал сессий и блокировки (видимость решена на сервере через
-   * `siteListEntries`). «Серверы хранилища» остаются отдельной карточкой.
+   * Права: кнопка «Профили» намеренно публична (доступна любому,
+   * включая гостя); экран списка сам выдаёт `Acl` при отказе. В отличие
+   * от неё, входы «Сессии»/«Блокировки» из `siteListEntries` —
+   * permission-gated и рендерятся только при праве читать соответствующую
+   * модель (см. `site-entries.ts`). Смешанная политика видимости —
+   * сознательная: профили — публичный каталог, сессии/блокировки —
+   * операторские инструменты.
    */
   import Button from '#components/ui/button/Button.svelte'
   import { asLink, useModalLink } from '#hooks/links/index.js'
@@ -33,6 +37,7 @@
     {#if authorized}
       <Button {...asModalLink('user.list')}>Seed-юзеры</Button>
     {/if}
+    <Button {...asModalLink('user.profiles')}>Профили</Button>
     {#each entries as entry (entry.key)}
       {#if entry.modal}
         <Button {...asModalLink(entry.modal as 'user.sessions.journal')}>{entry.cta}</Button>

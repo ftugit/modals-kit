@@ -170,10 +170,12 @@ export type RouteDescriptor<
   : ParamRouteDescriptor<Extract<Params, Record<string, string>>, SearchInput, SearchOutput>
 
 const routes = new Map<string, StaticRouteDescriptor<never, unknown> | ParamRouteDescriptor<never, never, unknown>>()
+const routeSignatures = new Map<string, string>()
 
 /** Сброс реестра маршрутов (для изолированных unit-тестов). */
 export function resetRegisteredRoutes(): void {
   routes.clear()
+  routeSignatures.clear()
 }
 
 function extractSearchString(from: URL | URLSearchParams | string): string {
@@ -334,6 +336,28 @@ export function defineRoute<
   return paramDescriptor
 }
 
+/** Стабильная подпись входных данных регистрации (для идемпотентности dev-SSR). */
+function routeSignature(
+  pathOrOptions: unknown,
+  maybeOptions: unknown,
+): string {
+  try {
+    if (typeof pathOrOptions === 'string') {
+      return JSON.stringify({ p: pathOrOptions, o: maybeOptions ?? null })
+    }
+    const o = (pathOrOptions ?? {}) as Record<string, unknown>
+    return JSON.stringify({
+      id: o.id,
+      keys: o.keys,
+      owner: o.owner,
+      defaults: o.defaults,
+      hasBuildPath: typeof o.buildPath === 'function',
+    })
+  } catch {
+    return String(pathOrOptions)
+  }
+}
+
 /** Регистрирует описание в реестре маршрутов (по имени или пути). */
 export function registerRoute<
   SearchInput extends Record<string, unknown> = Record<string, never>,
@@ -360,7 +384,15 @@ export function registerRoute<
   maybeOptions?: StaticRouteOptions<SearchInput, SearchOutput>,
 ): StaticRouteDescriptor<SearchInput, SearchOutput> | ParamRouteDescriptor<Params, SearchInput, SearchOutput> {
   const id = typeof pathOrOptions === 'string' ? (maybeOptions?.id ?? pathOrOptions) : pathOrOptions.id
-  if (routes.has(id)) {
+  const existing = routes.get(id)
+  if (existing) {
+    // Идемпотентность для dev-SSR: повторная регистрация ТОГО ЖЕ маршрута
+    // (одинаковые входные данные) не должна ронять страницу. Реальный
+    // конфликт (другой набор ключей/пути/владельца) по-прежнему — ошибка.
+    const sig = routeSignature(pathOrOptions, maybeOptions)
+    if (routeSignatures.get(id) === sig) {
+      return existing as never
+    }
     throw new Error(`Маршрут «${id}» уже зарегистрирован в реестре адресов`)
   }
   const descriptor =
@@ -368,5 +400,6 @@ export function registerRoute<
       ? defineRoute(pathOrOptions, maybeOptions)
       : defineRoute(pathOrOptions)
   routes.set(id, descriptor as never)
+  routeSignatures.set(id, routeSignature(pathOrOptions, maybeOptions))
   return descriptor
 }

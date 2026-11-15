@@ -8,12 +8,12 @@
   import Field from '#components/form/Field.svelte'
   import Common from '#components/form/Common.svelte'
   import { Steps, type StepsHost } from '#components/steps/index.js'
+  import ProfileStep from './ProfileStep.svelte'
+  import SecurityStep from './SecurityStep.svelte'
   import { Badge, Button } from '#components/ui/index.js'
   import {
     CONFIG_GROUPS,
     CONFIG_GROUP_ORDER,
-    formatConfigValue,
-    isConfigKey,
     specConfig,
     type ConfigGroupKey,
   } from '../../spec-config.js'
@@ -93,9 +93,7 @@
     (steps.currentKey as ConfigGroupKey | null) ?? visibleGroups[0]?.key ?? 'profile',
   )
 
-  function displayValue(item: UserConfigItem, val: unknown): string {
-    return isConfigKey(item.key) ? formatConfigValue(item.key, val) : String(val ?? '')
-  }
+
 
   let lastHandledSubmission = ''
   $effect(() => {
@@ -137,81 +135,26 @@
     <Steps host={steps} label="Разделы настроек" />
   {/if}
 
-  {#each visibleGroups as grp (grp.key)}
-    <div
-      class="flex flex-col gap-3"
-      class:hidden={showStepsNav && activeGroup !== grp.key}
-      data-config-group={grp.key}
-    >
-      <div class="flex flex-col gap-0.5">
-        <h3 class="text-sm font-semibold">{grp.meta.title}</h3>
-        <p class="text-xs text-muted-foreground">{grp.meta.description}</p>
-      </div>
-
-      {#each grp.items as item (item.key)}
-        {@const fv = item.editable ? fieldMap[item.fieldName] : undefined}
-        {#if item.editable && fv}
-          <div
-            class="flex flex-col gap-2 rounded-lg border border-border p-3"
-            data-testid={`config-item-${item.key}`}
-            data-config-editable="true"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex flex-wrap items-center gap-1.5">
-                <Badge variant={item.overridden ? 'secondary' : 'outline'}>
-                  {item.overridden ? specConfig.overriddenBadge : specConfig.defaultBadge}
-                </Badge>
-                {#if item.overridden}
-                  <span class="text-xs text-muted-foreground">
-                    По умолчанию: {displayValue(item, item.defaultValue)}
-                  </span>
-                {/if}
-              </div>
-              {#if item.overridden && item.deletable}
-                <Button
-                  type="submit"
-                  name="intent"
-                  value={`reset:${item.key}`}
-                  variant="ghost"
-                  size="sm"
-                  task={formTask(bound.state, `reset:${item.key}`)}
-                  data-testid={`config-reset-${item.key}`}
-                >
-                  {specConfig.resetButton}
-                </Button>
-              {/if}
-            </div>
-            <Field of={fv} />
-          </div>
-        {:else}
-          <div
-            class="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/30 p-3 opacity-85"
-            aria-readonly="true"
-            data-testid={`config-readonly-${item.key}`}
-            data-config-editable="false"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <span class="text-sm font-medium">{item.title}</span>
-              <div class="flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline">{specConfig.readOnlyBadge}</Badge>
-                <Badge variant={item.overridden ? 'secondary' : 'outline'}>
-                  {item.overridden ? specConfig.adminSetBadge : specConfig.defaultBadge}
-                </Badge>
-              </div>
-            </div>
-            <p class="text-xs text-muted-foreground">{item.description}</p>
-            <div
-              class="mt-1 rounded-md border border-border/70 bg-background/70 px-2.5 py-1.5 text-sm font-medium text-foreground"
-              role="status"
-              data-testid={`config-readonly-value-${item.key}`}
-            >
-              {displayValue(item, item.value)}
-            </div>
-          </div>
-        {/if}
-      {/each}
-    </div>
-  {/each}
+  {#if visibleGroups.some((g) => g.key === 'profile')}
+    <ProfileStep
+      items={visibleGroups.find((g) => g.key === 'profile')!.items}
+      {fieldMap}
+      {slice}
+      {bound}
+      active={activeGroup === 'profile'}
+      {showStepsNav}
+    />
+  {/if}
+  {#if visibleGroups.some((g) => g.key === 'security')}
+    <SecurityStep
+      items={visibleGroups.find((g) => g.key === 'security')!.items}
+      {fieldMap}
+      {slice}
+      {bound}
+      active={activeGroup === 'security'}
+      {showStepsNav}
+    />
+  {/if}
 
   <div class="flex items-center justify-between gap-2 pt-1">
     {#if slice.canSave}

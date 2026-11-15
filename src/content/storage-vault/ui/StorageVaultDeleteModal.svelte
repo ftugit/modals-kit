@@ -12,9 +12,10 @@
   const initialSlotId = untrack(() => slotId)
   const schema = storageVaultSchema
   const form = bindComponentForm(forms, schema.deleteFormFor(initialSlotId), {
-    instance: `dv_del:${schema.scope}:${initialSlotId}`,
-    onSuccess: () => {
-      window.location.href = backHref
+    instance: `dv_del:${schema.scope}-${initialSlotId || 'x'}`,
+    onSuccess: (res) => {
+      const payload = res.data as { snapshot?: unknown } | undefined
+      void payload
     },
   })
 </script>

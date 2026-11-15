@@ -26,6 +26,7 @@
       authorized={Boolean(data.slice)}
       doneHref={backHref}
       action={`/user/${data.uid}/config?next=${encodeURIComponent(backHref)}`}
+      stepsMode="hybrid"
     />
   {/if}
 </div>

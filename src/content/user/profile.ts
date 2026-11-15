@@ -110,6 +110,38 @@ export async function profile(
  * битый/истёкший токен здесь — гость. Строку прячет `PROFILE_ACL.extend`.
  * Нет строки и «нельзя» — один факт `auth.identity-unknown`.
  */
+export interface ProfilesPage {
+  items: ProfileView[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+/**
+ * Лист профилей (этап 2.5): публичный для гостей и вошедших. Видимость
+ * строк определяет модель профиля (`PROFILE_ACL.extend`: `all` — всем,
+ * `users` — вошедшим, `nobody` — никому, кроме владельца/прав). Поиск —
+ * подстрока по никнейму. Фильтров нет.
+ */
+export async function listProfiles(
+  ports: AuthPorts,
+  accessToken: string | undefined,
+  args: { page?: number; pageSize?: number; search?: string } = {},
+): Promise<UserResult<ProfilesPage>> {
+  const viewer = accessToken ? await guard(ports, accessToken) : null
+  const logged = viewer && !('code' in viewer) ? viewer : null
+  const ctx = logged
+    ? principalOfRow({ id: logged.sub, permissions: logged.perms })
+    : { principal: { roles: [] as string[] } }
+  const page = Math.max(1, Math.trunc(args.page ?? 1) || 1)
+  const pageSize = Math.min(100, Math.max(1, Math.trunc(args.pageSize ?? 30) || 30))
+  const q = (args.search ?? '').trim()
+  const listPage = ports.profiles.listPage
+  if (!listPage) return fail({ code: 'auth.forbidden' })
+  const { rows, total } = await listPage(ctx, { page, pageSize, search: q || undefined })
+  return ok({ items: rows, total, page, pageSize })
+}
+
 export async function publicProfile(
   ports: AuthPorts,
   viewerToken: string | undefined,

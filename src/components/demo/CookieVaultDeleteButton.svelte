@@ -1,18 +1,29 @@
 <script lang="ts">
   import { Button } from '#components/ui/index.js'
+  import { tryUseModals } from '#lib/modals/svelte/index.js'
   import { useModalLink } from '#hooks/links/index.js'
-  import { STORAGE_VAULT_DELETE_MODAL } from '#content/storage-vault/modals.js'
 
-  let { slotId }: { slotId: string } = $props()
+  let { slotId, modal = 'storage.vault.delete' }: { slotId: string; modal?: string } = $props()
 
-  const asModalLink = useModalLink()
+  const modals = tryUseModals()
+  const asModalLink = modals ? useModalLink() : null
 </script>
 
-<Button
-  {...asModalLink(STORAGE_VAULT_DELETE_MODAL, { slot: slotId })}
-  variant="outline"
-  size="sm"
-  data-testid={`vault-delete-${slotId}`}
->
-  Удалить
-</Button>
+{#if asModalLink}
+  <Button
+    {...asModalLink(modal, { slot: slotId })}
+    variant="outline"
+    size="sm"
+    data-testid={`vault-delete-${slotId}`}
+  >
+    Удалить
+  </Button>
+{:else}
+  <Button
+    variant="outline"
+    size="sm"
+    data-testid={`vault-delete-${slotId}`}
+  >
+    Удалить
+  </Button>
+{/if}

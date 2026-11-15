@@ -34,6 +34,8 @@
     backHref?: string
     /** Вызывается при любом изменении сейфа (сохранение, удаление, сброс ключа). */
     onChanged?: (next: CookieVaultSnapshot<M>) => void
+    /** Имя модалки подтверждения удаления сервера (передаётся из доменного слоя). */
+    deleteModal?: string
     class?: string
   }
 
@@ -47,6 +49,7 @@
     renderMeta,
     backHref,
     onChanged,
+    deleteModal,
     class: cls = '',
   }: Props<TMeta> = $props()
 
@@ -161,7 +164,7 @@
                 {/if}
               </div>
 
-              <CookieVaultDeleteButton slotId={item.id} />
+              <CookieVaultDeleteButton slotId={item.id} modal={deleteModal} />
             </li>
           {/each}
         </ul>

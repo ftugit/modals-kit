@@ -22,10 +22,10 @@
   } from '#lib/paginate/filters/index.js'
   import type { Component } from 'svelte'
   import type { MessageDictionary } from '#lib/form/index.js'
+  import { evaluate } from '#lib/form/index.js'
   import { ru } from '#components/form/messages.ru.js'
   import type { CatalogFilterDescribe } from '#lib/paginate/filters/index.js'
   import ActiveFilters from './ActiveFilters.svelte'
-  import FilterLabels from './FilterLabels.svelte'
   import { provideFilterBlocks } from './filter-blocks.svelte.js'
   import type { FilterFormProps } from './filter-form.svelte.js'
 
@@ -130,6 +130,21 @@
     void setExtra(store, name, patch)
   }
 
+  /** Прямой commit черновика из всплывашки: валидация (evaluate) + apply. */
+  function commitDraft(formEl: HTMLFormElement) {
+    const ev = evaluate(new FormData(formEl), description, { render: () => '', requireEnvelope: false })
+    const layer = prefix ? `${prefix}.` : ''
+    const next: Record<string, string[]> = {}
+    for (const f of description.fields) {
+      const raw = ev.values[f.name]
+      const list = (Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw])
+        .map((item) => String(item).trim())
+        .filter((item) => item !== '')
+      if (list.length) next[f.name.slice(layer.length)] = list
+    }
+    apply(next)
+  }
+
   /** Снятие одного значения (клик по чипу) — тем же каналом состояния. */
   function remove(chip: { patch: Record<string, string | number | undefined> }): boolean {
     void setExtra(store, name, chip.patch)
@@ -176,9 +191,6 @@
     </ul>
   {/if}
 
-  <!-- Метки схемы. Нарезанный пункт откроет свой блок; остальные — текст. -->
-  <FilterLabels />
-
   <!-- Раскрытие — нативный <details>: форма-GET работает и без JavaScript. -->
   <details class="mt-3" data-testid="filters-details">
     <summary class="cursor-pointer text-sm font-medium" data-testid="filters-toggle">
@@ -210,6 +222,6 @@
   </details>
 
   <div class="mt-3">
-    <ActiveFilters chips={view.chips} count={view.count} onRemove={remove} />
+    <ActiveFilters chips={view.chips} count={view.count} onRemove={remove} onCommitDraft={commitDraft} />
   </div>
 </section>

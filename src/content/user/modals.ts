@@ -34,6 +34,7 @@ import {
   userSessionsFiltersRoute,
   userSessionsRoute,
   userPickerRoute,
+  profilesListRoute,
   userProfileDeleteRoute,
   userProfileEditRoute,
   userProfileRoute,
@@ -156,6 +157,15 @@ registerModal({
   name: 'user.list',
   component: lazy(() => import('./ui/SeedUsersModal.svelte')),
   route: userListRoute.href,
+  size: { width: 640, height: 560 },
+})
+// Список профилей: та же пара — данные приносит загрузчик записи (тот же
+// `load` роута `/profiles`; страница отдаёт свой SSR-результат), модалка
+// только ACL-гейт, `route` даёт ссылкам `href`.
+registerModal({
+  name: 'user.profiles',
+  component: lazy(() => import('./ui/ProfilesModal.svelte')),
+  route: profilesListRoute.href,
   size: { width: 640, height: 560 },
 })
 // Фильтры списка: открывается кнопкой над списком, результат пишет в

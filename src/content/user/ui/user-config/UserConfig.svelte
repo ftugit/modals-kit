@@ -14,6 +14,8 @@
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { Result } from '#lib/form/index.js'
   import { Steps, useSteps } from '#components/steps/index.js'
+  import type { Snippet } from 'svelte'
+  import SessionsStep from './SessionsStep.svelte'
   import { useModalLink } from '#hooks/links/index.js'
   import { Button, Skeleton, Surface } from '#components/ui/index.js'
   import { cn } from '#components/utils.js'
@@ -44,6 +46,10 @@
     onDone?: () => void
     variant?: UserSurfaceVariant
     class?: string
+    /** Режим шагов: страница — hybrid/url, модалка — local. */
+    stepsMode?: 'url' | 'local' | 'hybrid'
+    /** Контекст носителя для встроенного списка сессий. */
+    sessionsContext?: 'page' | 'modal'
   }
 
   let {
@@ -59,6 +65,8 @@
     onDone,
     variant = 'plain',
     class: className,
+    stepsMode = 'local',
+    sessionsContext = 'page',
   }: Props = $props()
 
   const fixedUid = $derived(uid?.trim() || null)
@@ -97,6 +105,8 @@
 
   const slice = $derived<UserConfigSlice | null>(routeData?.slice ?? null)
 
+  let sessionsParts = $state<{ header: Snippet; body: Snippet } | null>(null)
+
   const nonEmptyGroupKeys = $derived<ConfigGroupKey[]>(
     slice
       ? CONFIG_GROUP_ORDER.filter((gk) => slice.items.some((item) => item.group === gk))
@@ -105,7 +115,7 @@
 
   const steps = useSteps({
     owner: 'user-config',
-    mode: 'local',
+    mode: untrack(() => stepsMode),
     key: 'user_config_step',
     steps: () =>
       nonEmptyGroupKeys.map((gk) => ({
@@ -115,14 +125,41 @@
       })),
     current: () => {
       const fromUrl = readQuery(visibleAddress().url.searchParams, 'user_config_step')
-      if (typeof fromUrl === 'string' && nonEmptyGroupKeys.includes(fromUrl as ConfigGroupKey)) {
-        return fromUrl
+      if (typeof fromUrl === 'string') {
+        const seg = fromUrl.split('.')[0]
+        if (nonEmptyGroupKeys.includes(seg as ConfigGroupKey)) {
+          return fromUrl
+        }
       }
       return nonEmptyGroupKeys[0] ?? 'profile'
     },
   })
 
   const showStepsNav = $derived(nonEmptyGroupKeys.length >= 2)
+
+  // Запрещённый шаг, открытый прямой ссылкой: его нет в списке разрешённых
+  // групп, поэтому в навигации он скрыт; при прямом переходе показываем ACL
+  // вместо тихого отката к первому шагу.
+  const requestedTopStep = $derived.by(() => {
+    const fromUrl = readQuery(visibleAddress().url.searchParams, 'user_config_step')
+    if (typeof fromUrl !== 'string' || !fromUrl) return null
+    return fromUrl.split('.')[0]
+  })
+  const isForbiddenStep = $derived(
+    requestedTopStep !== null &&
+      !nonEmptyGroupKeys.includes(requestedTopStep as ConfigGroupKey),
+  )
+
+  const sessionsMode = $derived(
+    steps.currentKey === 'security' &&
+      typeof steps.fullKey === 'string' &&
+      steps.fullKey !== 'security' &&
+      (steps.fullKey as string).startsWith('security.'),
+  )
+
+  $effect(() => {
+    if (!sessionsMode) sessionsParts = null
+  })
   const asModalLink = useModalLink()
   const formKey = $derived(
     slice
@@ -139,14 +176,46 @@
 {/snippet}
 
 {#snippet sessionsLink()}
-  <Button
-    {...asModalLink('user.sessions')}
-    variant="outline"
-    size="sm"
-    data-testid="config-sessions-open"
-  >
-    Сессии
-  </Button>
+  {#if sessionsMode}
+    <a
+      href={steps.href('security')}
+      class="inline-flex items-center rounded-md border border-border px-2.5 py-1 text-sm font-medium hover:bg-muted"
+      data-testid="config-sessions-back"
+      onclick={(e: MouseEvent) => {
+        if (steps.mode !== 'url') {
+          e.preventDefault()
+          void steps.switch('security')
+        }
+      }}
+    >
+      Настройки
+    </a>
+  {:else}
+    <a
+      href={steps.href('security.sessions')}
+      class="inline-flex items-center rounded-md border border-border px-2.5 py-1 text-sm font-medium hover:bg-muted"
+      data-testid="config-sessions-open"
+      onclick={(e: MouseEvent) => {
+        if (steps.mode !== 'url') {
+          e.preventDefault()
+          void steps.switch('security.sessions')
+        }
+      }}
+    >
+      Сессии
+    </a>
+  {/if}
+{/snippet}
+
+{#snippet sessionsEnd()}
+  <div class="flex items-center gap-2">
+    {#if slice?.isOwn}
+      {@render sessionsLink()}
+    {/if}
+    {#if sessionsMode && sessionsParts}
+      {@render sessionsParts.header()}
+    {/if}
+  </div>
 {/snippet}
 
 {#snippet configTarget()}
@@ -173,7 +242,7 @@
     controls={slice?.isOwn || showStepsNav
       ? {
           ...(showStepsNav ? { start: configSteps } : {}),
-          ...(slice?.isOwn ? { end: sessionsLink } : {}),
+          ...(slice?.isOwn ? { end: sessionsEnd } : {}),
         }
       : undefined}
     data-testid="user-config-root"
@@ -184,12 +253,33 @@
         <Skeleton class="h-24 w-full" />
         <Skeleton class="h-24 w-full" />
       </div>
+    {:else if isForbiddenStep}
+      <Acl status="auth.forbidden" authorized={isAuthorized} enabled={isEnabled} backHref={doneHref} {variant} />
     {:else}
       {#if slice.items.length === 0}
         <div class="rounded-lg border border-border p-4 text-sm text-muted-foreground">
           <p class="font-medium text-foreground">{specConfig.emptyTitle}</p>
           <p class="mt-1 text-xs">{specConfig.emptyText}</p>
         </div>
+      {:else if sessionsMode}
+        {#key 'sessions'}
+          <SessionsStep
+            uid={slice.isOwn ? null : slice.uid}
+            context={sessionsContext}
+            onAcl={(fact) => {
+              // ACL отказ — возвращаемся к настройкам.
+              void steps.switch('security')
+              onAcl?.(fact as never)
+            }}
+            frame={(parts) => {
+              sessionsParts = parts
+              return null
+            }}
+          />
+        {/key}
+        {#if sessionsParts}
+          {@render sessionsParts.body()}
+        {/if}
       {:else}
         {#key formKey}
           <UserConfigFields

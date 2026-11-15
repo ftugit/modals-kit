@@ -36,6 +36,7 @@
       enabled={ldr.data.enabled}
       doneHref={uid ? `/user/${uid}` : '/'}
       variant="plain"
+      sessionsContext="modal"
       onAcl={(fact) => (acl = fact)}
       onChange={() => {
         m.modals.invalidateLoader('user.profile')

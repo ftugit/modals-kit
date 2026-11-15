@@ -56,6 +56,8 @@ import {
 } from './accounts-admin.js'
 import {
   deleteProfile as coreDeleteProfile,
+  listProfiles as coreListProfiles,
+  type ProfilesPage,
   profile as coreProfile,
   publicProfile as corePublicProfile,
   setVisibility as coreSetVisibility,
@@ -408,6 +410,18 @@ function profilesAdapter() {
       const row = await byAuth(ctx, authId, fields)
       return row ? viewOf(row) : undefined
     },
+    async listPage(ctx: DataContext, args: { page: number; pageSize: number; search?: string }): Promise<{ rows: ProfileView[]; total: number }> {
+      const page = Math.max(1, Math.trunc(args.page ?? 1) || 1)
+      const pageSize = Math.max(1, Math.trunc(args.pageSize ?? 30) || 30)
+      const q = (args.search ?? '').trim()
+      const filter = q ? { field: 'nickname', op: 'icontains' as const, value: q } : undefined
+      const slice = filter ? { filter } : {}
+      const [rows, total] = await Promise.all([
+        api().select(ctx, { page, limit: pageSize, order: [['created_at', 'desc']], ...slice } as any),
+        api().count(ctx, slice as any),
+      ])
+      return { rows: (rows as unknown as Record<string, unknown>[]).map((r) => viewOf(r)), total }
+    },
     async update(ctx: DataContext, authId: string, patch: { nickname?: string; avatarUrl?: string | null }): Promise<void> {
       const row = await byAuth(ctx, authId)
       if (!row) return
@@ -713,6 +727,8 @@ export function auth(event: AuthEvent): {
   revokeBulkSessions(args: RevokeBulkArgs): Promise<UserResult<SessionBulkRevokeResult>>
   /** Порция списка seed-юзеров (нужны `admin` или `account.read`). */
   listSeedUsers(args?: ListSeedUsersArgs): Promise<UserResult<SeedUsersPage>>
+  /** Порция листа профилей (публичный; видимость — по модели профиля). */
+  listProfiles(args?: { page?: number; pageSize?: number; search?: string }): Promise<UserResult<ProfilesPage>>
   /**
    * Набор аккаунтов по срезу списка: `id`/`ids`/срез, одна форма. Резолвит
    * сервер теми же правами, что список; предел набора — отказ, не усечение.
@@ -923,6 +939,7 @@ export function auth(event: AuthEvent): {
       return r
     },
     listSeedUsers: async (args) => coreListSeedUsers(ports, await freshAccessOrCurrent(), args),
+    listProfiles: async (args) => coreListProfiles(ports, await freshAccessOrCurrent(), args ?? {}),
     resolveAccountSlice: async (args) =>
       coreResolveAccountSlice(ports, await freshAccessOrCurrent(), args ?? {}),
     deleteAccountsBySet: async (args) => coreDeleteAccountsBySet(ports, await freshAccessOrCurrent(), args),

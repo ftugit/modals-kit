@@ -65,6 +65,7 @@
     actor,
     skeleton,
     controls: extraControls,
+    frame,
   }: Props = $props()
 
   // Имя пагинатора не меняется за жизнь экземпляра: регистрация и стор смотрят в него один раз.
@@ -275,70 +276,90 @@
   {/if}
 {/snippet}
 
+{#snippet listingHeader()}
+  {#if data}
+    {@render bar()}
+  {/if}
+{/snippet}
+
+{#snippet listingBody()}
+  {#if search}
+    <SearchBar
+      name={paginatorName}
+      pageParam={pageParam}
+      from={listFrom}
+      query={typeof extraRecord.q === 'string' ? extraRecord.q : ''}
+      label={search.label(extraRecord)}
+      placeholder={search.placeholder(extraRecord)}
+    />
+  {/if}
+  {#if filters && filterItems.length}
+    <FilterChips
+      name={paginatorName}
+      items={filterItems}
+      {store}
+      from={listFrom}
+      defaultPageSize={filters.pageSize}
+    />
+  {/if}
+  <Paginator
+    name={paginatorName}
+    {ariaLabel}
+    {snapshot}
+    url={effectiveUrl}
+    mode="accumulate"
+    topTrigger="direction"
+    bottomTrigger="direction"
+    topZone="40%"
+    bottomZone="40%"
+    renderDivider={null}
+    class={variant === 'plain' && slotScope.store !== null ? 'min-h-0 flex-1' : 'max-h-[420px]'}
+  >
+    {#snippet renderItem(item: T, at: { page: number; index: number })}
+      {@render row(item, { selected: isSelected?.(item.id) ?? false, page: at.page, index: at.index })}
+    {/snippet}
+    {#snippet renderSkeleton()}
+      {#if skeleton}
+        {@render skeleton(extraRecord)}
+      {:else}
+        <Skeleton class="h-9 w-full" />
+      {/if}
+    {/snippet}
+  </Paginator>
+{/snippet}
+
+{#snippet listingPendingBody()}
+  <div class="flex flex-col gap-2">
+    {#each [0, 1, 2] as i (i)}
+      <Skeleton class="h-9 w-full" />
+    {/each}
+  </div>
+{/snippet}
+
 {#if snapshot}
   <PaginatorScope {store} snapshots={{ [name]: snapshot }}>
-    <Surface
-      {variant}
-      class={cn('min-h-0', className)}
-      title={headingTitle}
-      controls={hasControls ? bar : undefined}
-      data-testid={listTestId}
-    >
-      {#if search}
-        <SearchBar
-          name={paginatorName}
-          pageParam={pageParam}
-          from={listFrom}
-          query={typeof extraRecord.q === 'string' ? extraRecord.q : ''}
-          label={search.label(extraRecord)}
-          placeholder={search.placeholder(extraRecord)}
-        />
-      {/if}
-      {#if filters && filterItems.length}
-        <FilterChips
-          name={paginatorName}
-          items={filterItems}
-          {store}
-          from={listFrom}
-          defaultPageSize={filters.pageSize}
-        />
-      {/if}
-      <Paginator
-        name={paginatorName}
-        {ariaLabel}
-        {snapshot}
-        url={effectiveUrl}
-        mode="accumulate"
-        topTrigger="direction"
-        bottomTrigger="direction"
-        topZone="40%"
-        bottomZone="40%"
-        renderDivider={null}
-        class={variant === 'plain' && slotScope.store !== null ? 'min-h-0 flex-1' : 'max-h-[420px]'}
+    {#if frame}
+      {frame({ header: listingHeader, body: listingBody })}
+    {:else}
+      <Surface
+        {variant}
+        class={cn('min-h-0', className)}
+        title={headingTitle}
+        controls={hasControls ? bar : undefined}
+        data-testid={listTestId}
       >
-        {#snippet renderItem(item: T, at: { page: number; index: number })}
-          {@render row(item, { selected: isSelected?.(item.id) ?? false, page: at.page, index: at.index })}
-        {/snippet}
-        {#snippet renderSkeleton()}
-          {#if skeleton}
-            {@render skeleton(extraRecord)}
-          {:else}
-            <Skeleton class="h-9 w-full" />
-          {/if}
-        {/snippet}
-      </Paginator>
-    </Surface>
+        {@render listingBody()}
+      </Surface>
+    {/if}
   </PaginatorScope>
+{:else if frame}
+  {frame({ header: listingHeader, body: listingPendingBody })}
 {:else}
   <Surface {variant} class={className} data-testid={pendingTestId} aria-busy="true">
     {#snippet title()}
       {@render heading(undefined)}
     {/snippet}
-    <div class="flex flex-col gap-2">
-      {#each [0, 1, 2] as i (i)}
-        <Skeleton class="h-9 w-full" />
-      {/each}
-    </div>
+    {@render listingPendingBody()}
   </Surface>
 {/if}
 
