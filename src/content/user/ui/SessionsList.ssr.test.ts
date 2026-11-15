@@ -1,6 +1,6 @@
 import { render } from 'svelte/server'
 import { describe, expect, test, vi } from 'vitest'
-import SessionsList from './SessionsDomain.svelte'
+import SessionsList from './SessionsList.svelte'
 import type { SessionDeviceView, SessionsRouteData } from '../types.js'
 import { sessionsSnapshot } from './sessions-list/source.js'
 
@@ -131,6 +131,13 @@ describe('SessionsList', () => {
     expect(body).toContain('Фильтры')
     expect(body).toContain('data-testid="session-row"')
     expect(body).not.toContain('jti')
+  })
+
+  test('без режима выбора нет чекбоксов и действия по ids', () => {
+    const { body } = render(SessionsList, { props: { initial: routeData([device, other]) } })
+    expect(body).toContain('data-testid="sessions-select-toggle"')
+    expect(body).not.toContain('data-testid="session-checkbox"')
+    expect(body).not.toContain('data-testid="sessions-delete-selected"')
   })
 
   test('«Заблокировать остальные» есть только когда есть другие устройства', () => {

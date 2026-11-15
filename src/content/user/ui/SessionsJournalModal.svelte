@@ -12,7 +12,7 @@
   import { Surface } from '#components/ui/index.js'
   import type { SessionsRouteData } from '../types.js'
   import Acl from './Acl.svelte'
-  import SessionsDomain from './SessionsDomain.svelte'
+  import SessionsList from './SessionsList.svelte'
 
   const ldr = useLoader<SessionsRouteData>()
 </script>
@@ -21,6 +21,6 @@
   {#if ldr.data?.enabled === false || ldr.data?.fact}
     <Acl status={ldr.data?.fact} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
-    <SessionsDomain target={{ kind: 'journal' }} initial={ldr.data} mode="modal" url={false} variant="plain" class="min-h-0 flex-1" />
+    <SessionsList target={{ kind: 'journal' }} initial={ldr.data} mode="modal" url={false} variant="plain" class="min-h-0 flex-1" />
   {/if}
 </Surface>

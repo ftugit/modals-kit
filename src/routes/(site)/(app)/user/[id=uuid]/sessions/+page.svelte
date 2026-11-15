@@ -5,7 +5,7 @@
   import { Button } from '#components/ui/index.js'
   import { useModalLink } from '#hooks/links/index.js'
   import Acl from '#content/user/ui/Acl.svelte'
-  import SessionsDomain from '#content/user/ui/SessionsDomain.svelte'
+  import SessionsList from '#content/user/ui/SessionsList.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
@@ -33,7 +33,7 @@
       </Button>
     </div>
     {#key uid}
-      <SessionsDomain target={data.target} initial={data} variant="card" sidebar="middle" />
+      <SessionsList target={data.target} initial={data} variant="card" sidebar="middle" />
     {/key}
   {/if}
 </div>

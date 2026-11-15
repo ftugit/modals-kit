@@ -17,7 +17,7 @@
   import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing, ListingRow } from '#components/listing/index.js'
   import { useSteps } from '#components/steps/index.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button, Checkbox } from '#components/ui/index.js'
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
   import { useSlotPaginatorScope } from '#hooks/modal-paginator.svelte.js'
@@ -29,9 +29,11 @@
     userSessionsRoute,
   } from '../routes.js'
   import { vault } from '../vault.svelte.js'
+  import { useListSelection } from '#hooks/use-list-selection.svelte.js'
   import type { SessionDeviceView, SessionsListNotice, SessionsRouteData, SessionsTarget } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SessionRow from './SessionRow.svelte'
+  import ExitSteps from './sessions-list/ExitSteps.svelte'
   import SessionsFiltersForm, { type SessionsFilterValues } from './SessionsFiltersForm.svelte'
   import { sessionsFilterLabels, sessionsFilterText } from './sessions-list/filters-form.js'
   import {
@@ -113,20 +115,22 @@
     return () => clearInterval(timer)
   })
 
+  const slotScope = useSlotPaginatorScope(
+    SESSIONS_NAME,
+    untrack(() => (url === false ? { url: false } : undefined)),
+  )
   const sidebarZone = untrack(() => sidebar)
-  const filterSlot = sidebarZone
-    ? useSlotPaginatorScope(SESSIONS_NAME, untrack(() => (url === false ? { url: false } : undefined)))
-    : undefined
+  const filterSlot = slotScope
   const filterScope = sidebarZone ? untrack(() => scope) : null
   const ownedScope = Boolean(sidebarZone && filterScope && !filterSlot?.store && browser)
-  const filterStore = sidebarZone
-    ? (filterSlot?.store ??
-      (ownedScope && filterScope
+  const filterStore = filterSlot.store ??
+    (sidebarZone
+      ? ownedScope && filterScope
         ? acquireScopedStore(filterScope)
         : browser
           ? getClientStore()
-          : undefined))
-    : undefined
+          : undefined
+      : undefined)
   if (ownedScope && filterScope) onDestroy(() => releaseScopedStore(filterScope))
 
   const listFrom = $derived.by(() => {
@@ -155,7 +159,17 @@
         : null,
     ),
   )
-  let appliedKey = $state('')
+  let appliedKey = $state(
+    untrack(() =>
+      SESSIONS_FILTER_KEYS.map((key) => String((initial?.snapshot?.extra ?? {})[key] ?? '')).join('|') +
+        '|' +
+        (initial?.snapshot?.pageSize ?? SESSIONS_PAGE_SIZE),
+    ),
+  )
+  // Набор сбрасывается при смене актора, цели или фильтров, но не страницы.
+  const selection = useListSelection({
+    sliceKey: () => `${vault.principal ?? ''}:${target.kind}:${fixedUid ?? ''}:${appliedKey}`,
+  })
   // Живые строки/счёт из стора пагинатора: getState сам по себе не реактивен,
   // поэтому набор для выхода обновляется подпиской, а не чтением один раз.
   let liveRows = $state<SessionDeviceView[] | null>(null)
@@ -175,6 +189,17 @@
     sync()
     const unsub = filterStore.subscribe?.(SESSIONS_NAME, sync)
     return () => unsub?.()
+  })
+
+  // Без стора (модалка без sidebar, стенд) фильтры живут в `initial`:
+  // ключ среза обязан их учитывать, иначе выбор не сбросится при смене среза.
+  $effect(() => {
+    if (filterStore) return
+    const snap = initial?.snapshot ?? null
+    const extra = (snap?.extra ?? {}) as Record<string, unknown>
+    const pageSize = snap?.pageSize ?? SESSIONS_PAGE_SIZE
+    appliedValues = snap ? valuesFrom(extra, pageSize) : null
+    appliedKey = SESSIONS_FILTER_KEYS.map((key) => String(extra[key] ?? '')).join('|') + '|' + pageSize
   })
 
   function applyFilters(patch: Record<string, string | undefined>, pageSize: number) {
@@ -278,6 +303,22 @@
     </p>
   {/if}
 
+  {#if exitStep === 'confirm' && !journal}
+    <ExitSteps
+      filters={exitFilters}
+      {currentId}
+      total={exitTotal}
+      step="confirm"
+      backHref={exitBackHref}
+      onBack={stepsMode === 'modal' ? () => exitHost.set('summary') : undefined}
+      action={`${route}?/others`}
+      heading="Завершение сессий"
+      summary="Будут завершены все устройства, показанные в этом списке — с учётом фильтра."
+      confirmLabel="Завершить сессии"
+      testId="bulk-exit"
+    />
+  {/if}
+
 <Listing
   name={SESSIONS_NAME}
   pageParam={SESSIONS_PAGE_PARAM}
@@ -294,6 +335,7 @@
 
   pendingTestId="sessions-pending"
   actor={vault.principal}
+  isSelected={selection.isSelected}
   {sidebar}
   filters={{
     modal: 'user.sessions.filters',
@@ -327,10 +369,89 @@
       </div>
     {/if}
   {/snippet}
+  {#snippet controls({ payload })}
+    {@const view = payload as unknown as SessionsRouteData}
+    {#if !journal && view.canRevoke && othersOf(view) && exitStep !== 'confirm'}
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="sessions-select-toggle"
+        onclick={() => (selection.mode ? selection.exit() : selection.enter())}
+      >
+        {selection.mode ? 'Готово' : 'Выбрать'}
+      </Button>
+    {/if}
+    {#if selection.mode}
+      <span class="text-sm text-muted-foreground" data-testid="sessions-selected-count">
+        Выбрано: {selection.count}
+      </span>
+      {#if selection.count > 0}
+        <Button
+          {...asModalLink('user.session.delete', {
+            ids: [...selection.ids].join(','),
+            ...(fixedUid ? { uid: fixedUid } : {}),
+          })}
+          variant="destructive"
+          size="sm"
+          data-testid="sessions-delete-selected"
+        >
+          Завершить
+        </Button>
+      {/if}
+    {/if}
+    {#if !journal && !fixedUid && view.canReadOthers}
+      <!-- Журнал — своя пара `user.sessions.journal`: вход слоем, а не переходом.
+           Адрес без JS приходит из реестра через пару, не из разметки. -->
+      <Button
+        {...asModalLink('user.sessions.journal')}
+        variant="outline"
+        size="sm"
+        data-testid="sessions-journal-open"
+      >
+        Все сессии
+      </Button>
+    {/if}
+    {#if journal}
+      <!-- Обратно к своим — той же механикой: слой `user.sessions` поверх журнала. -->
+      <Button
+        {...asModalLink('user.sessions')}
+        variant="outline"
+        size="sm"
+        data-testid="sessions-own-open"
+      >
+        Свои устройства
+      </Button>
+    {/if}
+    {#if !journal && view.canRevoke && othersOf(view) && !selection.mode}
+      {#if stepsMode === 'modal'}
+        <Button type="button" onclick={toggleExit} variant="outline" size="sm" data-testid="sessions-revoke-others">
+          {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
+        </Button>
+      {:else}
+        <Button href={exitStep === 'confirm' ? exitBackHref : exitNextHref} variant="outline" size="sm" data-testid="sessions-revoke-others">
+          {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
+        </Button>
+      {/if}
+    {/if}
+  {/snippet}
   {#snippet row(item)}
-    <ListingRow attrs={attrsOf(item)} id={item.id} testId="session-row">
-      <SessionRow item={item} {now} />
-    </ListingRow>
+    {#if selection.mode}
+      <label class="flex items-center gap-2">
+        <Checkbox
+          checked={selection.isSelected(item.id)}
+          disabled={item.current}
+          onchange={() => selection.toggle(item.id)}
+          data-testid="session-checkbox"
+        />
+        <ListingRow attrs={attrsOf(item)} id={item.id} testId="session-row">
+          <SessionRow item={item} {now} />
+        </ListingRow>
+      </label>
+    {:else}
+      <ListingRow attrs={attrsOf(item)} id={item.id} testId="session-row">
+        <SessionRow item={item} {now} />
+      </ListingRow>
+    {/if}
   {/snippet}
   {#snippet skeleton()}
     <div class="flex w-full flex-col gap-1 px-2 py-2" data-testid="session-skeleton">

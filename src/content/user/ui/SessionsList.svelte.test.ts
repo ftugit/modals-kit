@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { mount, tick, unmount } from 'svelte'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import SessionsList from './SessionsDomain.svelte'
+import SessionsList from './SessionsList.svelte'
 import type { SessionDeviceView, SessionsRouteData } from '../types.js'
 import { sessionsSnapshot } from './sessions-list/source.js'
 import { resetClientStore } from '#lib/paginate/index.js'
@@ -20,8 +20,13 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$app/env', () => ({ browser: true }))
 vi.mock('#hooks/links/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('#hooks/links/index.js')>()),
-  useModalLink: () => (name: string, params: { id?: string; uid?: string } = {}) => ({
-    href: name === 'user.session' ? `/user/sessions/${params.id ?? ''}` : '/user/sessions',
+  useModalLink: () => (name: string, params: { id?: string; uid?: string; ids?: string } = {}) => ({
+    href:
+      name === 'user.session'
+        ? `/user/sessions/${params.id ?? ''}`
+        : name === 'user.session.delete'
+          ? `/user/sessions/delete?ids=${params.ids ?? ''}`
+          : '/user/sessions',
     'data-modal-link': '',
   }),
 }))
@@ -67,6 +72,40 @@ function click(el: Element) {
 beforeEach(() => {
   resetClientStore()
   addr.url = new URL('http://localhost/users?modal=user.sessions')
+})
+
+describe('SessionsList: выбор строк', () => {
+  it('текущая строка недоступна, выбранная уходит в ids, «Готово» очищает набор', async () => {
+    const target = document.createElement('div')
+    document.body.append(target)
+    const app = mount(SessionsList, { target, props: { mode: 'modal', url: false, initial: routeData([device, other]) } })
+    try {
+      await tick()
+      const toggle = target.querySelector('[data-testid="sessions-select-toggle"]') as HTMLButtonElement
+      click(toggle)
+      await tick()
+
+      expect(target.querySelector('[data-testid="sessions-selected-count"]')?.textContent).toContain('Выбрано: 0')
+      const boxes = target.querySelectorAll<HTMLInputElement>('[data-testid="session-checkbox"]')
+      expect(boxes).toHaveLength(2)
+      expect(boxes[0]?.disabled).toBe(true)
+      expect(target.querySelector('[data-testid="sessions-delete-selected"]')).toBeNull()
+
+      boxes[1]!.click()
+      await tick()
+      expect(target.querySelector('[data-testid="sessions-selected-count"]')?.textContent).toContain('Выбрано: 1')
+      const action = target.querySelector('[data-testid="sessions-delete-selected"]') as HTMLAnchorElement
+      expect(action?.getAttribute('href')).toContain(`ids=${other.id}`)
+
+      click(toggle)
+      await tick()
+      expect(target.querySelector('[data-testid="session-checkbox"]')).toBeNull()
+      expect(target.querySelector('[data-testid="sessions-delete-selected"]')).toBeNull()
+    } finally {
+      await unmount(app)
+      target.remove()
+    }
+  })
 })
 
 describe('SessionsList: локальный шаг модалки', () => {
