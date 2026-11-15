@@ -50,6 +50,6 @@
     }}
     action={action ?? '/user/logout?/exit'}
     localAction={localAction ?? '/user/logout?/local'}
-    doneHref={backHref ?? '/user/auth'}
+    doneHref={backHref ?? '/'}
   />
 </div>

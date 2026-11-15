@@ -20,6 +20,6 @@
     total={data.total}
     canRevoke={data.canRevoke}
     variant="card"
-    backHref="/user/logout"
+    backHref="/"
   />
 </div>

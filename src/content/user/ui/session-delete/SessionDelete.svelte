@@ -17,6 +17,7 @@
   import Common from '#components/form/Common.svelte'
   import HoldButton from '#components/ui/button/HoldButton.svelte'
   import { asLink } from '#hooks/links/index.js'
+  import { goto } from '$app/navigation'
   import { cn } from '#components/utils.js'
   import { invalidatePaginator } from '#lib/paginate/index.js'
   import { SESSIONS_NAME } from '../sessions-list/source.js'
@@ -107,8 +108,14 @@
     if ((r.data as { step?: string } | undefined)?.step !== 'done') return
     lastHandledSubmission = r.submissionId
     void invalidatePaginator(SESSIONS_NAME)
-    // Выход: снимаем куки и память браузера (сценарий успеха).
-    if (variant === 'logout') vault.clear()
+    // Выход: снимаем куки и память браузера (сценарий успеха). Экрана
+    // «Вы вышли» нет — сразу уходим на главную страницу приложения.
+    if (variant === 'logout') {
+      vault.clear()
+      onDone?.()
+      if (doneHref) void goto(doneHref, { invalidateAll: true })
+      return
+    }
     onDone?.()
   })
 
@@ -122,13 +129,13 @@
   })
 </script>
 
-{#if done}
+{#if done && variant !== 'logout'}
   <div
     class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', className)}
     data-testid="session-delete-done"
   >
     <h2 class="text-lg font-semibold leading-tight tracking-tight">
-      {variant === 'logout' ? 'Вы вышли' : 'Устройства закрыты'}
+      Устройства закрыты
     </h2>
     <p class="text-sm text-muted-foreground">
       {#if typeof resultData?.revoked === 'number'}

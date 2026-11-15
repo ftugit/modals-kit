@@ -57,9 +57,13 @@ registerComponentForm({
 
     // Явный набор: один доменный вызов, права и частичный исход считает домен.
     const r = await u.revokeBulkSessions({ ids, authId: targetId })
-    if (!r.ok) return fail([sessionFormError(r.fact.code)])
+    // Выход: отсутствие сессии или прав не блокирует успех — выход всё равно
+    // считается выполненным и ведёт на главную.
+    const logoutOk = variant === 'logout' && !r.ok && (r.fact.code === 'session.nothing-to-close' || r.fact.code === 'auth.forbidden')
+    if (!r.ok && !logoutOk) return fail([sessionFormError(r.fact.code)])
+    const result = r.ok ? r.value : { revoked: 0, requested: 0 }
     commit()
-    return { data: { step: 'done', variant, revoked: r.value.revoked, requested: r.value.requested } }
+    return { data: { step: 'done', variant, revoked: result.revoked, requested: result.requested } }
   },
   redirectOnSuccess: (event) => {
     // Без JS переход объявлен здесь: своя сессия закрыта — на вход, иначе к списку.

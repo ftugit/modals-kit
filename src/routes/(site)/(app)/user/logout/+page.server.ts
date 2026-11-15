@@ -47,12 +47,15 @@ export const actions: Actions = {
         const r = await runBulkExit(
           event,
           values,
-          { selfHref: here, doneHref: '/user/auth' },
+          { selfHref: here, doneHref: '/' },
           (message) => sessionFormError('auth.unavailable', message),
         )
-        if (!r.ok) return fail([r.error ?? sessionFormError('auth.unavailable')])
+        // Выход: пустой набор или отсутствие прав не блокируют успех.
+        if (!r.ok && r.error?.code !== 'session.nothing-to-close' && r.error?.code !== 'auth.forbidden') {
+          return fail([r.error ?? sessionFormError('auth.unavailable')])
+        }
         commit()
-        return { redirect: r.redirect }
+        return { redirect: r.ok ? r.redirect : '/' }
       },
     })(event.request, 'action', event)
     if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
