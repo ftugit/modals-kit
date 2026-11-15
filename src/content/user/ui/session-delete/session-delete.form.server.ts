@@ -55,16 +55,11 @@ registerComponentForm({
       return fail([sessionFormError('auth.session-unknown', 'Не выбрано ни одного устройства')])
     }
 
-    // Явный набор: этап S15 переведёт домен на набор одним вызовом; до тех пор
-    // каждая строка закрывается своей дверью, и права перепроверяются на каждой.
-    let revoked = 0
-    for (const id of ids) {
-      const r = await u.revokeSessionById(id)
-      if (!r.ok) return fail([sessionFormError(r.fact.code)])
-      revoked += 1
-    }
+    // Явный набор: один доменный вызов, права и частичный исход считает домен.
+    const r = await u.revokeBulkSessions({ ids, authId: targetId })
+    if (!r.ok) return fail([sessionFormError(r.fact.code)])
     commit()
-    return { data: { step: 'done', variant, revoked, requested: ids.length } }
+    return { data: { step: 'done', variant, revoked: r.value.revoked, requested: r.value.requested } }
   },
   redirectOnSuccess: (event) => {
     // Без JS переход объявлен здесь: своя сессия закрыта — на вход, иначе к списку.

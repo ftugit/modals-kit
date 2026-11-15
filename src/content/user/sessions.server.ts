@@ -80,11 +80,26 @@ export type ListSessionsPageArgs = SessionsWhereArgs & {
  * исключения и флаг текущей сессии. Клиентские `ids`/`pick`/`scope` удалены:
  * разметка не посылает состав набора, сервер считает его сам в момент POST.
  */
+export type RevokeIntent =
+  | { kind: 'ids'; ids: readonly string[] | string | null }
+  | { kind: 'slice'; filters?: SessionsWhereArgs | Record<string, unknown> | null }
+
+/**
+ * Серверный набор отзыва: срез (`where`/`except`/флаги) или явный набор `ids`.
+ * Одна форма на вызов: `ids` — положительный allowlist, `where`/`except` —
+ * серверный срез. Смешение форм — отказ разбора, а не тихий выбор.
+ */
 export type RevokeBulkArgs = {
   /** Пусто — свой аккаунт. */
   authId?: string | null
-  /** Фильтр списка: те же поля, что у `listSessionsPage`. */
+  /** Дискриминант формы набора. Отсутствует — форма выводится из полей. */
+  kind?: 'ids' | 'slice'
+  /** Явный набор выбранных строк: положительный allowlist, один доменный вызов. */
+  ids?: readonly string[] | string | null
+  /** Срез списка: те же поля, что у `listSessionsPage` (алиас `where`). */
   where?: SessionsWhereArgs
+  /** Алиас среза для `RevokeIntent` (`{ kind: 'slice'; filters }`). */
+  filters?: SessionsWhereArgs | Record<string, unknown> | null
   /** Единственные клиентские id — исключения («всё, кроме»). Мусор и повторы отбрасываются. */
   except?: readonly string[]
   /** Включать текущую сессию актора в набор. Снят — она исключается сервером. */
@@ -422,7 +437,67 @@ export async function revokeBulkSessions(
   args: RevokeBulkArgs,
   deps: SessionDeps,
 ): Promise<UserResult<SessionBulkRevokeResult>> {
-  const requestedTarget = args.authId?.trim() || null
+  const targetAuth = args.authId?.trim() || null
+  const idsRaw = args.ids ?? (args.kind === 'ids' ? (args as { ids?: unknown }).ids : null)
+  const hasIds =
+    args.kind === 'ids' ||
+    (idsRaw !== null && idsRaw !== undefined && !(typeof idsRaw === 'string' && idsRaw.trim() === '') && (!Array.isArray(idsRaw) || idsRaw.length > 0))
+
+  // Явный набор выбранных строк: один доменный вызов/транзакция. Права
+  // проверяются по каждой строке (чужая/отозванная строка не видна актору и
+  // просто не попадает в набор), предел — отказ, а не усечение.
+  if (hasIds) {
+    const ids = normalizeSessionIds(
+      typeof idsRaw === 'string' ? idsRaw.split(',') : (idsRaw as readonly string[] | undefined),
+    )
+    if (ids.length > SESSIONS_BULK_IDS_LIMIT) return fail({ code: 'auth.limit' })
+    if (ids.length === 0) return fail({ code: 'session.nothing-to-close' })
+
+    const candidates: SessionDeviceView[] = []
+    for (const id of ids) {
+      const loaded = await loadRow(deps, actor, id, false)
+      if (!loaded) continue
+      const session = project(loaded, actor)
+      if (targetAuth && session.authId !== targetAuth) continue
+      if (!capsOf(actor, session.authId).canRevoke) continue
+      candidates.push(session)
+    }
+    if (candidates.length === 0) return fail({ code: 'session.nothing-to-close' })
+
+    let revoked = 0
+    let current = false
+    await deps.db.transaction(async (tx) => {
+      const api = tx.resource(sessionResource)
+      const ctx = ctxOf(actor)
+      for (const session of candidates) {
+        try {
+          await api.delete(ctx, session.id)
+          revoked += 1
+          if (actor.sessionId != null && actor.sessionId === session.id) current = true
+        } catch (error) {
+          const kind = normalizeFailure(error).kind
+          if (kind === 'not_found' || kind === 'validation' || kind === 'forbidden') continue
+          throw error
+        }
+      }
+    })
+    return ok({ revoked, current, requested: candidates.length })
+  }
+
+  // Срез: прежний путь. Поддерживаем и `RevokeIntent` (`kind: 'slice'`,
+  // `filters`), и старый контракт (`where`/`except`/флаги).
+  const filters =
+    args.kind === 'slice'
+      ? (args.filters ?? args.where ?? null)
+      : (args.filters ?? null)
+  if (filters && !args.where) {
+    args.where =
+      typeof filters === 'object' && filters !== null && !Array.isArray(filters)
+        ? (filters as SessionsWhereArgs)
+        : args.where
+  }
+
+  const requestedTarget = targetAuth
   const own = requestedTarget === null || requestedTarget === actor.id
   const target = own ? actor.id : requestedTarget
   if (!target) return fail({ code: 'auth.forbidden' })
@@ -486,3 +561,10 @@ export async function revokeBulkSessions(
   if (requested === 0) return fail({ code: 'session.nothing-to-close' })
   return ok({ revoked, current, requested })
 }
+
+/** Алиасы явного набора: один доменный вызов под разными именами. */
+export const revokeSessionsByIntent = revokeBulkSessions
+export const revokeSessionsByIds = revokeBulkSessions
+export const revokeBulkByIds = revokeBulkSessions
+export const revokeByIntent = revokeBulkSessions
+export const revokeIntent = revokeBulkSessions

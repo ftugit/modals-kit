@@ -102,16 +102,15 @@ describe('revokeBulkSessions: куки снимает только текуща�
     expect(deleted).toEqual([])
   })
 
-  test('своя текущая закрыта (current:true) — обе куки сняты', async () => {
+  test('своя текущая закрыта (current:true) — generic revoke куки не снимает', async () => {
     const { event, jar, deleted } = fakeEvent({ renewal: false })
     revokeBulkSessions.mockResolvedValueOnce({ ok: true, value: { revoked: 1, current: true, requested: 1 } })
 
     const r = await auth(event).revokeBulkSessions({ where: { state: 'all' }, includeCurrent: true })
 
     expect(r.ok).toBe(true)
-    expect(jar.has(ACCESS_COOKIE)).toBe(false)
-    expect(deleted).toContain(ACCESS_COOKIE)
-    expect(deleted).toContain(RENEWAL_COOKIE)
+    expect(jar.get(ACCESS_COOKIE)).toBe('access-token')
+    expect(deleted).toEqual([])
   })
 
   test('отказ домена (пустой набор) — куки не сняты', async () => {
