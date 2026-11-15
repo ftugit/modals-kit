@@ -49,6 +49,20 @@ vi.mock('#hooks/links/index.js', async (importOriginal) => {
       if (name === 'user.sessions') {
         return { href: routes.userSessionsRoute.href(), 'data-modal-link': '' }
       }
+      if (name === 'user.session.delete') {
+        const fq: Record<string, string> = {}
+        const filters = (params as { filters?: Record<string, string> }).filters
+        if (filters && typeof filters === 'object') {
+          for (const [key, value] of Object.entries(filters)) {
+            if (typeof value === 'string' && value.trim() !== '') fq[key] = value.trim()
+          }
+        }
+        const uid = (params as { uid?: string }).uid
+        const href = uid
+          ? routes.userAccountSessionsDeleteRoute.href({ id: String(uid) }, { ids: null, variant: 'delete', ...fq })
+          : routes.userSessionsDeleteRoute.href({ ids: null, variant: 'delete', ...fq })
+        return { href, 'data-modal-link': '' }
+      }
       const fq = new URLSearchParams()
       if (params.uid) fq.set('uid', String(params.uid))
       if (params.journal) fq.set('journal', String(params.journal))
@@ -172,20 +186,8 @@ describe('SessionsList', () => {
     // показанных строк, то есть из-под фильтра.
     addr.url = new URL('http://localhost/user/sessions')
     const start = render(SessionsList, { props: { initial: routeData([device, other]) } })
-    expect(start.body).toContain('href="/user/sessions?sessions-exit=confirm"')
+    expect(start.body).toContain('href="/user/sessions/delete')
     expect(start.body).not.toContain('data-testid="bulk-exit"')
-
-    addr.url = new URL('http://localhost/user/sessions?sessions-exit=confirm')
-    const confirm = render(SessionsList, { props: { initial: routeData([device, other]) } })
-    expect(confirm.body).toContain('data-testid="bulk-exit"')
-    // Набор считает сервер по фильтру: клиентские ids не посылаются.
-    // Чекбокс снят, текущая исключается — закрывается одна запись, удержания нет.
-    expect(confirm.body).toContain('name="state"')
-    expect(confirm.body).not.toContain('name="ids"')
-    expect(confirm.body).not.toContain('data-mass-hold="true"')
-    expect(confirm.body).toContain('data-testid="bulk-exit-submit"')
-    expect(confirm.body).toContain('Назад')
-    expect(confirm.body).toContain('href="/user/sessions"')
     addr.url = new URL('http://localhost/user/sessions')
   })
 
