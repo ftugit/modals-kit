@@ -8,7 +8,14 @@ import type { SessionDetail, SessionDeviceView } from '../types.js'
 // ModalHost модальную ссылку заменяет заглушка, `asLink` строит `href`.
 vi.mock('#hooks/links/index.js', () => ({
   asLink: (href: string) => ({ href }),
-  useModalLink: () => () => ({ href: '/', 'data-modal-link': '' }),
+  useModalLink: () => (name: string, params: { ids?: string; uid?: string } = {}) => {
+    if (name === 'user.session.delete') {
+      const uid = params.uid ? String(params.uid) : null
+      const base = uid ? `/user/${uid}/sessions/delete` : '/user/sessions/delete'
+      return { href: `${base}?ids=${params.ids ?? ''}&variant=delete`, 'data-modal-link': '' }
+    }
+    return { href: '/', 'data-modal-link': '' }
+  },
 }))
 vi.mock('../vault.svelte.js', () => ({
   userSession: { ensureFresh: async () => true, onAuthExpired: () => {} },
@@ -94,24 +101,7 @@ describe('SessionCard', () => {
     // Позитивный контроль: не текущая строка закрывается.
     const closable = render(SessionCard, { props: { detail: other } })
     expect(closable.body).toContain('data-testid="session-card-revoke"')
-    expect(closable.body).toContain(`?session.exit=confirm`)
-  })
-
-  test('подтверждение: набор из одной строки, удержания нет', () => {
-    addr.url = new URL(`http://localhost/user/sessions/${device.id}?session.exit=confirm`)
-    const { body } = render(SessionCard, { props: { detail: other } })
-
-    expect(body).toContain('data-testid="session-card-exit"')
-    expect(body).toContain('action="/user/sessions?/revoke"')
-    // Отзыв одной строки: скрытое поле `id` формы отзыва, не массовый набор.
-    expect(body).toContain('name="id"')
-    expect(body).toContain(`value="${device.id}"`)
-    expect(body).not.toContain('name="ids"')
-    // Одна запись: подтверждать удержанием нечего.
-    expect(body).not.toContain('data-mass-hold="true"')
-    expect(body).toContain('data-testid="session-card-exit-submit"')
-    expect(body).not.toContain('data-testid="session-card-revoke"')
-    addr.url = new URL(`http://localhost/user/sessions/${device.id}`)
+    expect(closable.body).toContain(`/user/sessions/delete`)
   })
 
   test('чужая сессия закрывается экшеном чужого аккаунта', () => {
@@ -124,7 +114,6 @@ describe('SessionCard', () => {
         uid: '99999999-9999-4999-8999-999999999999',
       },
     })
-    expect(foreign.body).toContain('action="/user/99999999-9999-4999-8999-999999999999/sessions?/revoke"')
     // Переименование тоже уходит на чужой роут: экшен чужой страницы достижим.
     expect(foreign.body).toContain(
       'action="/user/99999999-9999-4999-8999-999999999999/sessions/11111111-1111-4111-8111-111111111111?/rename"',
@@ -143,15 +132,11 @@ describe('SessionCard', () => {
       addr.url = new URL(`${base}?session.exit=confirm`)
       const own = render(SessionCard, { props: { detail: other } })
       expect(own.body, `own rename on ${base}`).toContain(`action="/user/sessions/${device.id}?/rename"`)
-      expect(own.body, `own exit on ${base}`).toContain('action="/user/sessions?/revoke"')
       const foreign = render(SessionCard, {
         props: { detail: foreignDetail, uid: '99999999-9999-4999-8999-999999999999' },
       })
       expect(foreign.body, `foreign rename on ${base}`).toContain(
         'action="/user/99999999-9999-4999-8999-999999999999/sessions/11111111-1111-4111-8111-111111111111?/rename"',
-      )
-      expect(foreign.body, `foreign exit on ${base}`).toContain(
-        'action="/user/99999999-9999-4999-8999-999999999999/sessions?/revoke"',
       )
     }
     addr.url = new URL(`http://localhost/user/sessions/${device.id}`)
