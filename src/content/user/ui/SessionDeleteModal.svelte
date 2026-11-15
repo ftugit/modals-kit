@@ -37,6 +37,7 @@
     <SessionDelete
       {ids}
       {variant}
+      sliceFields={ldr.data?.sliceFields ?? null}
       initial={ldr.data ?? null}
       doneHref={listHref}
       class="p-0"

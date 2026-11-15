@@ -25,6 +25,7 @@ function data(over: Partial<SessionDeleteRouteData> = {}): SessionDeleteRouteDat
     enabled: true,
     holdSeconds: 2,
     fact: null,
+    sliceFields: null,
     ...over,
   }
 }

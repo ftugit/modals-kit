@@ -23,6 +23,6 @@
   {#if data.fact}
     <Acl status={data.fact} enabled={data.enabled} backHref={list} />
   {:else}
-    <SessionDelete ids={data.ids} variant={data.variant} initial={data} doneHref={list} />
+    <SessionDelete ids={data.ids} variant={data.variant} sliceFields={data.sliceFields} initial={data} doneHref={list} />
   {/if}
 </div>

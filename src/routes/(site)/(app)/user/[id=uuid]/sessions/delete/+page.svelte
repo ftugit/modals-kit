@@ -25,6 +25,7 @@
     <SessionDelete
       ids={data.ids}
       variant={data.variant}
+      sliceFields={data.sliceFields}
       initial={data}
       doneHref={list}
     />

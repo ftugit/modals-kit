@@ -280,13 +280,20 @@ registerModal({
 registerModal({
   name: 'user.session.delete',
   component: lazy(() => import('./ui/SessionDeleteModal.svelte')),
-  defaultParams: { ids: '', variant: 'delete' },
-  route: (p: { ids?: string; variant?: string; uid?: string }) => {
+  defaultParams: { ids: '', variant: 'delete', filters: '' },
+  route: (p: { ids?: string; variant?: string; uid?: string; filters?: Record<string, string> | string }) => {
     const ids = p?.ids ? String(p.ids).trim() : null
     const variant = parseSessionDeleteVariant(p?.variant)
+    const filterParams: Record<string, string> = {}
+    const raw = p?.filters
+    if (raw && typeof raw === 'object') {
+      for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === 'string' && value.trim() !== '') filterParams[key] = value.trim()
+      }
+    }
     return p?.uid
-      ? userAccountSessionsDeleteRoute.href({ id: String(p.uid) }, { ids, variant })
-      : userSessionsDeleteRoute.href({ ids, variant })
+      ? userAccountSessionsDeleteRoute.href({ id: String(p.uid) }, { ids, variant, ...filterParams })
+      : userSessionsDeleteRoute.href({ ids, variant, ...filterParams })
   },
   size: { width: 460, height: 440 },
 })

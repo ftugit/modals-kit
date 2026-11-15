@@ -372,6 +372,8 @@ export type SessionDeleteRouteData = {
   enabled: boolean
   holdSeconds: number
   fact: AuthErrorCode | null
+  /** Поля среза, перенесённые из носителя (фильтры списка). */
+  sliceFields: Partial<Record<import('./session-delete.js').SessionDeleteSliceKey, string>> | null
 }
 
 /**

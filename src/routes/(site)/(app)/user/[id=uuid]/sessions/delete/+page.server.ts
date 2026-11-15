@@ -2,7 +2,7 @@
 // адрес единицы `user.session.delete`. Цель — `id` пути, набор — адресом.
 import { auth } from '#content/user/gateway.server.js'
 import { createUserConfig } from '#content/user/index.js'
-import { parseSessionDeleteIds, parseSessionDeleteVariant } from '#content/user/session-delete.js'
+import { parseSessionDeleteIds, parseSessionDeleteSlice, parseSessionDeleteVariant } from '#content/user/session-delete.js'
 import type { SessionDeleteRouteData } from '#content/user/types.js'
 import { localStore } from '#server/cache.server.js'
 import type { PageServerLoad } from './$types'
@@ -26,5 +26,6 @@ export const load: PageServerLoad = async (event): Promise<SessionDeleteRouteDat
     enabled: u.enabled,
     holdSeconds: await config.get('holdSeconds'),
     fact: u.enabled ? null : 'auth.disabled',
+    sliceFields: parseSessionDeleteSlice(event.url.searchParams),
   }
 }

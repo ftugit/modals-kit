@@ -97,12 +97,26 @@ export interface SessionDeleteSearchInput extends Record<string, unknown> {
   id?: string | null
   ids?: string | null
   variant?: SessionDeleteVariant
+  state?: string | null
+  net?: string | null
+  country?: string | null
+  cfrom?: string | null
+  cto?: string | null
+  sfrom?: string | null
+  sto?: string | null
 }
 
 export interface SessionDeleteSearchOutput {
   id: string | null
   ids: string | null
   variant: SessionDeleteVariant
+  state: string | null
+  net: string | null
+  country: string | null
+  cfrom: string | null
+  cto: string | null
+  sfrom: string | null
+  sto: string | null
 }
 
 /**
@@ -117,6 +131,13 @@ const sessionDeleteSearch = querySchema<SessionDeleteSearchInput, SessionDeleteS
   id: typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim() : null,
   ids: typeof raw.ids === 'string' && raw.ids.trim() ? raw.ids.trim() : null,
   variant: parseSessionDeleteVariant(raw.variant),
+  state: typeof raw.state === 'string' && raw.state.trim() ? raw.state.trim() : null,
+  net: typeof raw.net === 'string' && raw.net.trim() ? raw.net.trim() : null,
+  country: typeof raw.country === 'string' && raw.country.trim() ? raw.country.trim() : null,
+  cfrom: typeof raw.cfrom === 'string' && raw.cfrom.trim() ? raw.cfrom.trim() : null,
+  cto: typeof raw.cto === 'string' && raw.cto.trim() ? raw.cto.trim() : null,
+  sfrom: typeof raw.sfrom === 'string' && raw.sfrom.trim() ? raw.sfrom.trim() : null,
+  sto: typeof raw.sto === 'string' && raw.sto.trim() ? raw.sto.trim() : null,
 }))
 
 /**
@@ -128,8 +149,8 @@ const sessionDeleteSearch = querySchema<SessionDeleteSearchInput, SessionDeleteS
  */
 export const userSessionsDeleteRoute = kitRoute('/user/sessions/delete', {
   owner: 'sessions.delete',
-  keys: ['id', 'ids', 'variant'],
-  defaults: { id: null, ids: null, variant: 'delete' },
+  keys: ['id', 'ids', 'variant', 'state', 'net', 'country', 'cfrom', 'cto', 'sfrom', 'sto'],
+  defaults: { id: null, ids: null, variant: 'delete', state: null, net: null, country: null, cfrom: null, cto: null, sfrom: null, sto: null },
   search: sessionDeleteSearch,
 })
 
@@ -146,8 +167,8 @@ export const userAccountSessionsDeleteRoute = kitRoute(
     // Ключа `id` у этого адреса нет: `id` здесь — параметр пути (цель-аккаунт).
     // Набор едет `ids`, одиночный случай — набор из одного элемента; иначе имя
     // поискового ключа совпало бы с сегментом и `href` не смог бы различить их.
-    keys: ['ids', 'variant'],
-    defaults: { ids: null, variant: 'delete' },
+    keys: ['ids', 'variant', 'state', 'net', 'country', 'cfrom', 'cto', 'sfrom', 'sto'],
+    defaults: { ids: null, variant: 'delete', state: null, net: null, country: null, cfrom: null, cto: null, sfrom: null, sto: null },
     search: sessionDeleteSearch,
   },
 )

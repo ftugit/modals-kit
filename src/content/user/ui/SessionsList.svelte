@@ -16,7 +16,6 @@
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import type { SidebarPlace } from '#components/shell/index.js'
   import { Listing, ListingRow } from '#components/listing/index.js'
-  import { useSteps } from '#components/steps/index.js'
   import { Button, Checkbox } from '#components/ui/index.js'
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#lib/paginate/index.js'
   import { useModalLink, type LinkAttrs } from '#hooks/links/index.js'
@@ -33,7 +32,6 @@
   import type { SessionDeviceView, SessionsListNotice, SessionsRouteData, SessionsTarget } from '../types.js'
   import type { UserSurfaceVariant } from './Acl.svelte'
   import SessionRow from './SessionRow.svelte'
-  import ExitSteps from './sessions-list/ExitSteps.svelte'
   import SessionsFiltersForm, { type SessionsFilterValues } from './SessionsFiltersForm.svelte'
   import { sessionsFilterLabels, sessionsFilterText } from './sessions-list/filters-form.js'
   import {
@@ -258,33 +256,6 @@
     return initial?.snapshot?.totalItems ?? exitRows.length
   })
 
-  // Шаг подтверждения: на странице — URL-ключ (без JS «Далее» обычная ссылка),
-  // в модалке — локальный хост шагов. Адрес носителя в модалке не читается и не
-  // пишется: закрытие слоя не оставляет ключ, следующая карточка стартует со сводки.
-  const stepsMode = untrack(() => mode)
-  const exitKey = 'sessions-exit'
-  const exitHost = useSteps({
-    owner: 'user-sessions-exit',
-    key: exitKey,
-    mode: stepsMode === 'modal' ? 'local' : 'url',
-    steps: () => [
-      { key: 'summary', label: 'Сводка', filled: true },
-      { key: 'confirm', label: 'Подтверждение', filled: true },
-    ],
-    current: () =>
-      stepsMode === 'modal'
-        ? 'summary'
-        : visibleAddress().url.searchParams.get(exitKey) === 'confirm'
-          ? 'confirm'
-          : 'summary',
-  })
-  const exitStep = $derived(exitHost.currentKey === 'confirm' ? 'confirm' : 'summary')
-  // Fallback без JS ведёт на страницу той же единицы, а не на адрес носителя.
-  const exitNextHref = $derived(stepsMode === 'modal' ? `${route}?${exitKey}=confirm` : exitHost.href('confirm'))
-  const exitBackHref = $derived(stepsMode === 'modal' ? route : exitHost.blankHref())
-  function toggleExit() {
-    exitHost.set(exitStep === 'confirm' ? 'summary' : 'confirm')
-  }
 
   function othersOf(data: SessionsRouteData): boolean {
     const snap = data.snapshot
@@ -303,21 +274,6 @@
     </p>
   {/if}
 
-  {#if exitStep === 'confirm' && !journal}
-    <ExitSteps
-      filters={exitFilters}
-      {currentId}
-      total={exitTotal}
-      step="confirm"
-      backHref={exitBackHref}
-      onBack={stepsMode === 'modal' ? () => exitHost.set('summary') : undefined}
-      action={`${route}?/others`}
-      heading="Завершение сессий"
-      summary="Будут завершены все устройства, показанные в этом списке — с учётом фильтра."
-      confirmLabel="Завершить сессии"
-      testId="bulk-exit"
-    />
-  {/if}
 
 <Listing
   name={SESSIONS_NAME}
@@ -371,7 +327,7 @@
   {/snippet}
   {#snippet controls({ payload })}
     {@const view = payload as unknown as SessionsRouteData}
-    {#if !journal && view.canRevoke && othersOf(view) && exitStep !== 'confirm'}
+    {#if !journal && view.canRevoke && othersOf(view)}
       <Button
         variant="outline"
         size="sm"
@@ -411,15 +367,17 @@
       </Button>
     {/if}
     {#if !journal && view.canRevoke && othersOf(view) && !selection.mode}
-      {#if stepsMode === 'modal'}
-        <Button type="button" onclick={toggleExit} variant="outline" size="sm" data-testid="sessions-revoke-others">
-          {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
-        </Button>
-      {:else}
-        <Button href={exitStep === 'confirm' ? exitBackHref : exitNextHref} variant="outline" size="sm" data-testid="sessions-revoke-others">
-          {exitStep === 'confirm' ? 'Отменить' : 'Заблокировать остальные'}
-        </Button>
-      {/if}
+      <Button
+        {...asModalLink('user.session.delete', {
+          filters: exitFilters,
+          ...(fixedUid ? { uid: fixedUid } : {}),
+        })}
+        variant="outline"
+        size="sm"
+        data-testid="sessions-revoke-others"
+      >
+        Заблокировать остальные
+      </Button>
     {/if}
   {/snippet}
   {#snippet row(item)}

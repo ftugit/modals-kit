@@ -15,6 +15,20 @@
 
 import { SESSIONS_BULK_IDS_LIMIT } from './types.js'
 
+/** Разобрать поля среза из адреса: только известные ключи с непустым значением. */
+export function parseSessionDeleteSlice(searchParams: URLSearchParams): Partial<Record<SessionDeleteSliceKey, string>> | null {
+  const result: Partial<Record<SessionDeleteSliceKey, string>> = {}
+  let has = false
+  for (const key of SESSION_DELETE_SLICE_KEYS) {
+    const value = searchParams.get(key)
+    if (typeof value === 'string' && value.trim() !== '') {
+      result[key] = value.trim()
+      has = true
+    }
+  }
+  return has ? result : null
+}
+
 /** Вариант сессионной единицы: обычное закрытие или «выйти здесь». */
 export type SessionDeleteVariant = 'delete' | 'logout'
 

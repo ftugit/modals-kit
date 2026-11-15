@@ -47,6 +47,7 @@
       enabled: canRevoke,
       holdSeconds,
       fact: null,
+      sliceFields: null,
     }}
     action={action ?? '/user/logout?/exit'}
     localAction={localAction ?? '/user/logout?/local'}
