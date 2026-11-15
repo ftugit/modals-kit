@@ -161,11 +161,7 @@
                 {/if}
               </div>
 
-              <CookieVaultDeleteButton
-                {schema}
-                slotId={item.id}
-                onDeleted={(next) => applyNext(next, false)}
-              />
+              <CookieVaultDeleteButton slotId={item.id} />
             </li>
           {/each}
         </ul>
