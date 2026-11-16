@@ -24,6 +24,7 @@
 | `@user` | public entry `user/base` |
 | `@user/config` | public entry общей config-части; не алиас субмодуля |
 | `@user/profile`, `@user/sessions`, `@user/blocks`, `@user/accounts` | public entry соответствующего субмодуля |
+| `base/svelte` | обязательная UI-часть `user` (AuthWidget, BanNotice, MenuBody, SeedForm, LogoutModal, UserConfigModal); не субмодуль |
 | composition root | `src/composition/**`: сборка gateway и реестра; единственное место, которому можно импортировать public entries всех модулей |
 | `seed` | прежнее имя обязательной базы; в новом плане заменено на `user/base` |
 
@@ -189,6 +190,7 @@ import HomePage from '~/sections/home/svelte/HomePage.svelte'
   "provides": {
     "models": ["./model/profile.schema.ts"],
     "authSteps": ["./svelte/AuthProfileStep.svelte"],
+    "menu": ["./svelte/menu-items.ts"],
     "modals": ["./modals.ts"],
     "routes": ["./routes.ts"]
   },
@@ -201,6 +203,8 @@ import HomePage from '~/sections/home/svelte/HomePage.svelte'
   }
 }
 ```
+
+`provides.menu` и `provides.authSteps` — обязательные части контракта расширений: registry проверяет, что указанные компоненты существуют.
 
 `modules/user/base` не имеет отдельного манифеста: он устанавливается вместе с `user`. `config` не имеет субмодульного манифеста: он часть `base`.
 
@@ -244,6 +248,8 @@ Public barrels `base/{model,server,svelte,config}/index.ts` — единстве
 | `src/routes/api/storage/[...path]/+server.ts` | `src/core/server/http/storage.ts` + тонкий route |
 
 `AuthErrorCode`/`AuthFact` вынести в `src/core/auth/errors.ts`; `user/base` реэкспортирует. Иначе `Acl` в ядре зависит от модуля.
+
+`core/i18n` содержит только общие сообщения (Acl, пагинатор, формы). Тексты `user` живут в `user/base/svelte` или `user/base/i18n`, иначе ядро узнает о домене.
 
 ---
 
@@ -315,7 +321,7 @@ Public barrels `base/{model,server,svelte,config}/index.ts` — единстве
 
 `user/base` предоставляет модели `auth`, `session`, `config`, `block` и public entry `@user/config`.
 
-`LogoutModal` не переносится один: он импортирует `logout/Logout.svelte`, а тот — `session-delete/SessionDelete.svelte` и `SESSIONS_NAME`. Поэтому в `base` идёт logout-ветка, а `SessionDelete` получает проп `invalidateResource`/`onInvalidated` вместо прямого импорта списка сессий. `SessionDeleteModal` остаётся в `user/sessions` и импортирует base-компонент. `session-delete.form.server.ts` остаётся в `user/sessions`: он обслуживает массовый отзыв, а не logout.
+`LogoutModal` не переносится один: он импортирует `logout/Logout.svelte`, а тот — `session-delete/SessionDelete.svelte` и `SESSIONS_NAME`. Поэтому в `base` идёт logout-ветка, а `SessionDelete` получает проп `invalidateResource?: string` вместо прямого импорта списка сессий: если проп передан — инвалидировать этот paginator, иначе `invalidateAll()`. `SessionDeleteModal` остаётся в `user/sessions` и импортирует base-компонент. `session-delete.form.server.ts` остаётся в `user/sessions`: он обслуживает массовый отзыв, а не logout.
 
 `AuthWidget` больше не импортирует `ProfileForm`, `ProfileLimits` и `BLOCKS_NAME`:
 
@@ -422,9 +428,9 @@ Public barrels `base/{model,server,svelte,config}/index.ts` — единстве
 | `user.accounts.delete` | `modules/user/accounts/modals.ts` |
 | `accounts*.test.ts` | `modules/user/accounts/tests/**` |
 
-`listSeedUsers` остаётся в `user/base/server/seed-users.ts` (см. §7), поэтому `accounts` не тянет его обратно.
+`dependsOn: ["user"]` — удаление аккаунта использует необязательный `profilePort`: если `user/profile` не установлен, удаление профиля пропускается, но аккаунт удаляется. `user/profile` не обязателен для установки `accounts`.
 
-`dependsOn: ["user", "user/profile"]` — удаление аккаунта затрагивает профиль. Если профиль не установлен, субмодуль `accounts` не устанавливается.
+`listSeedUsers` остаётся в `user/base/server/seed-users.ts` (см. §7), поэтому `accounts` не тянет его обратно.
 
 ---
 
@@ -444,7 +450,9 @@ Public barrels `base/{model,server,svelte,config}/index.ts` — единстве
 
 **Не переезжают:** `storage_server`, `storageFile`, `storageReservation`, `storage-probe.server.ts`, `StorageServerMeta/View/Slice`. Они уже в `core`.
 
-`dependsOn: ["user"]`; импортирует `~/core/server/app-storage`, `~/core/lib/storage/pool-types` и `@user/config`.
+`dependsOn: ["user"]` для ясности графа; по факту нужны только `@user/config`, Acl и core. Если позже `user` останется обязательным, зависимость можно считать формальной.
+
+Импортирует `~/core/server/app-storage`, `~/core/lib/storage/pool-types` и `@user/config`.
 
 ---
 
@@ -460,7 +468,7 @@ Public barrels `base/{model,server,svelte,config}/index.ts` — единстве
 | demo API | `modules/demo/routes/api/**` |
 | demo browser-тесты | `modules/demo/tests/browser/**` |
 
-`dependsOn: []` или `["user"]`, если конкретная демо-страница использует auth/config.
+`dependsOn: []` для чистой витрины или `["user"]`, если страница использует auth/config. Зависимость фиксируется по конкретной странице, а не для всего `demo`.
 
 ---
 
@@ -526,20 +534,31 @@ SvelteKit не сканирует `src/modules`; route-файлы субмоду
 - [ ] Оставить re-export-шимы на старых путях.
 - [ ] Проверить: `npm run check`, `npm test`, `npm run test:guard`, `npm run test:public-api`.
 
-### Этап 3. `user/base`
+### Этап 3a. Модели и schema `user/base`
 
 - [ ] Разрезать `schema.ts`: `auth`, `session`, `config`, `block` в `base`; `profile` — в `user/profile`.
 - [ ] Перенести `spec-block.ts`, `spec-profile.ts`, типы `Blocked`/`BlockScope`/`BlockView`/`LogoutRouteData`/`SessionDeleteRouteData` в `base`.
+- [ ] Создать public barrels `base/{model,server,svelte,config}/index.ts`.
+- [ ] Переключить `db.server.ts` на `user/base`.
+
+### Этап 3b. Config `user/base`
+
 - [ ] Перенести `config.ts`, `config-api.ts`, `config-policy.ts`, `spec-config.ts`, `UserConfigModal`, `user-config/**` в `base`.
+- [ ] Разрезать `index.ts`, `routes.ts`, `modals.ts`: config остаётся в base, `profile`/`blocks`/`accounts` вынесены.
+- [ ] Проверить `@user/config` без глубоких импортов.
+
+### Этап 3c. Auth и logout `user/base`
+
 - [ ] Перенести auth/ACL/keys/vault/admin.
-- [ ] Разрезать `gateway.server.ts`: base-часть без profile/blocks/sessions/accounts; доменные gateway — в субмодулях; сборка — в composition root.
 - [ ] Сделать `AuthPorts.profiles` необязательным; `issueTokens`, `freshAccess`, `sweepDeletions` — no-op без профиля.
 - [ ] Убрать из `AuthWidget` импорты `ProfileForm`, `ProfileLimits`, `BLOCKS_NAME`; шаг профиля — extension `provides.authSteps`.
-- [ ] Перенести `checks.ts`, `spec-avatar.ts`, `spec-fit.ts` в `user/profile` (заготовка), иначе base тянет profile.
-- [ ] Создать public barrels `base/{model,server,svelte,config}/index.ts`.
 - [ ] Перенести logout-ветку: `LogoutModal`, `logout/**`, `session-delete/SessionDelete.svelte`, `session-delete/form.ts`, `session-delete.ts`; `SessionDeleteModal` оставить в `user/sessions`; `sessions-exit.server.ts` разрезать. `/user/logout/+page.server.ts` использует base `logout.server.ts`/`logout/form.ts`, не `session-delete.form.server.ts`.
-- [ ] Разрезать `index.ts`, `routes.ts`, `modals.ts`: без `profile`, `blocks`, `accounts`; config остаётся в base.
-- [ ] Переключить `db.server.ts` на `user/base`.
+- [ ] Проверить вход, выход, blocked, sessions-куки.
+
+### Этап 3d. Gateway split и boundary `user/base`
+
+- [ ] Разрезать `gateway.server.ts`: base-часть без profile/blocks/sessions/accounts; доменные gateway — в субмодулях; сборка — в composition root.
+- [ ] Перенести `checks.ts`, `spec-avatar.ts`, `spec-fit.ts` в `user/profile` (заготовка), иначе base тянет profile.
 - [ ] Проверить: `rg "@user/(profile|sessions|blocks|accounts)" src/modules/user/base` не находит импортов; вход, выход, blocked, config, storage работают.
 
 ### Этап 4. Sections
@@ -592,11 +611,13 @@ SvelteKit не сканирует `src/modules`; route-файлы субмоду
 - `module-guard`: payload модуля не попал в `core`/`sections`; `install.include` совпадает с файлами.
 - `module-registry`: уникальные `name`/`alias`, существующие `dependsOn`, нет циклов, все `provides` пути существуют, `parent` существует.
 - `core-purity`: пути `CORE_MODULES` → `src/core/lib/*`.
-- CI: `node tooling/module-registry.mjs --check`, `node tooling/module-guard.mjs --tracked`, `npm run check`, `node --test tooling/*.test.mjs`, `rg "@user/(profile|sessions|blocks|accounts)" src/modules/user/base`.
+- CI: `node tooling/module-registry.mjs --check`, `node tooling/module-guard.mjs --tracked`, `npm run check`, `node --test tooling/*.test.mjs`, `rg "@user/(profile|sessions|blocks|accounts)" src/modules/user/base`, `rg "modules/config|@config" src modules`.
 
 ---
 
 ## 17. Критерии готовности
+
+Политика данных: `mod remove` отключает код, маршруты и UI, но не удаляет таблицы и строки; повторная установка подключает данные обратно. Физическая очистка — отдельная миграция, не часть `mod remove`.
 
 - [ ] `mod remove user/profile` — вход работает без шага профиля, `prof` пустой.
 - [ ] `mod remove user/sessions` — вход и выход работают, экран устройств исчез.
