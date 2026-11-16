@@ -34,7 +34,10 @@ export type ActiveCatalogFilter = {
   value: string
   /** Подпись значения из схемы (если опция известна) или само значение. */
   label: string
+  /** Подпись поля с направлением («Оценка · от») — для чипа. */
   fieldLabel: string
+  /** Базовая подпись поля без направления («Оценка») — для объединённой подписи. */
+  baseFieldLabel: string
   /** Режим `not`: значение исключено — чип красный. */
   excluded: boolean
   /** Значение отсутствует в опциях схемы (мусор из адреса). */
@@ -70,6 +73,7 @@ export function activeCatalogFilters(
         value,
         label: option?.label ?? value,
         fieldLabel: descriptor?.label ?? parsed.key,
+        baseFieldLabel: descriptor?.label ?? parsed.key,
         excluded: parsed.mode === 'not',
         unknown: missing && !hiddenByLimit,
         ...(hiddenByLimit ? { hiddenByLimit: true } : {}),
@@ -79,7 +83,14 @@ export function activeCatalogFilters(
   return out
 }
 
-/** Патч канала состояния: ключ extra → значение (или снятие). */
+/**
+ * Патч канала состояния: ключ extra → значение (или снятие).
+ *
+ * Это СНИМОК следующего состояния, а не diff: каждый патчер возвращает все
+ * объявленные пути. Склеивать такие патчи через `Object.assign`/spread нельзя —
+ * последний перезапишет снятые предыдущим значения. Для снятия группы есть
+ * `catalogFilterRemoveGroupPatch`.
+ */
 export type CatalogFilterPatch = Record<string, string | number | undefined>
 
 /**
@@ -238,4 +249,92 @@ export function catalogFilterRemoveValuePatch(
     if (parsed !== undefined && suppressed.has(parsed.key)) delete next[key]
   }
   return catalogFilterExtraPatch(schema, next)
+}
+
+/**
+ * Патч снятия всей группы значений поля (клик по × группы): все пути группы
+ * получают `undefined`, а остальные поля сохраняются. Базовый патч берётся один
+ * раз; полные патчи чипов не склеиваются (каждый из них снимает одно значение
+ * и сохраняет соседние).
+ */
+export function catalogFilterRemoveGroupPatch(
+  group: readonly CatalogFilterChip[],
+): CatalogFilterPatch {
+  // Снимок первого чипа даёт все объявленные пути. Значения вне группы берём
+  // из любого патча, где они выжили.
+  //
+  // Инвариант: правила схемы только ПОДАВЛЯЮТ поля при появлении значений,
+  // поэтому удаление значений не может добавить новое подавление. Если поле
+  // выжило хотя бы при удалении одного значения группы, после снятия всей
+  // группы оно тоже выживает; объединение таких значений и есть правильный
+  // снимок. Обратное неверно: брать только первый патч нельзя, иначе поле,
+  // подавленное другим значением группы, осталось бы снятым.
+  const groupPaths = new Set(group.map((chip) => chip.path))
+  // Значения вне группы берём из любого патча, где они выжили: правила только
+  // подавляют поля, поэтому удаление не может добавить новое подавление.
+  const surviving = new Map<string, string | number | undefined>()
+  for (const chip of group) {
+    for (const [path, value] of Object.entries(chip.patch)) {
+      if (value !== undefined && !groupPaths.has(path)) surviving.set(path, value)
+    }
+  }
+  const patch: CatalogFilterPatch = { ...(group[0]?.patch ?? {}) }
+  for (const [path, value] of surviving) patch[path] = value
+  for (const path of groupPaths) patch[path] = undefined
+  return patch
+}
+
+/**
+ * Объединённая подпись группы чипов одного поля. Базовая подпись берётся без
+ * направления («Оценка»), а «от/до» добавляется только для числовых границ.
+ */
+export function catalogFilterCombinedLabel(group: readonly CatalogFilterChip[]): string {
+  const fieldLabel = group[0]?.baseFieldLabel ?? group[0]?.fieldLabel ?? group[0]?.key ?? ''
+  const minChip = group.find((chip) => chip.bound === 'min')
+  const maxChip = group.find((chip) => chip.bound === 'max')
+  const numericParts: string[] = []
+  if (minChip && maxChip) {
+    numericParts.push(`${fieldLabel} от ${minChip.label} до ${maxChip.label}`)
+  } else if (minChip) {
+    numericParts.push(`${fieldLabel} от ${minChip.label}`)
+  } else if (maxChip) {
+    numericParts.push(`${fieldLabel} до ${maxChip.label}`)
+  }
+
+  const byMode = new Map<string, string[]>()
+  for (const chip of group) {
+    if (chip.bound) continue
+    const mode = chip.mode ?? 'or'
+    if (!byMode.has(mode)) byMode.set(mode, [])
+    byMode.get(mode)!.push(chip.label)
+  }
+  const andVals = byMode.get('and') ?? []
+  const notVals = byMode.get('not') ?? []
+  const orVals = byMode.get('or') ?? []
+
+  function joinEnum(items: string[], connector: string): string {
+    if (items.length <= 1) return items.join('')
+    if (items.length === 2) return items.join(` ${connector} `)
+    return items.slice(0, -1).join(', ') + ` ${connector} ` + items[items.length - 1]
+  }
+
+  let enumStr = ''
+  if (andVals.length && notVals.length) {
+    enumStr = `${joinEnum(andVals, 'и')} исключая ${joinEnum(notVals, 'и')}`
+  } else if (andVals.length) {
+    enumStr = joinEnum(andVals, 'и')
+  } else if (notVals.length) {
+    enumStr = `исключая ${joinEnum(notVals, 'и')}`
+  }
+  if (orVals.length) {
+    const orPart = joinEnum(orVals, 'или')
+    enumStr = enumStr ? `${enumStr} или ${orPart}` : orPart
+  }
+  if (enumStr) enumStr = `${fieldLabel} ${enumStr}`
+
+  const all: string[] = []
+  if (numericParts.length) all.push(...numericParts)
+  if (enumStr) all.push(enumStr)
+  if (!all.length) return fieldLabel
+  return all.join(' ')
 }

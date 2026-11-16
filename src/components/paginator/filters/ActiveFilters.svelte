@@ -5,7 +5,9 @@
   import { asLink } from '#hooks/links/index.js'
   import FilterBlockPopup from './FilterBlockPopup.svelte'
   import { useFilterBlocks } from './filter-blocks.svelte.js'
+  import { catalogFilterRemoveGroupPatch, catalogFilterCombinedLabel } from '#lib/paginate/filters/index.js'
   import type { CatalogFilterChip, CatalogFilterPatch } from '#lib/paginate/filters/index.js'
+  import type { FormError } from '#lib/form/result.js'
 
   interface Props {
     chips: readonly CatalogFilterChip[]
@@ -14,11 +16,13 @@
     /** Снять всю группу значений поля одним патчем. */
     onRemoveGroup?: (patch: CatalogFilterPatch) => void
     /** Прямой commit черновика формы (валидация + применение) при автопримене. */
-    onCommitDraft?: (form: HTMLFormElement) => void
+    onCommitDraft?: (form: HTMLFormElement) => readonly FormError[] | void
+    /** Текст для одиночного select, в котором оказалось несколько значений. */
+    singleValueNotice?: string
     class?: string
   }
 
-  let { chips, count, onRemove, onRemoveGroup, onCommitDraft, class: cls = '' }: Props = $props()
+  let { chips, count, onRemove, onRemoveGroup, onCommitDraft, singleValueNotice, class: cls = '' }: Props = $props()
 
   const ctx = useFilterBlocks()
   const host = tryUseModals()
@@ -27,6 +31,7 @@
   let anchors = $state<Record<string, HTMLElement | undefined>>({})
   let popupNode = $state<HTMLElement | undefined>(undefined)
   let openSnapshot = $state<string | null>(null)
+  let draftErrors = $state<readonly FormError[]>([])
 
   onMount(() => {
     client = true
@@ -81,7 +86,22 @@
           try {
             if (onCommitDraft) {
               const f = form
-              setTimeout(() => onCommitDraft(f), 0)
+              setTimeout(() => {
+                // Не перетирать ошибки, если popup уже открыт заново.
+                if (ctx?.openKey !== null) return
+                try {
+                  const errors = onCommitDraft(f) ?? []
+                  draftErrors = errors
+                  const firstPath = errors.find((error) => error.path)?.path
+                  if (firstPath) {
+                    const control = f.elements.namedItem(firstPath) as HTMLElement | null
+                    control?.focus({ preventScroll: true })
+                    control?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+                  }
+                } catch {
+                  draftErrors = []
+                }
+              }, 0)
             } else {
               form.requestSubmit()
             }
@@ -102,6 +122,7 @@
       close()
       return
     }
+    draftErrors = []
     ctx.setOpen(key)
   }
 
@@ -119,6 +140,17 @@
     return [...map.entries()]
   })
 
+  /**
+   * Одиночный select с несколькими чипами: форма показывает «Любое», но набор
+   * из `extra` не пуст. Диапазон `number` и несколько значений `multiselect` —
+   * норма, поэтому проверяем именно `select`.
+   */
+  const openGroup = $derived(openKey ? (groups.find(([key]) => key === openKey)?.[1] ?? []) : [])
+  const openField = $derived(openKey ? ctx?.schema.fields.find((field) => field.key === openKey) : undefined)
+  const openNotice = $derived(
+    singleValueNotice && openGroup.length > 1 && openField?.type === 'select' ? singleValueNotice : undefined,
+  )
+
   function hasBlock(key: string): boolean {
     return Boolean(client && host && ctx?.blocks[key])
   }
@@ -128,59 +160,6 @@
     if (items.length <= 1) return items.join('')
     if (items.length === 2) return items.join(` ${connector} `)
     return items.slice(0, -1).join(', ') + ` ${connector} ` + items[items.length - 1]
-  }
-
-  /** Объединённая подпись поля (среза) со всеми его значениями. */
-  function combinedLabel(key: string, group: CatalogFilterChip[]): string {
-    const fieldLabel = group[0]?.fieldLabel ?? key
-
-    // Числовые границы (min/max).
-    const minChip = group.find((c) => c.bound === 'min')
-    const maxChip = group.find((c) => c.bound === 'max')
-    const numericParts: string[] = []
-    if (minChip && maxChip) {
-      numericParts.push(`${fieldLabel} от ${minChip.label} до ${maxChip.label}`)
-    } else if (minChip) {
-      numericParts.push(`${fieldLabel} от ${minChip.label}`)
-    } else if (maxChip) {
-      numericParts.push(`${fieldLabel} до ${maxChip.label}`)
-    }
-
-    // Перечислимые значения по режимам.
-    const byMode = new Map<string, string[]>()
-    for (const c of group) {
-      if (c.bound) continue
-      const m = c.mode ?? 'or'
-      if (!byMode.has(m)) byMode.set(m, [])
-      byMode.get(m)!.push(c.label)
-    }
-    const andVals = byMode.get('and') ?? []
-    const notVals = byMode.get('not') ?? []
-    const orVals = byMode.get('or') ?? []
-
-    let enumStr = ''
-    if (andVals.length && notVals.length) {
-      enumStr = `${joinEnum(andVals, 'и')} исключая ${joinEnum(notVals, 'и')}`
-    } else if (andVals.length) {
-      enumStr = joinEnum(andVals, 'и')
-    } else if (notVals.length) {
-      enumStr = `исключая ${joinEnum(notVals, 'и')}`
-    }
-    if (orVals.length) {
-      const orPart = joinEnum(orVals, 'или')
-      if (enumStr) enumStr += ` или ${orPart}`
-      else enumStr = orPart
-    }
-
-    if (enumStr) {
-      enumStr = `${fieldLabel} ${enumStr}`
-    }
-
-    const all: string[] = []
-    if (numericParts.length) all.push(...numericParts)
-    if (enumStr) all.push(enumStr)
-    if (!all.length) return fieldLabel
-    return all.join(' ')
   }
 
   function clickChip(event: MouseEvent, chip: CatalogFilterChip) {
@@ -194,9 +173,9 @@
   function removeGroup(event: MouseEvent, group: CatalogFilterChip[]) {
     event.preventDefault()
     event.stopPropagation()
-    const patch: CatalogFilterPatch = {}
-    for (const chip of group) Object.assign(patch, chip.patch)
-    onRemoveGroup?.(patch)
+    // Патч чипа снимает одно значение и сохраняет соседние. Если склеить такие
+    // патчи, последний вернёт снятое предыдущим, поэтому пути группы гасим явно.
+    onRemoveGroup?.(catalogFilterRemoveGroupPatch(group))
   }
 
   function chipAttrs(chip: CatalogFilterChip) {
@@ -245,7 +224,7 @@
             aria-controls={openKey === key ? popupNode?.id : undefined}
             {@attach remember(key)}
             onclick={() => toggle(key)}
-          >{combinedLabel(key, group)}</button>
+          >{catalogFilterCombinedLabel(group)}</button>
           {#if onRemoveGroup}
             <button
               type="button"
@@ -264,7 +243,7 @@
           data-testid="active-filter"
           data-filter-label={key}
           data-filter-label-popup="false"
-        >{combinedLabel(key, group)}</span>
+        >{catalogFilterCombinedLabel(group)}</span>
       {/if}
     {:else}
       {#each group as chip (chip.path + '=' + chip.value)}
@@ -294,12 +273,25 @@
   {/if}
 </div>
 
+{#if draftErrors.length}
+  <div
+    class="mt-2 text-xs text-destructive"
+    role="alert"
+    data-testid="active-filters-errors"
+  >
+    {#each draftErrors as error (error.id)}
+      <p>{error.message || error.code}</p>
+    {/each}
+  </div>
+{/if}
+
 {#if client && host && openKey}
   {@const entry = ctx?.blocks[openKey]}
   {#if entry}
     <FilterBlockPopup
       {entry}
       anchor={anchors[entry.key]}
+      notice={openNotice}
       onClose={close}
       {onSlot}
       reclaim={() => ctx?.reclaim()}

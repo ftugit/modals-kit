@@ -108,11 +108,13 @@
     return Math.max(0, bottom - top)
   }
 
-  function reserveHome(root: HTMLElement, homeEl: HTMLElement): HTMLSpanElement {
-    const placeholder = document.createElement('span')
+  function reserveHome(root: HTMLElement, homeEl: HTMLElement): HTMLFieldSetElement {
+    const placeholder = document.createElement('fieldset')
     placeholder.setAttribute('data-filter-block-placeholder', '')
     placeholder.setAttribute('aria-hidden', 'true')
-    placeholder.style.cssText = `display:block;width:100%;box-sizing:border-box;height:${blockHeight(root)}px;margin:0;padding:0;border:0;pointer-events:none`
+    placeholder.disabled = true
+    // Оболочка — пустое место: никаких контролов, класса и style активного блока.
+    placeholder.style.cssText = `display:block;width:100%;box-sizing:border-box;height:${blockHeight(root)}px;margin:0;padding:0;border:0;min-inline-size:0;pointer-events:none`
     homeEl.insertBefore(placeholder, root)
     return placeholder
   }
@@ -190,7 +192,7 @@
   })
 </script>
 
-<span style="display: contents" data-filter-block-home bind:this={home}>
+<div style="display: contents" data-filter-block-home bind:this={home}>
   <span
     style="display: contents"
     bind:this={node}
@@ -199,4 +201,4 @@
   >
     {#if children}{@render children()}{/if}
   </span>
-</span>
+</div>

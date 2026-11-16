@@ -24,6 +24,8 @@
   import type { MessageDictionary } from '#lib/form/index.js'
   import { evaluate } from '#lib/form/index.js'
   import { ru } from '#components/form/messages.ru.js'
+  import { formRenderer } from '#lib/form/messages-order.js'
+  import type { FormError } from '#lib/form/result.js'
   import type { CatalogFilterDescribe } from '#lib/paginate/filters/index.js'
   import ActiveFilters from './ActiveFilters.svelte'
   import { provideFilterBlocks } from './filter-blocks.svelte.js'
@@ -67,6 +69,9 @@
 
   const store = useScopeStore()
   const adapter = untrack(() => transportOf(store, name))
+
+  /** Одиночный select не умеет показать несколько значений из применённого набора. */
+  const SINGLE_VALUE_NOTICE = 'В применённом наборе несколько значений, а этот фильтр одиночный. Выбор заменит набор.'
 
   /**
    * Слой имён полей — у адаптера пагинатора: URL-транспорт кладёт фильтры в
@@ -131,8 +136,9 @@
   }
 
   /** Прямой commit черновика из всплывашки: валидация (evaluate) + apply. */
-  function commitDraft(formEl: HTMLFormElement) {
-    const ev = evaluate(new FormData(formEl), description, { render: () => '', requireEnvelope: false })
+  function commitDraft(formEl: HTMLFormElement): readonly FormError[] {
+    const render = formRenderer(description.messages, messages ? { ...ru, ...messages } : ru, description.policy.interpolate)
+    const ev = evaluate(new FormData(formEl), description, { render, requireEnvelope: false })
     const layer = prefix ? `${prefix}.` : ''
     const next: Record<string, string[]> = {}
     for (const f of description.fields) {
@@ -142,7 +148,9 @@
         .filter((item) => item !== '')
       if (list.length) next[f.name.slice(layer.length)] = list
     }
+    if (ev.errors.length) return ev.errors
     apply(next)
+    return []
   }
 
   /** Один канал снятия: чип и группа отличаются только патчем. */
@@ -233,6 +241,7 @@
       onRemove={remove}
       onRemoveGroup={applyPatch}
       onCommitDraft={commitDraft}
+      singleValueNotice={SINGLE_VALUE_NOTICE}
     />
   </div>
 </section>
