@@ -695,7 +695,7 @@ async function checkFiltersUi(browser) {
 
     // Связка с поиском: `status=latest` запрещает `q` — панель говорит об этом.
     await page.goto(`${U}?page.src=animes&page.size=5&page.filters.status=latest&${OPTS}`, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
     });
     await waitFor(async () => await panel.locator('[data-testid="filters-search-blocked"]').isVisible(), {
       what: 'причина запрета поиска',
@@ -760,6 +760,100 @@ async function checkFiltersUi(browser) {
     await context.close();
   } finally {
     if (!context.closed) await context.close().catch(() => {});
+  }
+}
+
+/**
+ * Popup фильтра: изменение одиночного select применяется при закрытии, без
+ * кнопки «Применить» внутри листа. Проверяем именно автокоммит по Escape.
+ */
+async function checkFilterPopupCommit(browser) {
+  console.log('— Popup фильтра: изменение status закрытием —');
+  const schema = (await api('/api/shikimori/filters')).body;
+  const labelOf = (field, value) =>
+    schema.fields.find((item) => item.key === field)?.options?.find((item) => item.value === value)?.label ?? value;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  page.setDefaultTimeout(20000);
+
+  try {
+    await page.goto(`${U}?page.src=animes&page.size=5&page.filters.status=latest&${OPTS}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    const trigger = page.locator('[data-filter-label="status"]');
+    await waitFor(async () => await trigger.isVisible(), { what: 'метка status' });
+    await trigger.click();
+    await page.waitForSelector('[data-filter-block-popup]');
+
+    await chooseFilterOption(
+      page,
+      page.locator('select[data-select-native][name="page.filters.status"]'),
+      'released',
+      labelOf('status', 'released'),
+    );
+    await page.keyboard.press('Escape');
+    await waitFor(
+      async () => new URL(page.url()).searchParams.get('page.filters.status') === 'released',
+      { what: 'автокоммит status=released после закрытия popup' },
+    );
+    await waitFor(async () => (await page.locator('[data-filter-block-popup]').count()) === 0, {
+      what: 'popup закрыт',
+    });
+    const chipText = (await page.locator('[data-testid="active-filter"][data-filter-label="status"]').innerText())
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!chipText.includes(labelOf('status', 'released')))
+      throw new Error(`чип не обновился после автокоммита: «${chipText}»`);
+    const focus = await page.evaluate(() => document.activeElement?.getAttribute('data-filter-label'));
+    if (focus !== 'status') throw new Error(`Escape не вернул фокус на метку status: ${focus}`);
+    console.log('  ok  status изменён и применён закрытием popup, чип и фокус согласованы');
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * Снятие группы значений: один патч снимает status целиком, но сохраняет
+ * подавленное связкой поле и не плодит записи истории.
+ */
+async function checkFilterGroupRemoval(browser) {
+  console.log('— Снятие группы status: связка и история —');
+  const context = await browser.newContext({ viewport: { width: 1280, height: 1200 } });
+  const page = await context.newPage();
+  page.setDefaultTimeout(20000);
+
+  try {
+    await page.goto(
+      `${U}?page.src=animes&page.size=5&page.filters.status=anons,latest&page.filters.score.min=5&${OPTS}`,
+      { waitUntil: 'domcontentloaded' },
+    );
+    const remove = page.locator('[data-filter-label-remove="status"]');
+    await waitFor(async () => await remove.isVisible(), { what: 'кнопка снятия группы status' });
+    const historyBefore = await page.evaluate(() => history.length);
+    const before = new URL(page.url());
+    if (before.searchParams.get('page.filters.score.min') !== '5')
+      throw new Error(`до снятия группы в адресе нет score: ${page.url()}`);
+
+    await remove.click();
+    await waitFor(
+      async () => !new URL(page.url()).searchParams.has('page.filters.status'),
+      { what: 'группа status снята' },
+    );
+    await waitFor(async () => (await page.locator('[data-filter-label="status"]').count()) === 0, {
+      what: 'чип status исчез',
+    });
+
+    const after = new URL(page.url());
+    if (after.searchParams.get('page.filters.score.min') !== '5')
+      throw new Error(`снятие группы потеряло подавленный score: ${page.url()}`);
+    if ((await page.locator('input[name="page.filters.score.min"]').inputValue()) !== '5')
+      throw new Error('поле score не восстановило значение после снятия группы');
+    const historyAfter = await page.evaluate(() => history.length);
+    if (historyAfter !== historyBefore)
+      throw new Error(`снятие группы добавило запись истории: ${historyBefore} → ${historyAfter}`);
+    console.log('  ok  группа status снята одним патчем, score сохранён, история не выросла');
+  } finally {
+    await context.close();
   }
 }
 
@@ -1269,6 +1363,8 @@ async function run() {
   try {
     await checkBrowser(browser);
     await checkFiltersUi(browser);
+    await checkFilterPopupCommit(browser);
+    await checkFilterGroupRemoval(browser);
     await checkFiltersNoJs(browser);
     await checkVersions(browser);
     console.log(

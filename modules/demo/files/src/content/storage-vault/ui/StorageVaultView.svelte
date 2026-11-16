@@ -2,6 +2,7 @@
   import { CookieVault } from '#components/demo/index.js'
   import type { CookieVaultSnapshot } from '#hooks/cookie-vault/index.js'
   import { storageVaultSchema, type StorageVaultMeta } from '../schema.js'
+  import { STORAGE_VAULT_DELETE_MODAL } from '../modals.js'
 
   let {
     snapshot,
@@ -19,6 +20,7 @@
   {snapshot}
   {backHref}
   {onChanged}
+  deleteModal={STORAGE_VAULT_DELETE_MODAL}
 >
   {#snippet renderMeta(item)}
     <span>

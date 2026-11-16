@@ -46,7 +46,8 @@ describe('StorageVaultView', () => {
     expect(body).not.toContain('confirm_scope')
     expect(body).not.toContain('name="priority"')
     expect(body).toContain('form="storage-server-vault"')
-    // Форма слота и форма удаления строки. Сброс ключа — кнопка той же формы слота.
-    expect((body.match(/<form\b/g) ?? []).length).toBe(2)
+    // Одна форма слота: удаление — ссылка на модалку (без отдельной формы),
+    // сброс ключа — кнопка той же формы слота.
+    expect((body.match(/<form\b/g) ?? []).length).toBe(1)
   })
 })
