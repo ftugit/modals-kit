@@ -6,7 +6,7 @@ import { USER_MESSAGES } from './messages.js'
 import { profileForm } from '#modules/user/profile/svelte/profile-form/form.js'
 import { seedForm } from '#modules/user/base/svelte/auth/seed-form/form.js'
 
-const source = readFileSync(new URL('./error.ts', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../../../core/auth/errors.ts', import.meta.url), 'utf8')
 const block = source.slice(
   source.indexOf('export type AuthErrorCode ='),
   source.indexOf('/** Голый факт'),

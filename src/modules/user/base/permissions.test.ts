@@ -20,7 +20,7 @@ const all = Object.keys(PERMISSIONS) as Permission[]
 
 /** Строки прав, записанные в правилах модели профиля. */
 function grantedInSchema(): string[] {
-  const source = readFileSync(new URL('./schema.ts', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('./model/schema.ts', import.meta.url), 'utf8')
   return [...source.matchAll(/'(account|profile|session)\.[a-z]+'/g)].map((m) => m[0].slice(1, -1))
 }
 
