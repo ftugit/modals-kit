@@ -17,10 +17,10 @@
  */
 import { readFileSync } from 'node:fs'
 
-const UNIT = 'src/content/user/ui/session-delete'
+const UNIT = 'src/modules/user/base/svelte/session-delete'
 const COMPONENT = `${UNIT}/SessionDelete.svelte`
-const MODAL = 'src/content/user/ui/SessionDeleteModal.svelte'
-const SERVER = `${UNIT}/session-delete.form.server.ts`
+const MODAL = 'src/modules/user/sessions/svelte/SessionDeleteModal.svelte'
+const SERVER = 'src/modules/user/sessions/service/session-delete.form.server.ts'
 
 const NAVIGATION = /\b(goto|redirect)\s*\(|location\.assign|history\.pushState/
 const CLOSE = /modals\.close\s*\(/

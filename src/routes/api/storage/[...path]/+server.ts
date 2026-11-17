@@ -2,7 +2,7 @@
 // сильный `ETag`, `Accept-Ranges: bytes` (`206 Partial Content`), `immutable`
 // кэширование версионированных объектов и изолирующие заголовки безопасности.
 import type { RequestHandler } from './$types'
-import { serveAppStoragePath } from '#server/app-storage.server.js'
+import { serveAppStoragePath } from '#core/server/app-storage.server.js'
 
 export const GET: RequestHandler = async ({ params, request }) =>
   serveAppStoragePath(params.path, request)

@@ -1,0 +1,110 @@
+// @vitest-environment happy-dom
+import { mount, tick, unmount } from 'svelte'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import SessionsList from './SessionsList.svelte'
+import type { SessionDeviceView, SessionsRouteData } from '#modules/user/base/model/types.js'
+import { sessionsSnapshot } from './sessions-list/source.js'
+import { resetClientStore } from '#core/lib/paginate/index.js'
+
+const addr = vi.hoisted(() => ({ url: new URL('http://localhost/users?modal=user.sessions') }))
+vi.mock('$app/state', () => ({
+  page: { get url() { return addr.url }, state: {}, data: {} },
+  navigating: { to: null, from: null, type: null },
+}))
+vi.mock('$app/navigation', () => ({
+  afterNavigate: () => {},
+  beforeNavigate: () => {},
+  goto: async () => {},
+  preloadData: async () => ({ type: 'not_found' }),
+}))
+vi.mock('$app/env', () => ({ browser: true }))
+vi.mock('#core/hooks/links/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#core/hooks/links/index.js')>()),
+  useModalLink: () => (name: string, params: { id?: string; uid?: string; ids?: string } = {}) => ({
+    href:
+      name === 'user.session'
+        ? `/user/sessions/${params.id ?? ''}`
+        : name === 'user.session.delete'
+          ? `/user/sessions/delete?ids=${params.ids ?? ''}`
+          : '/user/sessions',
+    'data-modal-link': '',
+  }),
+}))
+vi.mock('../vault.svelte.js', () => ({
+  userSession: { ensureFresh: async () => true, onAuthExpired: () => {} },
+  vault: { get principal() { return device.authId }, clear: () => {} },
+}))
+vi.mock('#core/lib/paginate/sveltekit/router.js', () => ({
+  currentPathname: () => '/users',
+  currentSearch: () => ({}),
+}))
+// В модалке шаг не читает и не пишет адрес носителя.
+vi.mock('#core/lib/address/sveltekit.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#core/lib/address/sveltekit.js')>()),
+  visibleAddress: () => { throw new Error('modal step must not read carrier address') },
+  writeAddress: () => { throw new Error('modal step must not write carrier address') },
+}))
+
+const device: SessionDeviceView = {
+  id: '11111111-1111-4111-8111-111111111111',
+  authId: '22222222-2222-4222-8222-222222222222',
+  deviceName: 'Ноутбук', subnetHash: 'abcdef0123456789', country: 'RU', history: [],
+  createdAt: 1_700_000_000_000, expiresAt: 4_000_000_000_000, lastSeenAt: 1_700_000_100_000,
+  deletedAt: null, current: true,
+}
+const other: SessionDeviceView = { ...device, id: '33333333-3333-4333-8333-333333333333', deviceName: 'Планшет', current: false }
+
+function routeData(items: SessionDeviceView[]): SessionsRouteData {
+  return {
+    snapshot: sessionsSnapshot({
+      items, total: items.length, page: 1, pageSize: 30, authId: device.authId, journal: false,
+      canReadOthers: false, state: 'active', countries: ['RU'], canSeeDeleted: false,
+      canRename: true, canRevoke: true, canHardDelete: false,
+    }),
+    fact: null, enabled: true, target: { kind: 'own' }, canReadOthers: false, countries: ['RU'],
+    notice: null, canSeeDeleted: false, canRename: true, canRevoke: true, canHardDelete: false,
+  }
+}
+function click(el: Element) {
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
+}
+
+beforeEach(() => {
+  resetClientStore()
+  addr.url = new URL('http://localhost/users?modal=user.sessions')
+})
+
+describe('SessionsList: выбор строк', () => {
+  it('текущая строка недоступна, выбранная уходит в ids, «Готово» очищает набор', async () => {
+    const target = document.createElement('div')
+    document.body.append(target)
+    const app = mount(SessionsList, { target, props: { mode: 'modal', url: false, initial: routeData([device, other]) } })
+    try {
+      await tick()
+      const toggle = target.querySelector('[data-testid="sessions-select-toggle"]') as HTMLButtonElement
+      click(toggle)
+      await tick()
+
+      expect(target.querySelector('[data-testid="sessions-selected-count"]')?.textContent).toContain('Выбрано: 0')
+      const boxes = target.querySelectorAll<HTMLInputElement>('[data-testid="session-checkbox"]')
+      expect(boxes).toHaveLength(2)
+      expect(boxes[0]?.disabled).toBe(true)
+      expect(target.querySelector('[data-testid="sessions-delete-selected"]')).toBeNull()
+
+      boxes[1]!.click()
+      await tick()
+      expect(target.querySelector('[data-testid="sessions-selected-count"]')?.textContent).toContain('Выбрано: 1')
+      const action = target.querySelector('[data-testid="sessions-delete-selected"]') as HTMLAnchorElement
+      expect(action?.getAttribute('href')).toContain(`ids=${other.id}`)
+
+      click(toggle)
+      await tick()
+      expect(target.querySelector('[data-testid="session-checkbox"]')).toBeNull()
+      expect(target.querySelector('[data-testid="sessions-delete-selected"]')).toBeNull()
+    } finally {
+      await unmount(app)
+      target.remove()
+    }
+  })
+})
+

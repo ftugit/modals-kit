@@ -1,0 +1,27 @@
+// Серверный POST-обработчик компонента `ProfileDelete`: намерение из формы,
+// права и запреты цели перепроверяет домен (`deleteProfile`) в момент
+// отправки — показ кнопки удаление не разрешает.
+import { registerComponentForm } from '#core/hooks/component-form/registry.js'
+import { auth, vaultPayloadOf } from '#modules/user/base/service/gateway.server.js'
+import { instruction } from '#modules/user/base/model/error.js'
+import { profileDeleteForm } from './form.js'
+
+registerComponentForm({
+  description: profileDeleteForm,
+  execute: async ({ values, intent, commit, fail }, event) => {
+    const u = auth(event)
+    if (!u.enabled) return fail(instruction({ code: 'auth.disabled' }))
+    if (intent !== 'delete') return fail(instruction({ code: 'auth.confirm' }))
+    const subject = String(values.subject ?? '').trim() || undefined
+    const r = await u.deleteProfile({ withSeed: Boolean(values.with_seed) }, subject)
+    if (!r.ok) return fail(instruction(r.fact))
+    let user
+    if (r.value.selfProfileDeleted) {
+      const refreshed = await u.refreshAccess()
+      if (refreshed.ok) user = await vaultPayloadOf(refreshed.value)
+    }
+    commit()
+    return { data: { step: 'done', sessionCleared: r.value.selfSeedDeleted, user } }
+  },
+  redirectOnSuccess: () => '/',
+})

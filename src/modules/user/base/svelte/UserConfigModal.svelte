@@ -1,0 +1,53 @@
+<script lang="ts">
+  /**
+   * Модалка настроек пользователя (`user.config.edit`):
+   * тонкий носитель + ACL-гейт по данным загрузчика пары (`/user/config` или `/user/[id]/config`).
+   */
+  import { invalidateAll } from '$app/navigation'
+  import { useLoader, useModal, useModals } from '#core/lib/modals/svelte/index.js'
+  import Acl from './Acl.svelte'
+  import UserConfig from './user-config/UserConfig.svelte'
+  import type { AuthErrorCode } from '../model/error.js'
+  import type { UserConfigRouteData } from '../model/types.js'
+  import { Surface } from '#core/ui/index.js'
+
+  const m = useModals()
+  const modal = useModal<{ id?: string }>()
+  const ldr = useLoader<UserConfigRouteData>()
+  const hasExplicitId = $derived(
+    modal.params !== undefined && Object.prototype.hasOwnProperty.call(modal.params, 'id'),
+  )
+  const uid = $derived(modal.params?.id ? String(modal.params.id).trim() || null : null)
+  const invalidExplicitId = $derived(hasExplicitId && !uid)
+  let acl = $state<AuthErrorCode | null>(null)
+  const effectiveAcl = $derived(acl ?? ldr.data?.fact ?? null)
+</script>
+
+<Surface variant="plain" scroll={false} class="flex min-h-0 flex-1 flex-col w-full p-6">
+  {#if invalidExplicitId}
+    <Acl status="auth.identity-unknown" backHref="/" variant="plain" />
+  {:else if effectiveAcl}
+    <Acl status={effectiveAcl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
+  {:else if ldr.data}
+    <UserConfig
+      class="min-h-0 flex-1"
+      {uid}
+      initial={ldr.data}
+      enabled={ldr.data.enabled}
+      doneHref={uid ? `/user/${uid}` : '/'}
+      variant="plain"
+      sessionsContext="modal"
+      onAcl={(fact) => (acl = fact)}
+      onChange={() => {
+        m.modals.invalidateLoader('user.profile')
+        void invalidateAll()
+      }}
+      onDone={() => {
+        m.modals.invalidateLoader('user.profile')
+        void invalidateAll()
+        m.modals.close()
+        m.modals.invalidateLoader('user.config.edit')
+      }}
+    />
+  {/if}
+</Surface>

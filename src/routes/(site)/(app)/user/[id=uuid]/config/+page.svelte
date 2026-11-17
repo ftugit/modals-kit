@@ -1,32 +1,8 @@
 <script lang="ts">
-  // Страница настроек пользователя по UUID (`/user/[id]/config`) — тонкий носитель + ACL-гейт.
-  import { useHeadSeo } from '#components/shell/index.js'
-  import Acl from '#content/user/ui/Acl.svelte'
-  import { UserConfig } from '#content/user/ui/user-config/index.js'
+  import UserConfigPage from '#sections/user/user-config/UserConfigPage.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-  const backHref = $derived(data.uid ? `/user/${data.uid}` : '/')
-
-  useHeadSeo({
-    subTitle: 'Настройки пользователя',
-    description: 'Просмотр и изменение настроек выбранного пользователя.',
-    noindex: true,
-  })
 </script>
 
-<div class="mx-auto w-full max-w-md">
-  {#if data.fact}
-    <Acl status={data.fact} enabled={data.enabled} backHref={data.fact === 'auth.identity-unknown' ? '/' : backHref} />
-  {:else}
-    <UserConfig
-      uid={data.uid}
-      initial={data}
-      enabled={data.enabled}
-      authorized={Boolean(data.slice)}
-      doneHref={backHref}
-      action={`/user/${data.uid}/config?next=${encodeURIComponent(backHref)}`}
-      stepsMode="hybrid"
-    />
-  {/if}
-</div>
+<UserConfigPage {data} />

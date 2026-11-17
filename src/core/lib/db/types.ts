@@ -1,0 +1,585 @@
+/**
+ * Независимые от HTTP/ORM контракты; все ctx создаются доверенным сервером.
+ * Стандарт-схемы берутся из `@standard-schema/spec`: это тот же контракт,
+ * который принимают SvelteKit-формы и `superforms`, поэтому схема поля может
+ * быть любой (zod, valibot, своя из `./schema`).
+ */
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { AclDefinition } from "./acl";
+export type Row = Record<string, unknown>;
+export interface Statement {
+  text: string;
+  values?: readonly unknown[];
+  /**
+   * Отмена whole-query. Ресурс-слой берёт её из `DataContext.signal`,
+   * то есть из серверного контекста; значение из клиентского тела сюда
+   * попасть не может. Драйверы без поддержки (PGlite) обязаны её игнорировать.
+   */
+  signal?: AbortSignal;
+}
+export interface QueryResult<T extends Row = Row> {
+  rows: T[];
+  rowCount: number;
+}
+export type Isolation = "read committed" | "repeatable read" | "serializable";
+export interface TxOptions {
+  isolation?: Isolation;
+  readOnly?: boolean;
+  /**
+   * Отмена ВСЕЙ транзакции (в SvelteKit — `event.request.signal`).
+   * Только транзакционные адаптеры; при срабатывании — ROLLBACK и
+   * DbFailure('unavailable'). Не выставляется ресурс-слоем автоматически:
+   * атомарная запись не должна молча отменяться уходом со страницы.
+   */
+  signal?: AbortSignal;
+}
+export interface Capabilities {
+  transactions: boolean;
+  savepoints: boolean;
+  sqlstate: boolean;
+  isolationLevels: readonly Isolation[];
+}
+export interface Driver {
+  /** Только composition root: закрывает proxy resources и отменяет pending I/O. */
+  close?(): Promise<void>;
+  readonly capabilities: Capabilities;
+  readonly inTransaction?: boolean;
+  query<T extends Row = Row>(statement: Statement): Promise<QueryResult<T>>;
+  transaction<T>(
+    fn: (tx: Driver) => Promise<T>,
+    options?: TxOptions,
+  ): Promise<T>;
+}
+export interface DataContext {
+  readonly principal: {
+    readonly id?: string;
+    readonly roles: readonly string[];
+  };
+  readonly requestId?: string;
+  /**
+   * Отмена запроса (`event.request.signal` в SvelteAdapted). Ставится ТОЛЬКО
+   * сервером: клиент не может ни включить, ни снять её.
+   */
+  readonly signal?: AbortSignal;
+}
+export type Grant = readonly string[] | ((ctx: DataContext) => boolean);
+export type Operator =
+  | "eq"
+  | "ne"
+  | "lt"
+  | "lte"
+  | "gt"
+  | "gte"
+  | "in"
+  | "notIn"
+  | "isNull"
+  | "isNotNull"
+  | "contains"
+  | "startsWith"
+  | "icontains"
+  | "istartsWith";
+export type Filter =
+  | boolean
+  | { field: string; op: Operator; value?: unknown }
+  | { and: readonly Filter[] }
+  | { or: readonly Filter[] }
+  | { not: Filter }
+  | {
+      exists: {
+        /** Конкретная модель (не таблица): таблицу, поля, политику и мягкое удаление берёт слой. */
+        from: Resource;
+        /** Пары равенства [своё поле, поле модели цели], минимум одна. */
+        on: readonly (readonly [string, string])[];
+        /** Условия по полям цели; вложенный `exists` допустим. */
+        where?: Filter;
+        /** По умолчанию true: внутри действует select-политика цели. false — явное исключение. */
+        policy?: boolean;
+      };
+    };
+export type Order = readonly (readonly [string, "asc" | "desc"])[];
+export interface Limits {
+  pageSize: number;
+  maxPageSize: number;
+  maxPage: number;
+  filterDepth: number;
+  filterNodes: number;
+  inValues: number;
+  inputKeys: number;
+}
+/** Технические, не бизнес-квоты. Приложение передаёт limits явно. */
+export const conservativeLimits: Readonly<Limits> = Object.freeze({
+  pageSize: 20,
+  maxPageSize: 100,
+  maxPage: 10000,
+  filterDepth: 8,
+  filterNodes: 100,
+  inValues: 100,
+  inputKeys: 64,
+});
+export type StandardSchema<T = unknown> = StandardSchemaV1<unknown, T>;
+export interface Field<T = unknown> {
+  column?: string;
+  schema: StandardSchema<T>;
+  kind?: "scalar" | "bigint" | "decimal" | "date" | "timestamp" | "json";
+  /** Маски: нет ключа или `null` — всем, `[]` — никому, роли или функция — по ним. */
+  read?: Grant | null;
+  create?: Grant | null;
+  update?: Grant | null;
+  generated?: boolean;
+  immutable?: boolean;
+  required?: boolean;
+  nullable?: boolean;
+  normalize?: (v: unknown) => unknown;
+  createValue?: (ctx: DataContext) => unknown;
+  /**
+   * Заполнить, если поле не передано: `values` — уже проверенные переданные поля.
+   * `undefined` — не заполнять (так при `update` поле остаётся как было). Значение
+   * проходит правила поля. Переданное значение (если `create`/`update` разрешает)
+   * побеждает: `fill` его не трогает.
+   */
+  fill?: (values: Readonly<Row>, ctx: DataContext, operation: "insert" | "update") => unknown | Promise<unknown>;
+  /**
+   * Как хранить: вызывается ПОСЛЕ правил поля (и после `fill`), до `beforeWrite`,
+   * `checks` и SQL — например, хэш пароля. `null` не передаётся. Правила поля описывают
+   * то, что приходит, а не то, что лежит в колонке, поэтому нужен явный `db.type`, и
+   * CHECK из правил не строится.
+   */
+  store?: (value: unknown, ctx: DataContext) => unknown | Promise<unknown>;
+  filters?: readonly Operator[];
+  orderable?: boolean;
+  /** Колонка в БД: то, чего не видно из схемы поля (см. `#core/lib/db/sync/index.js`). */
+  db?: ColumnOptions;
+  /**
+   * Свои тексты ошибок поля по коду: `{ unique: 'Этот email уже зарегистрирован',
+   * minLength: 'Минимум {min} символов' }`. Подстановки — из параметров ошибки.
+   * Сильнее словарей формы, как `.message()` у правила формы.
+   */
+  messages?: Readonly<Record<string, string>>;
+}
+/**
+ * Подробности колонки для `defineSchema`. Значения пишет разработчик в коде, не
+ * пользователь: `default` попадает в DDL как SQL-выражение.
+ */
+export interface ColumnOptions {
+  /** Тип PostgreSQL. Обязателен, если схема поля не из `s.*` (zod, valibot, своя). */
+  type?: string;
+  /** SQL-выражение DEFAULT: `'clock_timestamp()'`, `'gen_random_uuid()'`, `"'draft'"`. */
+  default?: string;
+  /** Уникальность. У ресурса с `softDelete` — среди неудалённых строк. */
+  unique?: boolean;
+  /**
+   * Внешний ключ: значение поля — ключ записи другого ресурса. Ресурс задаётся
+   * функцией (ссылки бывают взаимными, порядок загрузки модулей не важен).
+   * `field` — поле цели (по умолчанию её `primaryKey`), `onDelete` — что делает БД при
+   * настоящем удалении цели (по умолчанию `no action`), `chain` — принадлежность (цепочка удаления).
+   */
+  references?: ColumnReference;
+}
+export interface ColumnReference {
+  resource: () => Resource;
+  field?: string;
+  /** Что база делает при настоящем удалении цели, на которую ссылаются: отказ. */
+  onDelete?: "no action" | "restrict";
+  /**
+   * Принадлежность: строка живёт только вместе с целью (комментарий → запись) и входит в
+   * цепочку удаления цели (`chain`). Без флага — указатель: удаление цели при живой ссылке —
+   * ошибка базы. Колонке ссылки-принадлежности `defineSchema` строит индекс.
+   */
+  chain?: boolean;
+}
+export type Fields = Record<string, Field>;
+export type InferRow<F extends Fields> = {
+  [K in keyof F]: F[K] extends Field<infer T> ? T : never;
+};
+export type Operation = "select" | "insert" | "update" | "delete";
+export interface HookContext {
+  readonly ctx: DataContext;
+  readonly operation: Operation;
+  readonly db: Database;
+  readonly before?: Readonly<Row>;
+  readonly row?: Readonly<Row>;
+  readonly draft?: Row;
+}
+export interface Hooks {
+  beforeWrite?: (event: HookContext) => void | Promise<void>;
+  afterWrite?: (event: HookContext) => void | Promise<void>;
+  afterRead?: (event: {
+    ctx: DataContext;
+    rows: readonly Readonly<Row>[];
+  }) => void | Promise<void>;
+  afterCommit?: (
+    event: Omit<HookContext, "db" | "draft">,
+  ) => void | Promise<void>;
+}
+/**
+ * Правила данных (`Resource.checks`): то, что видно только из БД или из нескольких
+ * полей сразу — «slug уже занят», «у черновика нет даты публикации». Выполняются
+ * всегда: при записи — в той же транзакции, после проверки полей и `beforeWrite`;
+ * в `validator` — над значениями формы, без записи.
+ */
+export interface CheckEvent {
+  readonly ctx: DataContext;
+  /** `check` — только из `validator(ctx, 'check')`: проверка без записи (форма входа). */
+  readonly operation: "insert" | "update" | "check";
+  /** При записи — транзакция записи; в `validator` — сама база. */
+  readonly db: Database;
+  /** Значения после проверки полей (и после `beforeWrite` при записи). */
+  readonly values: Readonly<Row>;
+  /** Строка до изменения — только у `update`. */
+  readonly before?: Readonly<Row>;
+}
+/**
+ * Нарушение правила данных. `field` — поле, у которого показать ошибку (нет — ошибка
+ * всей записи). Текст: `message` — свой текст правила (сильнее словарей); без него —
+ * `messages` поля по коду, иначе словарь формы по коду (`unique` → «Это значение уже занято»).
+ */
+export interface CheckIssue {
+  field?: string;
+  code: string;
+  params?: Record<string, unknown>;
+  message?: string;
+}
+export type Checks = (
+  event: CheckEvent,
+) => readonly CheckIssue[] | void | Promise<readonly CheckIssue[] | void>;
+export type Relations = Record<
+  string,
+  { resource: Resource; localField: string; foreignField: string }
+>;
+export type ResourceRow<F extends Fields, R extends Relations> = Partial<
+  InferRow<F>
+> & {
+  [K in keyof R]?: Partial<InferRow<R[K]["resource"]["fields"]>> | null;
+};
+export interface Resource<
+  F extends Fields = Fields,
+  R extends Relations = Relations,
+> {
+  key: string;
+  table: string;
+  primaryKey: string;
+  ownerField?: string;
+  fields: F;
+  mandatoryRead?: readonly string[];
+  /**
+   * Декларативное описание прав доступа (`defineAcl`). Взаимоисключающе с низкоуровневым `policy`:
+   * `defineResource` разворачивает его в `policy` и `timestamps.deletedAt.readDeleted` и проверяет стражем ACL.
+   */
+  acl?: AclDefinition;
+  /**
+   * Правила строк. Нет `policy` (или `null`) — без ограничения; нет правила операции — то же
+   * для неё.
+   */
+  policy?: Policy;
+  /**
+   * Ключи доступа (README §7): права включает значение ключа в запросе.
+   * Чтение — каждый ключ, переданный в фильтре (`eq`/`in`), проверяется; без ключей — как
+   * без `access`. Вставка — все ключи обязательны и проходят все. Изменение и удаление по
+   * id — ключи из строки, достаточно одного разрешающего. `policy` действует всегда.
+   */
+  access?: Readonly<Record<string, AccessKey>>;
+  order: Order;
+  hooks?: Hooks;
+  /** Правила данных: при записи — всегда и в транзакции; см. `CheckEvent`. */
+  checks?: Checks;
+  relations?: R;
+  /** Только явно зарегистрированные metadata + grant могут попасть в публичную ошибку. */
+  constraints?: Record<
+    string,
+    { sqlstate: string; fields: readonly string[]; expose: Grant }
+  >;
+  validateFinal?: StandardSchema<Row>;
+  softDelete?: {
+    field: string;
+    value: (ctx: DataContext) => unknown;
+    readDeleted: Grant;
+  };
+  /**
+   * Системные поля времени. Значение — имя поля (и колонки); поле создаёт
+   * `defineResource`, объявлять его в `fields` нельзя. Каждое — время, читается всеми,
+   * кто видит строку, клиент его не пишет, значение ставит база (`clock_timestamp()`),
+   * сортировка и фильтры `gt/gte/lt/lte` разрешены.
+   *
+   * - `createdAt` — при вставке;
+   * - `updatedAt` — при вставке и при каждом `update` (и `restore`);
+   * - `deletedAt` — мягкое удаление: `delete` ставит метку, чтение её скрывает,
+   *   `restore` снимает. Удалённые не видит и не восстанавливает никто, пока не задано
+   *   `readDeleted` в объектной форме. Несовместимо с ручным `softDelete`.
+   *
+   * Что из этого следует для опроса изменений — `liveCapabilities(resource)`.
+   */
+  timestamps?: Timestamps;
+  /** Индексы и составная уникальность для `defineSchema`. */
+  db?: {
+    indexes?: readonly (readonly string[])[];
+    unique?: readonly (readonly string[])[];
+  };
+}
+/** Операции, которые разрешает ключ доступа. */
+export type AccessOp = "select" | "insert" | "update" | "delete";
+/** Ключ доступа: `owner()` или `link({ операция: правило цели })` из `#core/lib/db`. */
+export type AccessKey =
+  | { readonly kind: "owner"; readonly ops: readonly AccessOp[] }
+  | { readonly kind: "link"; readonly rules: Readonly<Partial<Record<AccessOp, string>>> };
+/**
+ * Правила строк по операциям и именованные правила (`comment`, `createPost`), которые
+ * спрашивают ключи доступа других моделей (`link({ insert: 'comment' })`).
+ */
+export interface Policy {
+  [rule: string]: ((ctx: DataContext) => Filter) | undefined;
+  select?: (ctx: DataContext) => Filter;
+  insert?: (ctx: DataContext) => boolean;
+  update?: (ctx: DataContext) => Filter;
+  delete?: (ctx: DataContext) => Filter;
+  /**
+   * Какие строки можно удалить физически (`delete(..., { hard: true })`) у модели с мягким
+   * удалением (всегда в связке с `softDelete.readDeleted`). Нет — та же, что у `delete`.
+   */
+  hardDelete?: (ctx: DataContext) => Filter;
+  /** Какие удалённые строки можно восстановить (`restore`). Нет — та же, что у `hardDelete` / `delete`. */
+  restore?: (ctx: DataContext) => Filter;
+}
+/** Пустое значение (`null`, `''`, нет ключа) — метка выключена. */
+export interface Timestamps {
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  deletedAt?:
+    | string
+    | null
+    | {
+        field: string | null;
+        /** Кто видит удалённые (`includeDeleted`) и может их восстановить. Нет — никто. */
+        readDeleted?: Grant;
+      };
+}
+/** Поля, которые `defineResource` создаёт из `timestamps` (для типа строки). */
+type TimestampName<V> = Exclude<Extract<V, string>, "">;
+export type TimestampFields<T extends Timestamps | null | undefined> = T extends Timestamps
+  ? { [K in TimestampName<T["createdAt"]>]: Field<string> } & {
+      [K in TimestampName<T["updatedAt"]>]: Field<string>;
+    } & {
+      [K in T["deletedAt"] extends { field: infer N }
+        ? TimestampName<N>
+        : TimestampName<T["deletedAt"]>]: Field<string | null>;
+    }
+  : {};
+/**
+ * Что ресурс умеет сообщить опросу изменений — выводится из `timestamps`:
+ * новые строки — всегда, изменённые — есть `updatedAt`, удалённые — есть `deletedAt`.
+ */
+export interface LiveCapabilities {
+  inserted: true;
+  updated: boolean;
+  deleted: boolean;
+}
+/**
+ * Вопрос «что изменилось с отметки» (опрос живых списков).
+ *
+ * Не страница и не курсор: ответ не зависит ни от позиции окна, ни от порядка —
+ * его накладывает вызывающий своими границами (`filter`), а слой только сужает.
+ */
+export interface ChangesInput {
+  /** Границы «где смотреть» — обычный фильтр ресурса; клиент задаёт их, только сужая выборку. */
+  filter?: Filter
+  limit?: number
+}
+
+export interface ListInput {
+  fields?: readonly string[];
+  filter?: Filter;
+  order?: Order;
+  page?: number;
+  limit?: number;
+  includeDeleted?: boolean;
+  include?: readonly string[];
+  /**
+   * Срез выдачи: «не новее этой строки» — `created_at` и первичный ключ в одной
+   * строке (`<ISO>|<id>`). Нужен постраничному режиму: номер страницы — это
+   * смещение, и появившиеся сверху строки сдвигают всю выдачу. С условием среза
+   * `count` и страницы считаются по одному и тому же множеству.
+   */
+  asof?: string;
+}
+export interface CursorInput extends Omit<ListInput, "page"> {
+  /** Токен из `nextCursor` прошлой страницы; `null`/нет — первая страница (DB-3). */
+  after?: string | null;
+  /**
+   * Токен из `prevCursor` — «строки НОВЕЕ закладки» (обратное направление).
+   * Взаимоисключающ с `after`: страница читается либо вперёд, либо назад.
+   */
+  before?: string | null;
+}
+export interface CursorPage<T> {
+  /** Строки в порядке ресурса, как бы их ни читали — вперёд или назад. */
+  items: T[];
+  /** Закладка последней строки — с нею читают дальше (`after`); `null` — дальше нет. */
+  nextCursor: string | null;
+  /** Закладка первой строки — сторона «новее», с нею читают назад (`before`). */
+  prevCursor: string | null;
+  /**
+   * Ключ НАЧАЛА этой порции, переподписанный заново; `null` — порцию выдали с
+   * головы (`after` не было) или читали назад. Адрес списка хранит именно его:
+   * ключ видимой порции должен оставаться годным, пока человек листает, а срок
+   * жизни закладки короткий. Поэтому просроченный, но подлинный `after`
+   * принимается в пределах максимального возраста, а ответ возвращает свежий
+   * ключ — продление скользящее, потолок — `DB_CURSOR_MAX_AGE_SECONDS`.
+   */
+  beginCursor: string | null;
+  /**
+   * Временная метка (ISO) закладки запроса (`after`/`before`): значение `timestamps.createdAt`
+   * из самой закладки (если поле входит в порядок сортировки) либо время выпуска токена (`iat`).
+   * `null` — порция выдана с головы без закладки.
+   */
+  cursorAt: string | null;
+  /** Новее этой порции ничего нет: «окно касается края свежих данных». */
+  atEdge: boolean;
+}
+export interface ResourceApi<
+  F extends Fields = Fields,
+  R extends Relations = {},
+> {
+  select(ctx: DataContext, input?: ListInput): Promise<ResourceRow<F, R>[]>;
+  get(
+    ctx: DataContext,
+    id: unknown,
+    input?: Pick<ListInput, "fields" | "includeDeleted">,
+  ): Promise<ResourceRow<F, R>>;
+  count(
+    ctx: DataContext,
+    input?: Pick<ListInput, "filter" | "includeDeleted" | "asof">,
+  ): Promise<number>;
+  /**
+   * Изменённые и удалённые с отметки: `{ updated, removed }`.
+   * `updated` — строки, видимые этому контексту (та же политика, что у чтения);
+   * `removed` — ТОЛЬКО идентификаторы мягко удалённых: содержимое удалённой строки
+   * наружу не идёт, но факт удаления — то, без чего клиент не уберёт её из окна.
+   * Нет `timestamps` — отказ `unsupported`.
+   */
+  changes(
+    ctx: DataContext,
+    input: ChangesInput & { since: string },
+  ): Promise<{ updated: ResourceRow<F, R>[]; removed: readonly unknown[] }>
+  cursor(
+    ctx: DataContext,
+    input?: CursorInput,
+  ): Promise<CursorPage<ResourceRow<F, R>>>;
+  insert(ctx: DataContext, input: unknown): Promise<ResourceRow<F, R>>;
+  update(
+    ctx: DataContext,
+    id: unknown,
+    patch: unknown,
+  ): Promise<ResourceRow<F, R>>;
+  /**
+   * Удалить запись по правилу `delete`. У модели с мягким удалением — метка; `hard: true`
+   * — навсегда (удалённую строку достаёт только тот, кто видит удалённые). Без `chain` —
+   * только эта запись: ссылки на неё других записей — ошибка базы (`conflict`, код
+   * `referenced`). `chain: true` — вместе с цепочкой, как `(await chain(ctx, id)).delete()`,
+   * но без отдельного вызова; ответ — удалённая запись.
+   */
+  delete(ctx: DataContext, id: unknown, options?: { hard?: boolean; chain?: boolean }): Promise<ResourceRow<F, R>>;
+  /** Какие из записей этот ctx может удалить — без удаления; `soft` — удаление по умолчанию мягкое. */
+  canDelete(ctx: DataContext, ids: readonly unknown[]): Promise<{ allowed: unknown[]; soft: boolean }>;
+  /**
+   * Цепочка удаления записи: звенья по ссылкам-принадлежностям (`references.chain`) из
+   * `createDb({ resources })` и права на их удаление — ничего не удаляет. Удаляет
+   * `plan.delete({ hard })`. Выключенное у экземпляра (`without`, `raw`) переходит на звенья.
+   */
+  chain(ctx: DataContext, id: unknown): Promise<import("./chain").ChainPlan>;
+  /**
+   * Снять метку мягкого удаления. Нужны право `readDeleted` (иначе `forbidden`) и
+   * политика `restore` (нет — `delete`); строка не удалена или не видна — `not_found`.
+   * Хукам записи это `update`. Без мягкого удаления — `unsupported`.
+   */
+  restore(ctx: DataContext, id: unknown): Promise<ResourceRow<F, R>>;
+  /**
+   * Проверка без записи как Standard Schema — для форм, которые ничего не пишут
+   * (вход, сброс пароля): `createFormHandler({ schema: users.validator(ctx, 'check') })`.
+   * Проверяет поля ресурса, которые есть во входе (чужие ключи формы пропускает), и
+   * `checks`. `insert`/`update` — как настоящая запись: права на поля, у `insert` —
+   * обязательные поля. `check` — только значения и `checks`, без прав и обязательности.
+   * Ошибки — issues с `path: [поле]` и кодом; сбой БД — исключение, не issue.
+   */
+  validator(
+    ctx: DataContext,
+    operation: "insert" | "update" | "check",
+  ): StandardSchemaV1<unknown, Row>;
+  /**
+   * Пакетная вставка одним `INSERT … VALUES (…), (…)`: проверка каждой строки идёт
+   * тем же путём, что и у `insert`, но Round-trip один (на chunk). Хуки/`validateFinal`
+   * с ним сочетаться не могут (проверка результата требует построчности) → `unsupported`.
+   */
+  insertMany(
+    ctx: DataContext,
+    rows: readonly unknown[],
+    options?: {
+      onConflictIgnore?: boolean;
+      chunkSize?: number;
+      /**
+       * Больше одного чанка — только атомарно. На транспорте без транзакций
+       * (`capabilities.transactions === false`) это `unsupported`, а не тихая
+       * последовательная вставка.
+       */
+      atomic?: boolean;
+    },
+  ): Promise<ResourceRow<F, R>[]>;
+  /**
+   * Оценка числа строк для UI-пагинатора. Когда пользователю видна вся таблица
+   * (нет фильтра, политика без условий, удалённые строки не скрыты) — статистика
+   * планировщика (`reltuples`), иначе `Plan Rows` из `EXPLAIN` с предикатом политики
+   * (без выполнения запроса). Проверки прав — как у `count`.
+   * `exact: true` только когда посчитали реально.
+   */
+  estimate(
+    ctx: DataContext,
+    input?: Pick<ListInput, "filter" | "includeDeleted">,
+  ): Promise<{ rows: number; exact: boolean; method: "reltuples" | "explain" | "count" }>;
+  /**
+   * Временный экземпляр без части автоматики: `fn` получает ту же модель, собранную из
+   * описания с `null` по путям схемы (`'timestamps.updatedAt'`, `'policy'`, `'grants'`,
+   * `'hooks'`, `'fields.*.store'`, `'protect'`, …). Остальной код модель не теряет. Путь,
+   * которого у модели нет, — `validation`. Вложенный `without` складывает пути. Таблицу
+   * клон не описывает: синхронизация схемы идёт только по исходной модели.
+   */
+  without<T>(paths: readonly string[], fn: (api: ResourceApi<F, R>) => T | Promise<T>): Promise<T>;
+  /** Что модель делает сама и что у этого экземпляра выключено. */
+  behavior(): ModelBehavior;
+  /**
+   * Сырой экземпляр: что передали, то и записано; чтение — все строки и поля, без хуков и
+   * белых списков. Остаются имена полей → колонки (неизвестное — `validation`), параметры
+   * SQL, транзакция, отмена. `cursor`, `restore`, `estimate`, `validator`, `include` —
+   * `unsupported`.
+   */
+  raw<T>(fn: (api: ResourceApi<F, R>) => T | Promise<T>): Promise<T>;
+}
+/** Поведение модели (`behavior()`): метки времени, что умеет опрос, что выключено. */
+export interface ModelBehavior {
+  readonly timestamps: Readonly<{ createdAt?: string; updatedAt?: string; deletedAt?: string }>;
+  readonly live: LiveCapabilities;
+  /** Выключенные пути (`without`), по порядку. */
+  readonly off: readonly string[];
+  /** Сырой экземпляр (`raw`): выключено всё. */
+  readonly raw: boolean;
+}
+export interface CursorCodec {
+  encode(scope: unknown, values: readonly unknown[]): Promise<string>;
+  decode(token: string, scope: unknown): Promise<readonly unknown[]>;
+  decodeMeta?(
+    token: string,
+    scope: unknown,
+  ): Promise<{ readonly values: readonly unknown[]; readonly issuedAt: string }>;
+}
+export interface Database {
+  readonly driver: Driver;
+  readonly limits: Readonly<Limits>;
+  readonly cursorCodec?: CursorCodec;
+  query<T extends Row = Row>(statement: Statement): Promise<QueryResult<T>>;
+  resource<F extends Fields, R extends Relations = {}>(
+    descriptor: Resource<F, R>,
+  ): ResourceApi<F, R>;
+  transaction<T>(
+    fn: (tx: Database) => Promise<T>,
+    options?: TxOptions,
+  ): Promise<T>;
+  afterCommit(fn: () => void | Promise<void>): Promise<void>;
+  guard<T>(fn: () => Promise<T>): Promise<T>;
+}

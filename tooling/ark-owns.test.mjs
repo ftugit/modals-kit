@@ -83,8 +83,8 @@ function walk(dir, acc = []) {
   return acc
 }
 
-test('src/lib/modals не содержит того, что должен брать Ark', () => {
-  const files = walk('src/lib/modals')
+test('src/core/lib/modals не содержит того, что должен брать Ark', () => {
+  const files = walk('src/core/lib/modals')
   assert.ok(files.length > 0, 'нечего проверять — путь изменился?')
   const problems = []
   for (const file of files) {

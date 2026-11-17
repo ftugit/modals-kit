@@ -18,7 +18,17 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-const UI_DIR = 'src/content/user/ui'
+// Все UI-части модулей: правило про адрес отзыва/переименования живёт в
+// `sessions`, а не только в `base`; `blocks`/`accounts`/`storage-servers`
+// строят свои адреса по тому же принципу.
+const UI_DIRS = [
+  'src/modules/user/base/svelte',
+  'src/modules/user/profile/svelte',
+  'src/modules/user/sessions/svelte',
+  'src/modules/user/blocks/svelte',
+  'src/modules/user/accounts/svelte',
+  'src/modules/storage-servers/ui',
+]
 
 /** Признаки строки, которая правит состав набора. */
 const SET_RE = /filter\(|normalize|subjects|uids|continue/i
@@ -76,7 +86,7 @@ function uiSources() {
       }
     }
   }
-  walk(UI_DIR)
+  for (const dir of UI_DIRS) walk(dir)
   return files
 }
 

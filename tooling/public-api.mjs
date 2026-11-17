@@ -1,5 +1,5 @@
 /**
- * public-api — у каждого пакета `src/lib/<pkg>` есть ОБЪЯВЛЕННЫЙ вход, и
+ * public-api — у каждого пакета `src/core/lib/<pkg>` есть ОБЪЯВЛЕННЫЙ вход, и
  * снаружи пакета видно только его.
  *
  * Зачем это отдельно от `layer-guard` и `core-purity`:
@@ -12,8 +12,8 @@
  *     не предупредит.
  *
  * Правило ровно одно и проверяется буквально:
- *   импорт `#lib/<pkg>/<rest>` из файла ВНЕ `src/lib/<pkg>/` допустим, только
- *   если `<rest>` объявлен в `src/lib/<pkg>/entrypoints.json`.
+ *   импорт `#lib/<pkg>/<rest>` из файла ВНЕ `src/core/lib/<pkg>/` допустим, только
+ *   если `<rest>` объявлен в `src/core/lib/<pkg>/entrypoints.json`.
  *
  * Объявление живёт рядом с кодом пакета, а не в этом файле: переносишь пакет —
  * переносишь и его контракт. Манифеста нет — снаружи виден только `index.js`.
@@ -114,11 +114,13 @@ export function entryExists(pkgDir, entry) {
  * @returns {{ pkg: string, rest: string, importer: string } | null} нарушение
  */
 export function checkSpecifier(spec, importer, manifests) {
-  if (!spec.startsWith('#lib/')) return null
-  const [, pkg, ...tail] = spec.split('/')
+  // Ядро живёт на `#core/lib/*`; `#lib/*` остаётся временным шимом (этап 7 плана).
+  const prefix = spec.startsWith('#core/lib/') ? '#core/lib/' : spec.startsWith('#lib/') ? '#lib/' : null
+  if (!prefix) return null
+  const [pkg, ...tail] = spec.slice(prefix.length).split('/')
   const rest = tail.join('/') || 'index.js'
   // Внутри своего пакета — любая глубина: это его собственное устройство.
-  if (importer.startsWith(`src/lib/${pkg}/`)) return null
+  if (importer.startsWith(`src/core/lib/${pkg}/`)) return null
   const allowed = manifests[pkg]
   if (!allowed) return null // пакета нет — пусть падает резолв, а не наш страж
   if (allowed.includes(rest)) return null
@@ -131,7 +133,7 @@ export function checkSpecifier(spec, importer, manifests) {
  * @returns {{ violations: { pkg: string, rest: string, importer: string }[], manifests: Record<string, string[]>, lies: { pkg: string, entry: string }[] }}
  */
 export function checkTree(root) {
-  const libDir = join(root, 'src', 'lib')
+  const libDir = join(root, 'src', 'core', 'lib')
   /** @type {Record<string, string[]>} */
   const manifests = {}
   /** @type {{ pkg: string, entry: string }[]} */
@@ -173,7 +175,7 @@ export function formatReport(result) {
 
   if (lies.length) {
     out.push('[public-api] Манифест входа указывает в пустоту:')
-    for (const lie of lies) out.push(`    src/lib/${lie.pkg}/entrypoints.json → ${lie.entry}`)
+    for (const lie of lies) out.push(`    src/core/lib/${lie.pkg}/entrypoints.json → ${lie.entry}`)
     out.push('  Вход, которого нет, хуже отсутствующего: он обещает контракт и молча не отдаёт его.')
     out.push('')
   }
@@ -200,8 +202,8 @@ export function formatReport(result) {
     out.push('    • символ принадлежит внешнему контракту пакета → экспортируй его из `index.ts`')
     out.push('      (или из другого УЖЕ объявленного входа) и импортируй оттуда;')
     out.push('    • модуль — отдельная платформенная точка (svelte / sveltekit / node / адаптер)')
-    out.push('      → объяви её в `src/lib/<pkg>/entrypoints.json`;')
-    out.push('    • импорт из другого пакета `src/lib/*` — то же правило: пакеты общаются входами.')
+    out.push('      → объяви её в `src/core/lib/<pkg>/entrypoints.json`;')
+    out.push('    • импорт из другого пакета `src/core/lib/*` — то же правило: пакеты общаются входами.')
     out.push('')
   }
   return out.join('\n')

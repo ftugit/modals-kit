@@ -9,7 +9,7 @@ import { exclusiveReset } from './db-exclusive-lib.mjs'
 // Только по явному opt-in и только локальный тестовый кластер. Создаётся и
 // удаляется новая БД со случайным именем; существующие БД не модифицируются.
 // Пытается взять блокировку синхронизации схемы ровно тем выражением, что и
-// src/lib/db/sync/index.ts: pg_advisory_xact_lock(hashtext(kit)::bigint).
+// src/core/lib/db/sync/index.ts: pg_advisory_xact_lock(hashtext(kit)::bigint).
 async function probeLock(connectionString) {
   const client = new pg.Client({ connectionString })
   await client.connect()

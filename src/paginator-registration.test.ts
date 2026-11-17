@@ -6,8 +6,8 @@ const demoDefinitions = import.meta.glob('./routes/**/paginator/definition.ts')
 
 test('загрузка форм на холодном процессе регистрирует известные поисковые списки', async () => {
   vi.resetModules()
-  const { createComponentFormsHandle, ensureComponentFormsLoaded } = await import('#hooks/component-form/server.server.js')
-  const { hasPaginator } = await import('#lib/paginate/index.js')
+  const { createComponentFormsHandle, ensureComponentFormsLoaded } = await import('#core/hooks/component-form/server.server.js')
+  const { hasPaginator } = await import('#core/lib/paginate/index.js')
   expect(hasPaginator('user-blocks')).toBe(false)
   expect(hasPaginator('seed-users')).toBe(false)
   createComponentFormsHandle(forms)

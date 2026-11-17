@@ -48,19 +48,19 @@ export function checkSource(source, file) {
     if (LITERAL_RE.test(line)) {
       problems.push(
         `${file}:${i + 1}: адрес журнала вшит строкой — берите sessionsJournalRoute.href() ` +
-          '(реестр `src/content/user/routes.ts`); вшитый путь расходится с роутом при его правке',
+          '(реестр `src/modules/user/base/routes.ts`); вшитый путь расходится с роутом при его правке',
       )
     }
     if (SESSIONS_LITERAL_RE.test(line) || ACCOUNT_SESSIONS_TEMPLATE_RE.test(line)) {
       problems.push(
         `${file}:${i + 1}: адрес списка сессий вшит строкой — берите userSessionsRoute.href() ` +
-          'или userAccountSessionsRoute.href({ id }) (реестр `src/content/user/routes.ts`)',
+          'или userAccountSessionsRoute.href({ id }) (реестр `src/modules/user/base/routes.ts`)',
       )
     }
     if (INLINE_RE.test(line)) {
       problems.push(
         `${file}:${i + 1}: цель журнала разбирается на месте — берите явный параметр journal и sessionsFiltersTarget(uid, journal) ` +
-          '(`src/content/user/ui/sessions-list/source.ts`), иначе признак журнала живёт в двух местах',
+          '(`src/modules/user/base/svelte/sessions-list/source.ts`), иначе признак журнала живёт в двух местах',
       )
     }
   })
@@ -85,9 +85,9 @@ export function checkDir(dir = SRC_DIR) {
       if (!/\.(ts|svelte)$/.test(name)) continue
       // Тесты намеренно пишут строку, которую страж запрещает.
       if (/\.test\./.test(name)) continue
-      if (path.endsWith(join('content', 'user', 'routes.ts'))) continue
+      if (path.endsWith(join('modules', 'user', 'base', 'routes.ts'))) continue
       if (path.endsWith(join('sessions-list', 'source.ts'))) continue
-      if (path.endsWith(join('content', 'user', 'types.ts'))) continue
+      if (path.endsWith(join('modules', 'user', 'base', 'types.ts'))) continue
       out.push(...checkSource(readFileSync(path, 'utf8'), path))
     }
   }

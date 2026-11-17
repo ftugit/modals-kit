@@ -9,14 +9,18 @@
   // `(modals-demo)` вкладывает СВОЙ хост (demoScope) в этот: чужие имена
   // каждый хост пропускает (`foreignNames: 'skip'`) — страница /modals
   // показывает и глобальные, и демо-модалки из одной цепочки адреса.
-  import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { globalScope } from '#lib/modals/index.js'
+  import { visibleAddress } from '#core/lib/address/sveltekit.js'
+  import { globalScope } from '#core/lib/modals/index.js'
 
   // Автоподхват глобальных модалок всех установленных модулей (`user`, `storage-servers`, опциональные модули).
-  import.meta.glob('../../content/*/modals.ts', { eager: true })
-  import ModalSystem from './ModalSystem.svelte'
-  import { NAV_ITEMS } from './nav'
-  import { AppShell, useHeaderSlot, useSidebarSlot } from '#components/shell/index.js'
+  import.meta.glob('/src/modules/**/modals.ts', { eager: true })
+  // Расширения базового UI: шаг профиля во входе и шаг сессий в настройках.
+  // Нет субмодуля — нет записи в реестре, и база не тянет его компоненты.
+  import.meta.glob('/src/modules/**/auth.ext.ts', { eager: true })
+  import.meta.glob('/src/modules/**/config.ext.ts', { eager: true })
+  import ModalSystem from '#core/app/ModalSystem.svelte'
+  import { NAV_ITEMS } from '#core/app/nav.js'
+  import { AppShell, useHeaderSlot, useSidebarSlot } from '#core/ui/shell/index.js'
   import {
     LogoSlot,
     NavSlot,
@@ -26,9 +30,9 @@
     SidebarNav,
     SidebarUser,
     SidebarFooter,
-  } from '#components/shell/ui/index.js'
-  import UserMenu from '#content/user/ui/UserMenu.svelte'
-  import { vault } from '#content/user/vault.svelte.js'
+  } from '#core/ui/shell/ui/index.js'
+  import UserMenu from '#modules/user/base/svelte/UserMenu.svelte'
+  import { vault } from '#modules/user/base/svelte/vault.svelte.js'
 
   let { children, data } = $props()
 

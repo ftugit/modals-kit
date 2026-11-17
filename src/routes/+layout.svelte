@@ -5,11 +5,11 @@
   //     (app)/           — страницы с глобальной модальной системой;
   //     (modals-demo)/   — /modals со своей областью и носителями;
   //   cycle/, spike/     — вне каркаса, со своими модальными системами.
-  import favicon from '#lib/assets/favicon.svg'
-  import { appErrors } from '#hooks/app-errors.svelte.js'
-  import Error500 from '#components/Error500.svelte'
-  import { LoaderBar } from '#components/loader/index.js'
-  import { setPageContext, PageHead } from '#components/shell/index.js'
+  import favicon from '#core/lib/assets/favicon.svg'
+  import { appErrors } from '#core/hooks/app-errors.svelte.js'
+  import Error500 from '#core/ui/errors/Error500.svelte'
+  import { LoaderBar } from '#core/ui/loader/index.js'
+  import { setPageContext, PageHead } from '#core/ui/shell/index.js'
   import 'virtual:uno.css'
   import '../app.css'
 

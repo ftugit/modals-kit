@@ -1,15 +1,15 @@
 // Серверная точка апгрейда `GET /api/form-upload` → `WebSocket` для потоковых форм с файлами.
 import { WS_UPLOAD_CHUNK_SIZE, WS_UPLOAD_MAX_DURATION, WS_UPLOAD_TTL_SECONDS, WS_UPLOAD_IDLE_SECONDS, WS_UPLOAD_RATE_BUDGET_BYTES_PER_SECOND, WS_UPLOAD_PAUSE_MAX_SECONDS } from '$app/env/private'
 import type { RequestHandler } from './$types'
-import { DEFAULT_LIMITS } from '#lib/form/server.js'
-import { originGuard } from '#server/form-security.server.js'
-import { detectWsUploadPlatform, upgradeWs } from '#server/ws-upgrade.server.js'
+import { DEFAULT_LIMITS } from '#core/lib/form/server.js'
+import { originGuard } from '#core/server/form-security.server.js'
+import { detectWsUploadPlatform, upgradeWs } from '#core/server/ws-upgrade.server.js'
 import {
   clampWsChunkBytes,
   computeWsMaxPayloadBytes,
-} from '#hooks/component-form/ws-protocol.js'
-import { handleFormUploadWs } from '#hooks/component-form/ws-session.server.js'
-import { DEFAULT_UPLOAD_IDLE_MS, DEFAULT_UPLOAD_TTL_MS, validateUploadConfiguration } from '#hooks/component-form/ws-lifetime.server.js'
+} from '#core/hooks/component-form/ws-protocol.js'
+import { handleFormUploadWs } from '#core/hooks/component-form/ws-session.server.js'
+import { DEFAULT_UPLOAD_IDLE_MS, DEFAULT_UPLOAD_TTL_MS, validateUploadConfiguration } from '#core/hooks/component-form/ws-lifetime.server.js'
 
 validateUploadConfiguration((WS_UPLOAD_TTL_SECONDS ?? DEFAULT_UPLOAD_TTL_MS / 1000) * 1000, (WS_UPLOAD_IDLE_SECONDS ?? DEFAULT_UPLOAD_IDLE_MS / 1000) * 1000, WS_UPLOAD_MAX_DURATION == null ? null : WS_UPLOAD_MAX_DURATION * 1000)
 

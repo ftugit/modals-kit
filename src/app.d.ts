@@ -1,19 +1,19 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
-import type { DataContext, Database } from '#lib/db/index.js'
-import type { Result } from '#lib/form/index.js'
+import type { DataContext, Database } from '#core/lib/db/index.js'
+import type { Result } from '#core/lib/form/index.js'
 
 declare global {
 	namespace App {
 		/**
-		 * Навешивает `#lib/db/sveltekit/index.js` → `dbHandle`. Типы здесь, а не в
+		 * Навешивает `#core/lib/db/sveltekit/index.js` → `dbHandle`. Типы здесь, а не в
 		 * хуке: `locals.db` должен быть типизирован во всех +page.server.ts, иначе
 		 * «доверенный контекст» превращается в `any`.
 		 */
 		interface Locals {
 			db: Database
 			dbCtx: DataContext
-			/** Контекст запроса, проверенный `guard` (`#server/actor.server.js`); промис — мемо на запрос. */
+			/** Контекст запроса, проверенный `guard` (`#modules/user/base/service/actor.server.js`); промис — мемо на запрос. */
 			actor?: Promise<DataContext>
 			formResult?: Result | null
 			/** Проверенные по токену метаданные edge; User-Agent по-прежнему задаётся клиентом. IP — только через getClientAddress(). */
@@ -23,7 +23,7 @@ declare global {
 		// interface PageData {}
 		/**
 		 * Состояние записи истории (`goto(…, { shallow: true, state })`, `page.state`). Модалки хранят своё
-		 * под ключом `modals` (`STATE_KEY`, `#lib/modals/build.ts`) и СЛИВАЮТ его с чужими ключами
+		 * под ключом `modals` (`STATE_KEY`, `#core/lib/modals/build.ts`) и СЛИВАЮТ его с чужими ключами
 		 * записи, а не затирают, — поэтому форма открытая: словарь, а не фиксированный набор полей.
 		 */
 		interface PageState {

@@ -1,0 +1,52 @@
+<script lang="ts">
+  /**
+   * Карточка устройства в модалке (`user.session`). Данные — тот же `load`,
+   * что у `/user/sessions/<id>` (с `uid` — у `/user/[id]/sessions/[sessionId]`).
+   * Пока их нет, оболочку не рисуем: скелетон ядра остаётся на время загрузки,
+   * пустой кадр не подменяем своим.
+   */
+  import { useLoader, useModal } from '#core/lib/modals/svelte/index.js'
+  import { Surface } from '#core/ui/index.js'
+  import type { AuthErrorCode } from '#modules/user/base/model/error.js'
+  import type { SessionDetail } from '#modules/user/base/model/types.js'
+  import { userAccountSessionRoute, userAccountSessionsRoute, userSessionRoute, userSessionsRoute } from '#modules/user/base/routes.js'
+  import Acl from '#modules/user/base/svelte/Acl.svelte'
+  import SessionCard from './SessionCard.svelte'
+
+  interface CardLoaderData {
+    enabled: boolean
+    fact: AuthErrorCode | null
+    detail: SessionDetail | null
+    notice: 'rename-failed' | null
+  }
+
+  const ldr = useLoader<CardLoaderData>()
+  const modal = useModal<{ id?: string; uid?: string }>()
+  // Возврат — в список той же цели: устройство чужого аккаунта уходит в
+  // `/user/[id]/sessions`, а не в свой список.
+  const uid = $derived(modal.params?.uid ? String(modal.params.uid) : null)
+  const backHref = $derived(uid ? userAccountSessionsRoute.href({ id: uid }) : userSessionsRoute.href())
+  const sessionId = $derived(modal.params?.id ? String(modal.params.id) : (ldr.data?.detail?.session.id ?? ''))
+  const actionHref = $derived(
+    uid && sessionId
+      ? `${userAccountSessionRoute.href({ id: uid, sessionId })}?/rename`
+      : sessionId
+        ? `${userSessionRoute.href({ id: sessionId })}?/rename`
+        : undefined,
+  )
+</script>
+
+<Surface variant="plain" class="w-full p-6" title="Устройство">
+  {#if ldr.data && (ldr.data.enabled === false || ldr.data.fact || !ldr.data.detail)}
+    <Acl status={ldr.data.fact} enabled={ldr.data.enabled} {backHref} variant="plain" />
+  {:else if ldr.data?.detail}
+    <SessionCard
+      detail={ldr.data.detail}
+      notice={ldr.data.notice}
+      {backHref}
+      {actionHref}
+      {uid}
+      mode="modal"
+    />
+  {/if}
+</Surface>

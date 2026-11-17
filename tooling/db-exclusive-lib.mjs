@@ -5,7 +5,7 @@ const quote = (value) => `"${value.replaceAll('"', '""')}"`
 
 /**
  * Ключ блокировки синхронизации схемы. Совпадает с тем, что берёт
- * `src/lib/db/sync/index.ts`: `hashtext(kit)::bigint`, где `kit` — это
+ * `src/core/lib/db/sync/index.ts`: `hashtext(kit)::bigint`, где `kit` — это
  * `(spec.table ?? 'public.kit_schema')`, пропущенное через `ident()`
  * (`'"' + s + '"'`), то есть ровно `"public"."kit_schema"`.
  *

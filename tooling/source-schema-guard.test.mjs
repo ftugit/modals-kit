@@ -40,7 +40,7 @@ test('ключ фильтра в компоненте — ошибка', () => {
 })
 
 test('локальные исключения кодов ошибок не скрывают одноимённые ключи фильтров в компонентах', () => {
-  const file = 'src/content/user/ui/filter-messages.ts'
+  const file = 'src/modules/user/base/svelte/filter-messages.ts'
   const component = 'src/routes/(site)/(app)/paginator/CatalogDemo.svelte'
   for (const name of ['range', 'size', 'value']) {
     const literal = `const code = 'filters.${name}'`
@@ -54,7 +54,7 @@ test('локальные исключения кодов ошибок не ск�
 
 test('ключ фильтра в объявлении и в серверной зоне — норма', () => {
   assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/filters.ts', `const k = 'filters.kind'`), [])
-  assert.deepEqual(checkSource('src/lib/paginate/filters/values.ts', `const p = 'filters.genres.and'`), [])
+  assert.deepEqual(checkSource('src/core/lib/paginate/filters/values.ts', `const p = 'filters.genres.and'`), [])
   assert.deepEqual(checkSource('src/content/demo-catalog/shikimori/filters.server.ts', `drop: 'filters.score.max'`), [])
 })
 
@@ -105,7 +105,7 @@ test('тесты и сами инструменты правилам не под
 
 test('модуль фильтров не тянет фреймворк и серверную зону', () => {
   const impure = checkSource(
-    'src/lib/paginate/filters/values.ts',
+    'src/core/lib/paginate/filters/values.ts',
     `import { page } from '$app/state'\nimport { fetchAnimes } from '#content/demo-catalog/shikimori/shikimori.server.js'`,
   )
   assert.equal(impure.length, 2)
@@ -113,7 +113,7 @@ test('модуль фильтров не тянет фреймворк и сер
 })
 
 test('модуль фильтров не трогает среду', () => {
-  const problems = checkSource('src/lib/paginate/filters/form.ts', `const v = window.location.search\nawait fetch('/api')\n`)
+  const problems = checkSource('src/core/lib/paginate/filters/form.ts', `const v = window.location.search\nawait fetch('/api')\n`)
   assert.equal(problems.length, 2)
   assert.match(problems[0].why, /адаптер/)
 })
@@ -124,7 +124,7 @@ test('здоровый модуль фильтров проходит', () => {
     `import { catalogFilterFieldNames } from './catalog-filter'`,
     `export const names = (field) => catalogFilterFieldNames(field)`,
   ].join('\n')
-  assert.deepEqual(checkSource('src/lib/paginate/filters/form.ts', src), [])
+  assert.deepEqual(checkSource('src/core/lib/paginate/filters/form.ts', src), [])
 })
 
 test('импорты разбираются вместе с `export … from`', () => {
@@ -157,7 +157,7 @@ test('в проекте нет нарушений границы «схема ж
 
 test('граница не фиктивна: зоны, которые защищаются, существуют', () => {
   const files = walk('src').map((file) => relative('.', file))
-  assert.ok(files.some((f) => f.startsWith('src/lib/paginate/filters/')), 'нет модуля фильтров')
+  assert.ok(files.some((f) => f.startsWith('src/core/lib/paginate/filters/')), 'нет модуля фильтров')
   if (files.some((f) => f.startsWith('src/content/demo-catalog/'))) {
     assert.ok(files.includes('src/content/demo-catalog/shikimori/schema.server.ts'), 'нет зоны схемы')
     assert.ok(files.includes('src/content/demo-catalog/shikimori/filters.ts'), 'нет общего объявления ключей')

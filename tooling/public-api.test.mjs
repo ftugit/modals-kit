@@ -60,14 +60,14 @@ test('объявленный вход — не нарушение, из любо
 })
 
 test('необъявленный вход внутри пакета — нарушение', () => {
-  const bad = checkSpecifier('#lib/db/sync/plan.js', 'src/hooks/db-schema.ts', MANIFESTS)
-  assert.deepEqual(bad, { pkg: 'db', rest: 'sync/plan.js', importer: 'src/hooks/db-schema.ts' })
+  const bad = checkSpecifier('#lib/db/sync/plan.js', 'src/core/hooks/db-schema.ts', MANIFESTS)
+  assert.deepEqual(bad, { pkg: 'db', rest: 'sync/plan.js', importer: 'src/core/hooks/db-schema.ts' })
 })
 
 test('внутри своего пакета глубина — личное дело пакета', () => {
-  assert.equal(checkSpecifier('#lib/db/sync/plan.js', 'src/lib/db/sync/index.ts', MANIFESTS), null)
+  assert.equal(checkSpecifier('#lib/db/sync/plan.js', 'src/core/lib/db/sync/index.ts', MANIFESTS), null)
   // Другой пакет нижнего слоя — уже снаружи: библиотеки общаются входами.
-  assert.ok(checkSpecifier('#lib/db/sync/plan.js', 'src/lib/form/index.ts', MANIFESTS))
+  assert.ok(checkSpecifier('#lib/db/sync/plan.js', 'src/core/lib/form/index.ts', MANIFESTS))
 })
 
 test('пакеты вне `#lib/*` и неизвестные пакеты не трогаем', () => {
@@ -132,6 +132,6 @@ test('страж не фиктивен: пакеты и входы сущест�
   for (const pkg of ['address', 'cache', 'db', 'fetch', 'form', 'image', 'modals', 'paginate', 'task']) {
     assert.ok(manifests[pkg]?.length, `у пакета ${pkg} нет объявленного входа`)
     assert.ok(manifests[pkg].includes('index.js'), `у пакета ${pkg} нет index.js`)
-    assert.ok(existsSync(join('src', 'lib', pkg, 'entrypoints.json')), `нет манифеста ${pkg}`)
+    assert.ok(existsSync(join('src', 'core', 'lib', pkg, 'entrypoints.json')), `нет манифеста ${pkg}`)
   }
 })

@@ -56,8 +56,8 @@ const README = [
   '',
   '| Экспорт | Что |',
   '|---|---|',
-  "| `#lib/db/index.js` | `createDb`, `DbFailure`, `conservativeLimits` |",
-  '| `#lib/db/schema.js` | `s`, `make` |',
+  "| `#core/lib/db/index.js` | `createDb`, `DbFailure`, `conservativeLimits` |",
+  '| `#core/lib/db/schema.js` | `s`, `make` |',
   '',
   '| kind | 422 | 403 | 404 |',
   '|---|---|---|---|',
@@ -68,7 +68,7 @@ const README = [
 test('parseApiTable игнорирует соседние таблицы: только спецификаторы модулей', () => {
   const rows = parseApiTable(README)
   assert.equal(rows.size, 2)
-  assert.deepEqual(rows.get('#lib/db/index.js'), ['createDb', 'DbFailure', 'conservativeLimits'])
+  assert.deepEqual(rows.get('#core/lib/db/index.js'), ['createDb', 'DbFailure', 'conservativeLimits'])
 })
 
 test('общая строка матрицы даёт свой статус каждому из перечисленных kind', () => {
@@ -96,7 +96,7 @@ test('аудит ловит импорт старого пакета и обхо
     appFiles: [
       { file: 'src/x.ts', text: "import { createDb } from '@ftugit/kit-db/sveltekit'" },
       { file: 'src/y.ts', text: "import { db } from '../../lib/db/sveltekit'" },
-      { file: 'src/ok.ts', text: "import { db } from '#lib/db/sveltekit/index.js'" },
+      { file: 'src/ok.ts', text: "import { db } from '#core/lib/db/sveltekit/index.js'" },
     ],
   })
   assert.ok(problems.some((p) => p.includes('src/x.ts') && p.includes('старого пакета')), problems.join('\n'))
@@ -110,7 +110,7 @@ test('аудит ругается на обещанный в README экспор
     porting: '',
     sources: Object.fromEntries(Object.values(ENTRIES).map((f) => [f, 'export const createDb = 1'])),
   })
-  assert.ok(problems.some((p) => p.includes('#lib/db/index.js → DbFailure')), problems.join('\n'))
+  assert.ok(problems.some((p) => p.includes('#core/lib/db/index.js → DbFailure')), problems.join('\n'))
   assert.ok(problems.some((p) => p.includes('не описан в таблице API')), problems.join('\n'))
 })
 
@@ -183,10 +183,10 @@ test('итог групп — отдельное число в контекст�
 
 test('аудит ловит ссылку на несуществующий файл, если вызывающий подтверждает отсутствие', () => {
   const problems = auditDocs({
-    readme: README + '\nСм. `src/lib/db/query/missing.ts`.\n',
-    porting: 'Путь `src/lib/db/index.ts` жив, `src/lib/db/nope.ts` — нет.',
+    readme: README + '\nСм. `src/core/lib/db/query/missing.ts`.\n',
+    porting: 'Путь `src/core/lib/db/index.ts` жив, `src/core/lib/db/nope.ts` — нет.',
     sources: { 'index.ts': 'export const createDb = 1; export const s = 1; export const make = 1; export const DbFailure = 1; export const conservativeLimits = 1' },
-    exists: (rel) => rel === 'src/lib/db/index.ts',
+    exists: (rel) => rel === 'src/core/lib/db/index.ts',
   })
   assert.ok(problems.some((p) => p.includes('query/missing.ts')), problems.join('\n'))
   assert.ok(problems.some((p) => p.includes('db/nope.ts')), problems.join('\n'))

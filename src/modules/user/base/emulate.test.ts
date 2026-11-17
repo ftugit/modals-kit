@@ -1,0 +1,769 @@
+/**
+ * Тела API над адаптерами на памяти. Проверяются ПРАВИЛА, не транспорт:
+ * единый вход, блокировки, фаервол (статусы), ротация/усыновление продления,
+ * выходы, отзыв, профиль с доменными запретами, заявка на удаление с грейсом.
+ * Крипто — настоящая (`keys.ts`, Ed25519); запечатывание — подставка (JSON+base64):
+ * формат железа проверяется в e2e, здесь важен контракт порта.
+ */
+import { describe, expect, test } from 'vitest'
+import { PGlite } from '@electric-sql/pglite'
+import { conservativeLimits, createDb } from '#core/lib/db/index.js'
+import { pgliteAdapter } from '#core/lib/db/adapters/pglite.js'
+import { defineSchema } from '#core/lib/db/sync/index.js'
+import { memoryStore } from '#core/lib/cache/index.js'
+import { getEncoder } from '#core/lib/image/index.js'
+import { ensureNodeImageCodecs as ensureWasm } from '#core/lib/image/node.js'
+import { generateKeyPair, sign } from './service/keys.js'
+import {
+  SERVER, activeBlocks, fullBlock, guard, issueChallenge, issueFreshAccess, login, logout,
+  logoutAll, renew, requestDelete, restoreDeleted, statusOf, subnetHash,
+  sweepDeletions, verifySeed, type UserResult,
+} from './service/auth.js'
+import { profile, updateProfile } from '#modules/user/profile/service/profile.js'
+import { auth as authResource, session as sessionResource } from './model/schema.js'
+import { listSessionsPage, readSessionDetail, revokeSessionById } from '#modules/user/sessions/service/sessions.server.js'
+import type { AuthFact } from './model/error.js'
+import type { AuthPorts, AuthRow } from './service/ports.js'
+import type { Blocked, ProfileView, SessionRecord } from './model/types.js'
+
+/* ── адаптеры на памяти ── */
+
+function makePorts(seedSecret?: string): {
+  ports: AuthPorts
+  secret: string
+  auths: Map<string, AuthRow & { blocked: Blocked[] }>
+  sessions: Map<string, SessionRecord>
+  profiles: Map<string, ProfileView>
+} {
+  const store = memoryStore()
+  const auths = new Map<string, AuthRow & { blocked: Blocked[] }>()
+  const sessions = new Map<string, SessionRecord>()
+  const profiles = new Map<string, ProfileView>()
+  const secret = seedSecret ?? 's'.repeat(32)
+
+  const ports: AuthPorts = {
+    sessions: {
+      async create(r) {
+        sessions.set(r.jti, { ...r })
+      },
+      async get(jti) {
+        return sessions.get(jti)
+      },
+      async listByAuth(authId) {
+        return [...sessions.values()].filter((r) => r.authId === authId)
+      },
+      async save(r) {
+        sessions.set(r.jti, { ...r })
+      },
+      async softDelete(jti, at) {
+        const r = sessions.get(jti)
+        if (r) sessions.set(jti, { ...r, deletedAt: at })
+      },
+      async softDeleteAllByAuth(authId, at) {
+        for (const [jti, r] of sessions) if (r.authId === authId) sessions.set(jti, { ...r, deletedAt: at })
+      },
+    },
+    auths: {
+      // фейк политики модели: обычный поиск удалённых не видит; unique по
+      // seed покрывает и удалённые строки (конфликт = null)
+      async findBySeed(seed) {
+        return [...auths.values()].find((r) => r.seed === seed && r.deletedAt === null)
+      },
+      async findDeletedBySeed(seed) {
+        return [...auths.values()].find((r) => r.seed === seed && r.deletedAt !== null)
+      },
+      async create(seed) {
+        if ([...auths.values()].some((r) => r.seed === seed)) return null
+        const row = {
+          id: crypto.randomUUID(),
+          seed,
+          deletedAt: null,
+          blocked: [],
+          permissions: [],
+          subnetSalt: crypto.randomUUID().replaceAll('-', ''),
+        }
+        auths.set(row.id, row)
+        return row
+      },
+      async get(_ctx, id, opts) {
+        const row = auths.get(id)
+        if (!row) return undefined
+        if (row.deletedAt != null && !opts?.includeDeleted) return undefined
+        return row
+      },
+      async markDeleted(_ctx, id, at) {
+        const r = auths.get(id)
+        if (r) auths.set(id, { ...r, deletedAt: at })
+      },
+      async clearDeleted(id) {
+        const r = auths.get(id)
+        if (r) auths.set(id, { ...r, deletedAt: null })
+      },
+      async setPermissions(_ctx, id, permissions) {
+        const r = auths.get(id)
+        if (r) auths.set(id, { ...r, permissions: [...permissions] })
+      },
+      async wipeCredentials(id) {
+        const r = auths.get(id)
+        if (r) auths.set(id, { ...r, seed: null, blocked: [] })
+      },
+      async listDeletedBefore(cutoff) {
+        return [...auths.values()].filter((r) => r.deletedAt !== null && r.deletedAt <= cutoff)
+      },
+      async listPage(_ctx, { page, pageSize }: { page: number; pageSize: number }) {
+        const rows = [...auths.values()].map((r) => ({
+          id: r.id,
+          seed: r.seed,
+          permissions: [...r.permissions],
+          blocked: [...r.blocked],
+          createdAt: 0,
+          deletedAt: r.deletedAt,
+        }))
+        return { rows: rows.slice((page - 1) * pageSize, page * pageSize), total: rows.length }
+      },
+    },
+    profiles: {
+      async create(_ctx, authId, patch) {
+        const now = Date.now()
+        profiles.set(authId, { id: authId, authId, nickname: patch.nickname ?? null, avatarUrl: patch.avatarUrl ?? null, createdAt: now, updatedAt: now })
+      },
+      async get(_ctx, authId) {
+        return profiles.get(authId)
+      },
+      async update(_ctx, authId, patch) {
+        const r = profiles.get(authId)
+        if (!r) return
+        profiles.set(authId, { ...r, ...patch, updatedAt: Date.now() })
+      },
+      async remove(_ctx, authId) {
+        profiles.delete(authId)
+      },
+    },
+    sealKeys: {
+      current: () => ({ id: 't', secret }),
+      secretOf: (id) => (id === 't' ? secret : undefined),
+      retire: async () => {},
+    },
+    seal: {
+      async seal(payload, ttlSeconds) {
+        return Buffer.from(JSON.stringify({ ...payload, _ttl: ttlSeconds })).toString('base64url')
+      },
+      async unseal(token) {
+        try {
+          return JSON.parse(Buffer.from(token, 'base64url').toString()) as never
+        } catch {
+          return undefined
+        }
+      },
+    },
+    crypto: {
+      sign: async (payload, sk) => sign(payload, sk),
+      verify: async (payload, signature, seed) => {
+        const { verify } = await import('./service/keys.js')
+        return verify(payload, signature, seed)
+      },
+    },
+    cookies: { get: () => undefined, set: () => {}, delete: () => {} },
+    blocks: {
+      async listByTarget(_ctx: unknown, authId: string) {
+        return (auths.get(authId)?.blocked ?? []).map((b, i) => ({
+          id: `blk-${authId}-${i}`,
+          authId,
+          scope: b.scope,
+          reason: b.reason,
+          at: b.at,
+          until: b.until ?? null,
+          by: b.by ?? null,
+        }))
+      },
+      async listByTargets(_ctx: unknown, ids: readonly string[]) {
+        const out: unknown[] = []
+        for (const id of ids) {
+          for (const [i, b] of (auths.get(id)?.blocked ?? []).entries()) {
+            out.push({ id: `blk-${id}-${i}`, authId: id, scope: b.scope, reason: b.reason, at: b.at, until: b.until ?? null, by: b.by ?? null })
+          }
+        }
+        return out as never[]
+      },
+      async insert(_ctx: unknown, row: { authId: string; scope: string; reason: string; until?: number | null; by: string }) {
+        const r = auths.get(row.authId)
+        if (r) r.blocked = [...r.blocked, { scope: row.scope, reason: row.reason, at: Date.now(), ...(row.until != null ? { until: row.until } : {}), by: row.by }]
+      },
+      async listPage() { return { rows: [], total: 0 } },
+      async getById() { return undefined },
+      async update(_ctx: unknown, id: string, patch: { until?: number | null; reason?: string }) {
+        for (const r of auths.values()) {
+          const i = r.blocked.findIndex((b, j) => `blk-${r.id}-${j}` === id)
+          if (i >= 0) r.blocked = r.blocked.map((b, j) => (j === i ? { ...b, ...(patch.until != null ? { until: patch.until } : {}) } : b))
+        }
+      },
+      async remove() {},
+    },
+    clock: { now: () => Date.now() },
+    config: (() => {
+      // минимальный UserConfig поверх памяти: те же ключи, значения по умолчанию
+      const defaults = {
+        accessTtlSec: 3600,
+        deviceTtlSec: 60 * 60 * 24 * 365,
+        sessionRecreate: 'update',
+        nicknameForbidden: ['admin', 'root'],
+        challengeTtlSec: 120,
+        deleteGraceDays: 30,
+        holdSeconds: 2,
+      } as const
+      return {
+        defaults,
+        get: async (k: keyof typeof defaults) => defaults[k],
+        set: async () => {},
+        reset: async () => {},
+      } as unknown as import('./service/config.js').UserConfig
+    })(),
+    settings: (() => {
+      const rows: import('./model/types.js').ConfigKeyRow[] = []
+      let seq = 0
+      return {
+        async row(_ctx: unknown, authId: string | null, key: string) { return rows.find((r) => r.authId === authId && r.key === key) },
+        async defaults(_ctx: unknown) { return rows.filter((r) => r.authId === null) },
+        async anyUserRow(_ctx: unknown, key: string) { return rows.some((r) => r.authId !== null && r.key === key) },
+        async insert(_ctx: unknown, row: { authId: string | null; key: string; value?: unknown; schema?: import('./model/types.js').ConfigKeySchema | null }) {
+          rows.push({ id: `cfg-${++seq}`, authId: row.authId, key: row.key, value: row.value ?? null, schema: row.schema ?? null })
+        },
+        async update(_ctx: unknown, id: string, patch: { value?: unknown; schema?: import('./model/types.js').ConfigKeySchema | null }) {
+          const r = rows.find((x) => x.id === id)
+          if (!r) return
+          if (patch.value !== undefined) r.value = patch.value
+          if (patch.schema !== undefined) r.schema = patch.schema
+        },
+        async remove(_ctx: unknown, id: string) { const i = rows.findIndex((x) => x.id === id); if (i >= 0) rows.splice(i, 1) },
+        cache: store.scope('settings-fake'),
+      }
+    })(),
+  }
+  return { ports, secret, auths, sessions, profiles }
+}
+
+/** Пройти вход целиком: настоящий seed, настоящий challenge-токен, настоящая подпись. */
+async function doLogin(ports: AuthPorts, seed: string, sk: string) {
+  const challenge = await issueChallenge(ports)
+  if (!challenge.ok) throw new Error('challenge не выдался')
+  const signature = await sign(challenge.value.token, sk)
+  return login(ports, { seed, challenge: challenge.value.token, signature })
+}
+
+/** Подтверждение восстановления: свежий challenge + подпись тем же ключом. */
+async function doRestore(ports: AuthPorts, seed: string, sk: string) {
+  const challenge = await issueChallenge(ports)
+  if (!challenge.ok) throw new Error('challenge не выдался')
+  const signature = await sign(challenge.value.token, sk)
+  return restoreDeleted(ports, { seed, challenge: challenge.value.token, signature })
+}
+
+const ok_ = <T>(r: UserResult<T>): T => {
+  if (!r.ok) throw new Error(`ожидали ok, получили факт: ${r.fact.code}`)
+  return r.value
+}
+const fact_ = <T>(r: UserResult<T>): AuthFact => {
+  if (r.ok) throw new Error('ожидали факт')
+  return r.fact
+}
+
+/* ── проверки ── */
+
+describe('служебные', () => {
+  test('activeBlocks/fullBlock: срок вышел — сферы нет', () => {
+    const now = 1000
+    const list: Blocked[] = [
+      { scope: 'profile', reason: 'спам', at: 0 },
+      { scope: 'auth', reason: 'скам', at: 0, until: 900 },
+      { scope: 'auth', reason: 'блок', at: 0, until: 2000 },
+    ]
+    expect(activeBlocks(list, now)).toHaveLength(2)
+    expect(fullBlock(list, now)?.reason).toBe('блок')
+    expect(fullBlock([], now)).toBeUndefined()
+  })
+
+  test('subnetHash: солёный хэш стабилен и зависит от соли', async () => {
+    expect(await subnetHash('salt', '1.2.3')).toBe(await subnetHash('salt', '1.2.3'))
+    expect(await subnetHash('salt', '1.2.3')).not.toBe(await subnetHash('salt2', '1.2.3'))
+  })
+})
+
+describe('единый вход', () => {
+  test('новый seed — аккаунт создан, токены выданы', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    expect(out.access).toBeTruthy()
+    expect(out.renewal).toBeTruthy()
+    expect(out.restrictions).toEqual([])
+    const row = await ports.auths.findBySeed(seed)
+    expect(row?.subnetSalt).toHaveLength(32)
+  })
+
+  test('тот же seed — тот же аккаунт (вход, не регистрация)', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const first = ok_(await doLogin(ports, seed, sk))
+    const second = ok_(await doLogin(ports, seed, sk))
+    // jti разные — сессии разные; sub один (проверяем через профиль)
+    const s1 = JSON.parse(Buffer.from(first.access, 'base64url').toString()) as { sub: string; dt: string }
+    const s2 = JSON.parse(Buffer.from(second.access, 'base64url').toString()) as { sub: string; dt: string }
+    expect(s1.sub).toBe(s2.sub)
+    expect(s1.dt).not.toBe(s2.dt)
+  })
+
+  test('stateless challenge: плохая подпись токен не сжигает; подделка и чужая привязка — auth.nonce-unknown', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const challenge = ok_(await issueChallenge(ports))
+    const bad = fact_(await login(ports, { seed, challenge: challenge.token, signature: await sign('другое', sk) }))
+    expect(bad.code).toBe('auth.signature')
+    // Токен stateless: та же пара токен+подпись проходит повторно, пока токен
+    // жив (одноразовость внутри срока жизни — сознательно потеряна).
+    ok_(await login(ports, { seed, challenge: challenge.token, signature: await sign(challenge.token, sk) }))
+    // Нераспечатываемый токен (у настоящего seal это и подделка, и просрочка).
+    const forgedFact = fact_(await login(ports, { seed, challenge: 'не-токен', signature: await sign('не-токен', sk) }))
+    expect(forgedFact.code).toBe('auth.nonce-unknown')
+    // Токен, выпущенный для другого поля, входу не подходит.
+    const foreign = await ports.seal.seal({ k: 'challenge', field: 'signature', n: 'x' }, 120)
+    const wrongField = fact_(await login(ports, { seed, challenge: foreign, signature: await sign(foreign, sk) }))
+    expect(wrongField.code).toBe('auth.nonce-unknown')
+  })
+
+  test('блокировка auth: вход закрыт с причиной и сроком', async () => {
+    const { ports, secret, auths } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
+    await ports.auths.markDeleted({ principal: { roles: ['server'] } }, payload.sub, 0) // не блокировка — просто для теста снятия
+    await ports.auths.clearDeleted(payload.sub)
+    // блокируем напрямую через карту адаптера
+    const row = (await ports.auths.get({ principal: { roles: ['server'] } }, payload.sub)) as AuthRow
+    authsPatch(auths, row.id, { blocked: [{ scope: 'auth', reason: 'скам', at: Date.now(), until: Date.now() + 60_000 }] })
+    const blocked = fact_(await doLogin(ports, seed, sk))
+    expect(blocked.code).toBe('auth.blocked')
+    expect(blocked.args?.reason).toBe('скам')
+  })
+
+  test('заявка на удаление: вход НЕ авторизует — факт auth.deleted, токенов нет', async () => {
+    const { ports, secret, sessions } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const first = ok_(await doLogin(ports, seed, sk))
+    const payload = JSON.parse(Buffer.from(first.access, 'base64url').toString()) as { sub: string }
+    await ports.auths.markDeleted({ principal: { roles: ['server'] } }, payload.sub, Date.now())
+    const before = sessions.size
+    const second = fact_(await doLogin(ports, seed, sk))
+    expect(second.code).toBe('auth.deleted')
+    // сессия не создана: удалённый аккаунт входом не авторизуется
+    expect(sessions.size).toBe(before)
+  })
+})
+
+describe('фаервол: продление и статусы', () => {
+  test('ротация: версия выросла, пришёл новый токен продления', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const first = ok_(await renew(ports, { renewal: out.renewal }))
+    expect(first.renewal).toBeTruthy()
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { dt: string }
+    const row = (await ports.sessions.get(payload.dt)) as SessionRecord
+    expect(row.version).toBe(1)
+  })
+
+  test('усыновление: старый токен продления получает доступ без ротации', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    ok_(await renew(ports, { renewal: out.renewal })) // другая вкладка успела
+    const adopted = ok_(await renew(ports, { renewal: out.renewal }))
+    expect(adopted.renewal).toBeUndefined() // продление не тронуто
+    expect(adopted.access).toBeTruthy()
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { dt: string }
+    const row = (await ports.sessions.get(payload.dt)) as SessionRecord
+    expect(row.version).toBe(1) // вторая ротация не случилась
+  })
+
+  test('отзыв: revoked; истекла: expired; чужой: session-unknown', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string; dt: string }
+    expect(fact_(await renew(ports, { renewal: 'мусор' })).code).toBe('auth.token')
+    expect(fact_(await renew(ports, {})).code).toBe('auth.session-unknown')
+    await ports.sessions.softDelete(payload.dt, Date.now())
+    expect(fact_(await renew(ports, { renewal: out.renewal })).code).toBe('auth.revoked')
+  })
+
+  test('статусы statusOf: ok/revoked/expired/unknown', () => {
+    const now = 10_000
+    const base: SessionRecord = {
+      id: 'id', jti: 'j', authId: 'a', deviceName: null, subnetHash: null, country: null,
+      history: [], createdAt: 0, expiresAt: 20_000, version: 0, deletedAt: null, lastSeenAt: null,
+    }
+    expect(statusOf(undefined, now)).toBe('unknown')
+    expect(statusOf(base, now)).toBe('ok')
+    expect(statusOf({ ...base, deletedAt: 5_000 }, now)).toBe('revoked')
+    expect(statusOf({ ...base, expiresAt: 9_000 }, now)).toBe('expired')
+  })
+
+  test('guard: access истёк — expired (подставка exp в прошлом)', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const expired = Buffer.from(JSON.stringify({ k: 'access', sub: 'x', dt: 'y', prof: { nickname: null, avatarUrl: null }, iat: 0, exp: 1 })).toString('base64url')
+    const r = await profile(ports, expired)
+    expect(r.ok === false && r.fact.code === 'auth.expired').toBe(true)
+    // живой access работает
+    expect(ok_(await profile(ports, out.access)).profile).toBeNull() // аноним
+    void seed
+    void sk
+  })
+})
+
+describe('выходы и устройства', () => {
+  test('выход гасит сессию: продление после выхода — revoked', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    ok_(await logout(ports, out.access))
+    expect(fact_(await renew(ports, { renewal: out.renewal })).code).toBe('auth.revoked')
+    expect(fact_(await profile(ports, out.access)).code).toBe('auth.revoked')
+  })
+
+  test('выход с истёкшим или отсутствующим access по куке renewal всё равно закрывает сессию в БД', async () => {
+    const { ports } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const a = ok_(await doLogin(ports, seed, sk))
+    ok_(await logout(ports, undefined, a.renewal))
+    expect(fact_(await renew(ports, { renewal: a.renewal })).code).toBe('auth.revoked')
+
+    const b = ok_(await doLogin(ports, seed, sk))
+    const c = ok_(await doLogin(ports, seed, sk))
+    ok_(await logoutAll(ports, undefined, b.renewal))
+    expect(fact_(await renew(ports, { renewal: b.renewal })).code).toBe('auth.revoked')
+    expect(fact_(await renew(ports, { renewal: c.renewal })).code).toBe('auth.revoked')
+  })
+
+  test('выйти со всех: все сессии софт-удалены', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const a = ok_(await doLogin(ports, seed, sk))
+    const b = ok_(await doLogin(ports, seed, sk))
+    ok_(await logoutAll(ports, a.access))
+    expect(fact_(await renew(ports, { renewal: a.renewal as string })).code).toBe('auth.revoked')
+    expect(fact_(await renew(ports, { renewal: b.renewal as string })).code).toBe('auth.revoked')
+  })
+
+  test('список устройств и отзыв по id, без jti', async () => {
+    const pg = new PGlite()
+    try {
+      const driver = pgliteAdapter(pg)
+      const resources = [authResource, sessionResource]
+      expect((await defineSchema({ resources }).sync(driver)).status).toBe('ok')
+      const db = createDb({ driver, limits: conservativeLimits, resources })
+      const now = Date.parse('2026-11-07T12:00:00.000Z')
+      const account = await db.resource(authResource).insert(SERVER, { seed: 'c'.repeat(43) })
+      const secretJti = 'device-token-secret-21'
+      const otherJti = 'other-device-token-021'
+      const current = await db.resource(sessionResource).insert(SERVER, {
+        auth_id: account.id,
+        jti: secretJti,
+        expires_at: new Date(now + 60_000).toISOString(),
+        device_name: 'это',
+      })
+      const other = await db.resource(sessionResource).insert(SERVER, {
+        auth_id: account.id,
+        jti: otherJti,
+        expires_at: new Date(now + 60_000).toISOString(),
+        device_name: 'другое',
+      })
+      const actor = { id: String(account.id), permissions: [] as const, sessionId: String(current.id) }
+      const deps = { db, now }
+      const list = ok_(await listSessionsPage(actor, { authId: actor.id }, deps))
+      expect(list.items).toHaveLength(2)
+      expect(JSON.stringify(list)).not.toContain(secretJti)
+      expect(JSON.stringify(list)).not.toContain(otherJti)
+      expect(list.items.some((item) => item.current && item.id === actor.sessionId)).toBe(true)
+      expect(list.items.every((item) => !('jti' in item) && !('version' in item))).toBe(true)
+      ok_(await revokeSessionById(actor, String(other.id), deps))
+      expect(fact_(await readSessionDetail(actor, String(other.id), deps)).code).toBe('auth.session-unknown')
+      const empty = fact_(await readSessionDetail(actor, '', deps))
+      const foreign = fact_(await readSessionDetail(actor, crypto.randomUUID(), deps))
+      expect(empty.code).toBe('auth.session-unknown')
+      expect(foreign.code).toBe(empty.code)
+    } finally {
+      await pg.close()
+    }
+  }, 60_000)
+})
+
+describe('профиль', () => {
+  test('аноним → создание → обновление; витрина попадает в access', async () => {
+    const { ports, secret } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    expect(ok_(await profile(ports, out.access)).profile).toBeNull()
+    const saved = ok_(await updateProfile(ports, out.access, { nickname: '  Вася  ' }))
+    expect(saved.nickname).toBe('Вася')
+    // обновили — новый access несёт витрину
+    const renewed = ok_(await renew(ports, { renewal: out.renewal as string }))
+    const payload = JSON.parse(Buffer.from(renewed.access, 'base64url').toString()) as { prof: { nickname: string | null } }
+    expect(payload.prof.nickname).toBe('Вася')
+  })
+
+  test('чтение: «не создан» отличает владелец и права чтения, чужой без прав — нет', async () => {
+    const { ports, secret, auths } = makePorts()
+    const a = await generateKeyPair()
+    const b = await generateKeyPair()
+    const outA = ok_(await doLogin(ports, a.seed, a.secret))
+    const outB = ok_(await doLogin(ports, b.seed, b.secret))
+    const subA = (JSON.parse(Buffer.from(outA.access, 'base64url').toString()) as { sub: string }).sub
+    const subB = (JSON.parse(Buffer.from(outB.access, 'base64url').toString()) as { sub: string }).sub
+    // свой профиль не создан: владелец видит именно отсутствие
+    expect(ok_(await profile(ports, outA.access))).toEqual({
+      profile: null,
+      isOwn: true,
+      visibility: 'nobody',
+      notCreated: true,
+      canEdit: true,
+      canDeleteProfile: true,
+      canDeleteSeed: true,
+      fullBlock: null,
+      blocks: [],
+      canReadBlocks: false,
+      canReadSessions: false,
+      canBlock: false,
+      canOpenConfig: true,
+    })
+    // чужой без прав чтения: снаружи «нет» и «нельзя» неразличимы
+    expect(ok_(await profile(ports, outB.access, subA))).toEqual({
+      profile: null,
+      isOwn: false,
+      visibility: 'nobody',
+      notCreated: false,
+      canEdit: false,
+      canDeleteProfile: false,
+      canDeleteSeed: false,
+      fullBlock: null,
+      blocks: [],
+      canReadBlocks: false,
+      canReadSessions: false,
+      canBlock: false,
+      canOpenConfig: false,
+    })
+    // держатель profile.read различает: профиля у A нет
+    const rowB = auths.get(subB)!
+    auths.set(subB, { ...rowB, permissions: ['profile.read'] })
+    expect(ok_(await profile(ports, outB.access, subA))).toEqual({
+      profile: null,
+      isOwn: false,
+      visibility: 'nobody',
+      notCreated: true,
+      canEdit: false,
+      canDeleteProfile: false,
+      canDeleteSeed: false,
+      fullBlock: null,
+      blocks: [],
+      canReadBlocks: false,
+      canReadSessions: false,
+      canBlock: false,
+      canOpenConfig: false,
+    })
+    // созданный профиль читается владельцем как найденный
+    ok_(await updateProfile(ports, outA.access, { nickname: 'Вася' }))
+    const found = ok_(await profile(ports, outA.access))
+    expect(found.notCreated).toBe(false)
+    expect(found.profile?.nickname).toBe('Вася')
+  })
+
+  test('запрещённый никнейм — доменный факт; аватар сохраняется короткой ссылкой /api/storage/avatars/…', async () => {
+    const { ports } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const sub = (JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }).sub
+    expect(fact_(await updateProfile(ports, out.access, { nickname: 'admin' })).code).toBe('profile.nickname-forbidden')
+    expect(fact_(await updateProfile(ports, out.access, { nickname: 'ROOT' })).code).toBe('profile.nickname-forbidden')
+    expect(fact_(await updateProfile(ports, out.access, { nickname: 'я' })).code).toBe('profile.nickname-forbidden')
+    const avatarUrl = `/api/storage/avatars/${sub}/0123456789abcdef-deadbeef.jpg`
+    ok_(await updateProfile(ports, out.access, { avatarUrl }))
+    expect(ok_(await profile(ports, out.access)).profile?.avatarUrl).toBe(avatarUrl)
+    // снять аватар
+    const cleared = ok_(await updateProfile(ports, out.access, { avatarUrl: null }))
+    expect(cleared.avatarUrl).toBeNull()
+  })
+
+  test('IDOR-защита updateProfile: чужой без profile.edit/admin не может создать или перезаписать профиль цели', async () => {
+    const { ports, auths } = makePorts()
+    const victimKeys = await generateKeyPair()
+    const attackerKeys = await generateKeyPair()
+    const editorKeys = await generateKeyPair()
+
+    const victimOut = ok_(await doLogin(ports, victimKeys.seed, victimKeys.secret))
+    const attackerOut = ok_(await doLogin(ports, attackerKeys.seed, attackerKeys.secret))
+    const editorOut = ok_(await doLogin(ports, editorKeys.seed, editorKeys.secret))
+
+    const victimId = (JSON.parse(Buffer.from(victimOut.access, 'base64url').toString()) as { sub: string }).sub
+    const editorId = (JSON.parse(Buffer.from(editorOut.access, 'base64url').toString()) as { sub: string }).sub
+    const editorRow = auths.get(editorId)!
+    auths.set(editorId, { ...editorRow, permissions: ['profile.edit'] })
+    const editorFresh = ok_(await doLogin(ports, editorKeys.seed, editorKeys.secret))
+
+    // 1. У жертвы профиль ещё НЕ создан: атакующий без прав получает auth.forbidden, строка не создаётся
+    expect(
+      fact_(await updateProfile(ports, attackerOut.access, { nickname: 'Взлом' }, victimId)).code,
+    ).toBe('auth.forbidden')
+    expect(ok_(await profile(ports, victimOut.access)).profile).toBeNull()
+
+    // 2. У жертвы профиль создан и закрыт: атакующий по-прежнему получает auth.forbidden
+    ok_(await updateProfile(ports, victimOut.access, { nickname: 'Честный' }))
+    expect(
+      fact_(await updateProfile(ports, attackerOut.access, { nickname: 'Подмена' }, victimId)).code,
+    ).toBe('auth.forbidden')
+    expect(ok_(await profile(ports, victimOut.access)).profile?.nickname).toBe('Честный')
+
+    // 3. Держатель profile.edit законно правит чужой профиль, а несуществующий id даёт auth.identity-unknown
+    ok_(await updateProfile(ports, editorFresh.access, { nickname: 'Модератор' }, victimId))
+    expect(ok_(await profile(ports, victimOut.access)).profile?.nickname).toBe('Модератор')
+    expect(
+      fact_(
+        await updateProfile(
+          ports,
+          editorFresh.access,
+          { nickname: 'Призрак' },
+          '00000000-0000-4000-8000-999999999999',
+        ),
+      ).code,
+    ).toBe('auth.identity-unknown')
+  })
+})
+
+describe('удаление аккаунта', () => {
+  test('заявка → вход закрыт (auth.deleted); восстановление — по доказательству владения', async () => {
+    const { ports, secret, auths } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
+    const secondDevice = ok_(await doLogin(ports, seed, sk))
+    expect((await ports.sessions.listByAuth(payload.sub)).filter((s) => s.deletedAt === null).length).toBe(2)
+    ok_(await updateProfile(ports, out.access, { nickname: 'Вася' }))
+    // Перевыпуск короткого access после смены профиля не крутит version сессии в БД (AS-07):
+    const refreshedAccess = ok_(await issueFreshAccess(ports, out.access))
+    expect(refreshedAccess).toBeTruthy()
+    expect((await ports.sessions.listByAuth(payload.sub)).every((s) => s.version === 0)).toBe(true)
+    // Заявка на удаление по fallback на renewal при мёртвом access закрывает ВСЕ сессии в БД (AS-04):
+    ok_(await requestDelete(ports, undefined, secondDevice.renewal))
+    expect((await ports.sessions.listByAuth(payload.sub)).filter((s) => s.deletedAt === null)).toEqual([])
+    // под выданными правами доступ остановлен; свежий вход сессии не даёт
+    expect(fact_(await profile(ports, out.access)).code).toBe('auth.delete-pending')
+    expect(fact_(await doLogin(ports, seed, sk)).code).toBe('auth.deleted')
+    // чужой ключ: подпись не сошлась — удалённая строка не тронута
+    const stranger = await generateKeyPair()
+    expect(fact_(await doRestore(ports, seed, stranger.secret)).code).toBe('auth.signature')
+    expect(fact_(await doLogin(ports, seed, sk)).code).toBe('auth.deleted')
+    // свой ключ: метка снята, сессия выдана тому же аккаунту, профиль цел
+    const restored = ok_(await doRestore(ports, seed, sk))
+    const restoredPayload = JSON.parse(Buffer.from(restored.access, 'base64url').toString()) as { sub: string }
+    expect(restoredPayload.sub).toBe(payload.sub)
+    expect(ok_(await profile(ports, restored.access)).profile?.nickname).toBe('Вася')
+    // исполнитель: грейс не вышел — никого; вышел — seed стёрт, профиль удалён
+    expect(ok_(await sweepDeletions(ports))).toBe(0)
+    const row = (await ports.auths.get({ principal: { roles: ['server'] } }, payload.sub)) as AuthRow
+    authsPatch(auths, payload.sub, { deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })
+    expect(ok_(await sweepDeletions(ports))).toBe(1)
+    const wiped = (await ports.auths.get({ principal: { roles: ['server'] } }, row.id, { includeDeleted: true })) as AuthRow
+    expect(wiped.seed).toBeNull()
+    expect(await ports.profiles.get(SERVER, payload.sub)).toBeUndefined()
+  })
+
+  test('восстановление после стирания исполнителем — новый аккаунт (seed свободен)', async () => {
+    const { ports, secret, auths } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
+    authsPatch(auths, payload.sub, { deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })
+    ok_(await sweepDeletions(ports))
+    const again = ok_(await doRestore(ports, seed, sk))
+    const againPayload = JSON.parse(Buffer.from(again.access, 'base64url').toString()) as { sub: string }
+    expect(againPayload.sub).not.toBe(payload.sub)
+  })
+
+  test('вход в стёртый (надгробие) — seed не найден, новый аккаунт', async () => {
+    const { ports, secret, auths } = makePorts()
+    const { seed, secret: sk } = await generateKeyPair()
+    const out = ok_(await doLogin(ports, seed, sk))
+    const payload = JSON.parse(Buffer.from(out.access, 'base64url').toString()) as { sub: string }
+    authsPatch(auths, payload.sub, { deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000 })
+    ok_(await sweepDeletions(ports))
+    // тот же seed теперь создаёт НОВЫЙ аккаунт
+    const again = ok_(await doLogin(ports, seed, sk))
+    const againPayload = JSON.parse(Buffer.from(again.access, 'base64url').toString()) as { sub: string }
+    expect(againPayload.sub).not.toBe(payload.sub)
+  })
+
+  test('verifySeed (authorize=false): проверяет seed без создания сессии и для гостя, и для юзера, не выдавая доступ к защищённым операциям без токена', async () => {
+    const { ports, sessions } = makePorts()
+    const target = await generateKeyPair()
+    const viewer = await generateKeyPair()
+    const unreg = await generateKeyPair()
+
+    // создаём целевой аккаунт и выходим — в БД активных сессий 0
+    const created = ok_(await doLogin(ports, target.seed, target.secret))
+    const targetSub = (JSON.parse(Buffer.from(created.access, 'base64url').toString()) as { sub: string }).sub
+    ok_(await logoutAll(ports, created.access))
+    sessions.clear()
+    expect(sessions.size).toBe(0)
+
+    // 1. Гость проверяет seed без токена: сессия НЕ создаётся (0 записей),
+    //    а последующая защищённая операция без токена строго блокируется guard()
+    const cGuest = ok_(await issueChallenge(ports))
+    const guestVerified = ok_(
+      await verifySeed(ports, {
+        seed: target.seed,
+        challenge: cGuest.token,
+        signature: await sign(cGuest.token, target.secret),
+      }),
+    )
+    expect(guestVerified.sub).toBe(targetSub)
+    expect(sessions.size).toBe(0)
+    const guestProtected = await requestDelete(ports, undefined)
+    expect(guestProtected.ok).toBe(false)
+    if (!guestProtected.ok) expect(guestProtected.fact.code).toBe('auth.expired')
+
+    // 2. Неизвестный seed отклоняется как auth.identity-unknown
+    const cUnknown = ok_(await issueChallenge(ports))
+    const resUnknown = await verifySeed(ports, {
+      seed: unreg.seed,
+      challenge: cUnknown.token,
+      signature: await sign(cUnknown.token, unreg.secret),
+    })
+    expect(resUnknown.ok).toBe(false)
+    if (!resUnknown.ok) expect(resUnknown.fact.code).toBe('auth.identity-unknown')
+
+    // 3. Авторизованный пользователь проверяет seed: его сессия и токен НЕ меняются
+    //    (sessions.size остаётся 1), а последующие операции идут строго под его логином
+    const viewerLogin = ok_(await doLogin(ports, viewer.seed, viewer.secret))
+    const viewerSub = (JSON.parse(Buffer.from(viewerLogin.access, 'base64url').toString()) as { sub: string }).sub
+    expect(sessions.size).toBe(1)
+
+    const cViewer = ok_(await issueChallenge(ports))
+    const viewerVerified = ok_(
+      await verifySeed(ports, {
+        seed: target.seed,
+        challenge: cViewer.token,
+        signature: await sign(cViewer.token, target.secret),
+      }),
+    )
+    expect(viewerVerified.sub).toBe(targetSub)
+    expect(sessions.size).toBe(1)
+
+    const stillViewer = await guard(ports, viewerLogin.access)
+    expect('sub' in stillViewer && stillViewer.sub).toBe(viewerSub)
+  })
+})
+
+/** Правка строки auth напрямую (адаптер на памяти — для подготовки сценариев). */
+function authsPatch(map: Map<string, AuthRow & { blocked: Blocked[] }>, id: string, patch: Partial<AuthRow & { blocked: Blocked[] }>): void {
+  const row = map.get(id) as AuthRow
+  map.set(id, { ...row, ...patch } as AuthRow & { blocked: Blocked[] })
+}

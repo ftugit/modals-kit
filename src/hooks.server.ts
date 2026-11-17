@@ -1,17 +1,20 @@
 import { sequence, type Handle, type ServerInit } from '@sveltejs/kit/hooks'
-import { dbHandle } from '#lib/db/sveltekit/index.js'
-import { DEMO_PRINCIPAL, db } from '#server/db.server.js'
-import { createComponentFormsHandle } from '#hooks/component-form/server.server.js'
-// Серверные точки инициализации установленных модулей (`src/content/*/init.ext.server.ts`):
+import { dbHandle } from '#core/lib/db/sveltekit/index.js'
+import { DEMO_PRINCIPAL, db } from '#core/server/db.server.js'
+import { createComponentFormsHandle } from '#core/hooks/component-form/server.server.js'
+// Серверные точки инициализации установленных модулей (`src/modules/**/init.ext.server.ts`):
 // например, регистрация прямых SSR-транспортов пагинаторов без self-fetch.
-import.meta.glob('./content/*/init.ext.server.ts', { eager: true })
-import { captureUpstreamFetch } from '#server/fetch.server.js'
-import { edgeClientAddressFetch, edgeClientAddressHandle } from '#server/edge-client-address.server.js'
+import.meta.glob('/src/modules/**/init.ext.server.ts', { eager: true })
+// Сборка фасада `auth(event)`: домены и порт профиля регистрируются до первого
+// запроса. Без этого импорта доменные методы фасада в рантайме отсутствовали бы.
+import './composition/index.server.js'
+import { captureUpstreamFetch } from '#core/server/fetch.server.js'
+import { edgeClientAddressFetch, edgeClientAddressHandle } from '#core/server/edge-client-address.server.js'
 
 /**
  * Один раз при старте сервера, до любого рендера: настоящий `fetch` для
  * транспортов к внешним API (F8 — в dev Kit подменяет глобальный `fetch` на
- * время SSR-рендера, `#lib/server/fetch.js`).
+ * время SSR-рендера, `#core/lib/server/fetch.js`).
  * https://svelte.dev/docs/kit/hooks#init
  */
 export const init: ServerInit = () => {

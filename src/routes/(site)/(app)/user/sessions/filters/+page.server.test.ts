@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest'
 import { load } from './+page.server.js'
 
 const mock = vi.hoisted(() => ({ listSessionsPage: vi.fn(), enabled: true }))
-vi.mock('#content/user/gateway.server.js', () => ({
+vi.mock('#modules/user/base/service/gateway.server.js', () => ({
   auth: () => ({ enabled: mock.enabled, listSessionsPage: mock.listSessionsPage }),
 }))
 
@@ -35,7 +35,7 @@ describe('load страницы фильтров сессий: цель — па
 
   test('отказ домена виден как fact, а не молчаливый пустой срез', async () => {
     mock.listSessionsPage.mockResolvedValue({ ok: false, fact: { code: 'auth.forbidden' } })
-    const data = (await load(event('http://localhost/user/sessions/filters?journal=1'))) as import('./+page.server.js').SessionsFiltersPageData
+    const data = (await load(event('http://localhost/user/sessions/filters?journal=1'))) as import('#sections/user/sessions-filters/load.server.js').SessionsFiltersPageData
     expect(data.fact).toBe('auth.forbidden')
     expect(data.countries).toEqual([])
   })

@@ -10,7 +10,7 @@
  * Прежняя версия жила в пакете и сверялась с `dist`. Слое стал обычным `lib`
  * приложения, `dist` больше не существует, поэтому:
  *   • экспорты читаются из исходников (тот же разбор, что делает слой);
- *   • сами исходники подаёт вызывающий (`src/lib/db/test/db-docs.test.ts`),
+ *   • сами исходники подаёт вызывающий (`src/core/lib/db/test/db-docs.test.ts`),
  *     потому что `.ts` читается только там, где есть TS-транспиляция;
  *   • вместо `package.json#exports` проверяется контракт потребителя: приложение
  *     импортирует слой ТОЛЬКО через `#lib/db/…` — это и есть то, что раньше
@@ -19,22 +19,22 @@
  * Выход: пустой список — документация актуальна.
  */
 
-export const DB_ROOT = 'src/lib/db'
+export const DB_ROOT = 'src/core/lib/db'
 
-/** Entry-поинты слоя: как их видит приложение → файл внутри `src/lib/db`. */
+/** Entry-поинты слоя: как их видит приложение → файл внутри `src/core/lib/db`. */
 export const ENTRIES = {
-  '#lib/db/index.js': 'index.ts',
-  '#lib/db/schema.js': 'schema.ts',
-  '#lib/db/adapters/pg.js': 'adapters/pg.ts',
-  '#lib/db/adapters/pglite.js': 'adapters/pglite.ts',
-  '#lib/db/adapters/proxy.js': 'adapters/proxy.ts',
-  '#lib/db/adapters/hyperdrive.js': 'adapters/hyperdrive.ts',
-  '#lib/db/adapters/lazy.js': 'adapters/lazy.ts',
-  '#lib/db/sync/index.js': 'sync/index.ts',
-  '#lib/db/sveltekit/index.js': 'sveltekit/index.ts',
-  '#lib/db/sveltekit/node.js': 'sveltekit/node.ts',
-  '#lib/db/zod.js': 'zod.ts',
-  '#lib/db/testing/index.js': 'testing/index.ts',
+  '#core/lib/db/index.js': 'index.ts',
+  '#core/lib/db/schema.js': 'schema.ts',
+  '#core/lib/db/adapters/pg.js': 'adapters/pg.ts',
+  '#core/lib/db/adapters/pglite.js': 'adapters/pglite.ts',
+  '#core/lib/db/adapters/proxy.js': 'adapters/proxy.ts',
+  '#core/lib/db/adapters/hyperdrive.js': 'adapters/hyperdrive.ts',
+  '#core/lib/db/adapters/lazy.js': 'adapters/lazy.ts',
+  '#core/lib/db/sync/index.js': 'sync/index.ts',
+  '#core/lib/db/sveltekit/index.js': 'sveltekit/index.ts',
+  '#core/lib/db/sveltekit/node.js': 'sveltekit/node.ts',
+  '#core/lib/db/zod.js': 'zod.ts',
+  '#core/lib/db/testing/index.js': 'testing/index.ts',
 }
 
 /** Раздел README, где лежит таблица публичного API. */
@@ -151,7 +151,7 @@ export function envKeysFrom(texts) {
  * @param {string} [tail]
  * @param {(spec: string) => boolean} [only]
  */
-export function parseApiTable(markdown, heading = API_HEADING, tail = API_TAIL, only = (spec) => spec.startsWith('#lib/') || spec.startsWith('@')) {
+export function parseApiTable(markdown, heading = API_HEADING, tail = API_TAIL, only = (spec) => spec.startsWith('#core/lib/') || spec.startsWith('#lib/') || spec.startsWith('@')) {
   const from = markdown.indexOf(heading)
   const to = tail ? markdown.indexOf(tail) : -1
   if (from < 0) return null
@@ -263,7 +263,7 @@ export function auditDocs(input) {
     }
     // каждая ссылка вида `#lib/db/…` в README обязана быть entry-поинтом: именно так
     // потребитель узнаёт, что можно импортировать, а что — внутренность слоя
-    for (const m of readme.matchAll(/`#lib\/db\/[\w./-]*`/g)) {
+    for (const m of readme.matchAll(/`#core\/lib\/db\/[\w./-]*`/g)) {
       const spec = m[0].slice(1, -1)
       if (!(spec in ENTRIES)) note(`README предлагает импортировать ${spec}, которого нет в карте entry-поинтов`)
     }
@@ -274,7 +274,7 @@ export function auditDocs(input) {
     for (const m of text.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)) {
       const spec = m[1]
       if (/^@ftugit\/kit-db/.test(spec)) note(`${file}: импорт старого пакета ${spec} — слоя больше нет в npm`)
-      else if (/(^|\/)lib\/db(\/|$)/.test(spec) && !spec.startsWith('#lib/db/')) {
+      else if (/(^|\/)lib\/db(\/|$)/.test(spec) && !spec.startsWith('#core/lib/db/')) {
         note(`${file}: слой импортирован мимо #lib/db (${spec})`)
       }
     }

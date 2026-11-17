@@ -1,0 +1,110 @@
+<script lang="ts">
+  import { preloadData } from '$app/navigation'
+  import { untrack } from 'svelte'
+  import { Skeleton, Surface } from '#core/ui/index.js'
+  import { cn } from '#core/ui/utils.js'
+  import type { Result } from '#core/lib/form/index.js'
+  import type { AuthErrorCode } from '#modules/user/base/model/error.js'
+  import type { BlockCreateRouteData, BlockEditRouteData } from '#modules/user/base/model/types.js'
+  import type { UserSurfaceVariant } from '#modules/user/base/svelte/Acl.svelte'
+  import BlockFormBody from './BlockFormBody.svelte'
+
+  interface Props {
+    mode: 'create' | 'edit'
+    /** Фиксированный `uid` из родительского `BlocksList` (пусто — глобальный список). */
+    uid?: string | null
+    /** Идентификатор записи блокировки (обязателен для `mode === 'edit'`). */
+    blockId?: string | null
+    /** Начальный список выбранных целевых пользователей в глобальном `create` (из фильтра `uids` или `/users/pick`). */
+    initialSubjects?: readonly string[]
+    /** Одиночный начальный `subject` (обратная совместимость с `?subject=…`). */
+    initialSubject?: string
+    /** Данные `load` страницы создания (SSR/no-JS). */
+    initialCreate?: BlockCreateRouteData | null
+    /** Данные `load` страницы редактирования/просмотра (SSR/no-JS). */
+    initialEdit?: BlockEditRouteData | null
+    /** Текущий путь страницы для возврата из no-JS `/users/pick`. */
+    selfHref?: string
+    action?: string
+    form?: { result?: Result } | null
+    onSubjectsChange?: (ids: string[]) => void
+    onAcl?: (fact: AuthErrorCode) => void
+    onDone?: () => void
+    variant?: UserSurfaceVariant
+    class?: string
+  }
+
+  let props: Props = $props()
+  const fixedUid = $derived(props.uid?.trim() || null)
+  const targetBlockId = $derived(props.blockId?.trim() || null)
+  let createData = $state<BlockCreateRouteData | null>(untrack(() => props.initialCreate ?? null))
+  let editData = $state<BlockEditRouteData | null>(untrack(() => props.initialEdit ?? null))
+  let askedKey = ''
+
+  $effect(() => {
+    if (props.mode === 'create') {
+      if (props.initialCreate) {
+        askedKey = ''
+        createData = props.initialCreate
+        return
+      }
+      const url = fixedUid ? `/user/${encodeURIComponent(fixedUid)}/blocks/new` : '/blocks/new'
+      const key = `create::${url}`
+      if (askedKey === key) return
+      askedKey = key
+      createData = null
+      let cancelled = false
+      void (async () => {
+        const r = await preloadData(url)
+        if (cancelled || askedKey !== key) return
+        if (r.type !== 'loaded') { props.onAcl?.('auth.expired'); return }
+        const d = r.data as BlockCreateRouteData
+        if (d.fact) { props.onAcl?.(d.fact); return }
+        createData = d
+      })()
+      return () => { cancelled = true }
+    }
+    if (props.initialEdit) {
+      askedKey = ''
+      editData = props.initialEdit
+      return
+    }
+    const id = targetBlockId
+    if (!id) { editData = null; props.onAcl?.('auth.identity-unknown'); return }
+    const url = fixedUid
+      ? `/user/${encodeURIComponent(fixedUid)}/blocks/${encodeURIComponent(id)}`
+      : `/blocks/${encodeURIComponent(id)}`
+    const key = `edit::${url}`
+    if (askedKey === key) return
+    askedKey = key
+    editData = null
+    let cancelled = false
+    void (async () => {
+      const r = await preloadData(url)
+      if (cancelled || askedKey !== key) return
+      if (r.type !== 'loaded') { props.onAcl?.('auth.expired'); return }
+      const d = r.data as BlockEditRouteData
+      if (d.fact) { props.onAcl?.(d.fact); return }
+      editData = d
+    })()
+    return () => { cancelled = true }
+  })
+
+  const ready = $derived(props.mode === 'create' ? createData !== null : Boolean(editData?.detail))
+  const allowedScopes = $derived(
+    props.mode === 'create' ? (createData?.assignableScopes ?? []) : (editData?.detail?.assignableScopes ?? []),
+  )
+</script>
+
+{#if ready}
+  {#key `${props.mode}:${allowedScopes.join(',')}`}
+    <BlockFormBody {...props} initialCreate={createData} initialEdit={editData} />
+  {/key}
+{:else}
+  <Surface variant={props.variant ?? 'plain'} class={cn('mx-auto w-full max-w-md', props.class)} aria-busy="true" data-testid="block-form-pending">
+    <Skeleton class="h-5 w-44" />
+    <Skeleton class="h-9 w-full" />
+    <Skeleton class="h-20 w-full" />
+    <Skeleton class="h-9 w-36" />
+  </Surface>
+{/if}

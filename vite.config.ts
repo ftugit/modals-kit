@@ -5,8 +5,8 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import UnoCSS from 'unocss/vite';
 import { defineConfig, type ViteUserConfig, type TestUserConfig } from 'vitest/config';
-import { appHtmlScriptHashes, cspDirectives, trustedOrigins } from './src/server/trusted-origins.ts';
-import { sveltekitWsPlugin } from './src/server/vite-ws.server.ts';
+import { appHtmlScriptHashes, cspDirectives, trustedOrigins } from './src/core/server/trusted-origins.ts';
+import { sveltekitWsPlugin } from './src/core/server/vite-ws.server.ts';
 import { layerGuard, RULES } from './tooling/layer-guard.mjs';
 import { createAdapter, detectPlatform } from './tooling/platform.mjs';
 
@@ -42,7 +42,9 @@ export default defineConfig(async ({ command, isPreview }) => {
     console.log(`[platform] ${platform.id} (${platform.source}) → ${platform.module}`);
   }
   // Конфиг SvelteKit — опциями плагина `sveltekit()`. `csrf.trustedOrigins` и `csp` собираются
-  // из чистых функций `src/server/trusted-origins.ts`; окружение — момент сборки/запуска dev.
+  // из чистых функций `src/core/server/trusted-origins.ts`; окружение — момент сборки/запуска dev.
+  // Слоистые алиасы — subpath imports в `package.json#/imports` (`#core/*`,
+  // `#modules/*`, `#sections/*`): `kit.alias` устарел в SvelteKit 3.
   const kit = {
     adapter: await createAdapter(platform.id),
     // Node и Cloudflare: origin задаётся в рантайме. Vercel сохраняет прежний контракт сборки.
@@ -98,31 +100,23 @@ export default defineConfig(async ({ command, isPreview }) => {
       clientFiles: [
         './src/routes/+layout.svelte',
         './src/routes/(site)/+layout.svelte',
-        './src/routes/(site)/ModalSystem.svelte',
+        './src/core/app/ModalSystem.svelte',
         './src/routes/(site)/(app)/+page.svelte',
-        './src/routes/(site)/(modals-demo)/modals/+page.svelte',
-        './src/routes/cycle/+page.svelte',
-        './src/routes/spike/+page.svelte',
-        './src/routes/(site)/(app)/cards/[id]/+page.svelte',
         './src/app.css',
-        './src/components/shell/index.ts',
-        './src/components/shell/page.svelte.ts',
-        './src/components/shell/shell.svelte.ts',
-        './src/components/shell/AppShell.svelte',
-        './src/components/shell/PageHead.svelte',
-        './src/components/shell/ui/header/NavSlot.svelte',
-        './src/components/shell/ui/sidebar/SidebarNav.svelte',
-        './src/components/modals/index.ts',
+        './src/core/ui/shell/index.ts',
+        './src/core/ui/shell/page.svelte.ts',
+        './src/core/ui/shell/shell.svelte.ts',
+        './src/core/ui/shell/AppShell.svelte',
+        './src/core/ui/shell/PageHead.svelte',
+        './src/core/ui/shell/ui/header/NavSlot.svelte',
+        './src/core/ui/shell/ui/sidebar/SidebarNav.svelte',
+        './src/core/ui/modals/index.ts',
       ].filter((f) => existsSync(new URL(f, import.meta.url))),
       ssrFiles: [
         './src/routes/+layout.svelte',
         './src/routes/(site)/+layout.svelte',
-        './src/routes/(site)/ModalSystem.svelte',
+        './src/core/app/ModalSystem.svelte',
         './src/routes/(site)/(app)/+page.svelte',
-        './src/routes/(site)/(modals-demo)/modals/+page.svelte',
-        './src/routes/cycle/+page.svelte',
-        './src/routes/spike/+page.svelte',
-        './src/routes/(site)/(app)/cards/[id]/+page.svelte',
       ].filter((f) => existsSync(new URL(f, import.meta.url))),
     },
   },

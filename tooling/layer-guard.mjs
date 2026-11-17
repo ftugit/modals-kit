@@ -26,12 +26,17 @@ function matchPattern(pattern, value) {
 }
 
 const SUBPATH_ALIASES = [
-  ['#lib/', 'src/lib/'],
-  ['$lib/', 'src/lib/'],
-  ['#hooks/', 'src/hooks/'],
+  ['#lib/', 'src/core/lib/'],
+  ['#core/', 'src/core/'],
+  ['$lib/', 'src/core/lib/'],
+  ['#hooks/', 'src/core/hooks/'],
   ['#components/', 'src/components/'],
   ['#content/', 'src/content/'],
-  ['#server/', 'src/server/'],
+  ['#server/', 'src/core/server/'],
+  // Слоистые алиасы миграции: без них канон не разрешается, и правила
+  // `src/core/**`/`src/modules/**`/`src/sections/**` не видят новых импортов.
+  ['#modules/', 'src/modules/'],
+  ['#sections/', 'src/sections/'],
 ];
 
 /**
@@ -218,16 +223,19 @@ export function layerGuard(rules) {
 
 /* ── правила проекта ───────────────────────────────────────────────── */
 
-const MODALS_LIB = /(^|\/)src\/lib\/modals\//;
+const MODALS_LIB = /(^|\/)src\/core\/lib\/modals\//;
 /** Единственный владелец записи адреса: писатель, бронь ключей, алгебра GET. */
-const ADDRESS_LIB = /(^|\/)src\/lib\/address\//;
+const ADDRESS_LIB = /(^|\/)src\/core\/lib\/address\//;
 /** Навигационные примитивы: их работа — переход, а не правка GET-адреса. */
 const NAV_PRIMITIVES = [
+  /(^|\/)src\/core\/hooks\/links\//,
+  /(^|\/)src\/core\/ui\/button\/HoldButton\.svelte$/,
   /(^|\/)src\/hooks\/links\//,
   /(^|\/)src\/components\/ui\/button\/HoldButton\.svelte$/,
+      /(^|\/)src\/core\/ui\//,
 ];
 /** Чтение «реальности фреймворка» — обязанность ядра движка модалок. */
-const MODALS_ENGINE = /(^|\/)src\/lib\/modals\/cores\//;
+const MODALS_ENGINE = /(^|\/)src\/core\/lib\/modals\/cores\//;
 /** Правила адреса действуют на ИСХОДНИКИ проекта: node_modules SvelteKit вправе
  *  упоминать page.url в своих рантайм-файлах и сообщениях. */
 const SRC_ONLY = [/(^|\/)src\//];
@@ -238,10 +246,12 @@ const FILE_TO_BASE64_KEEPERS = [
 ];
 /** Кто имеет право на сырые form-теги и на собственный разбор тела. */
 const FORM_KEEPERS = [
-  /(^|\/)src\/lib\/form\//,
+  /(^|\/)src\/core\/lib\/form\//,
   /(^|\/)src\/components\/ui\//,
+      /(^|\/)src\/core\/ui\//,
   /(^|\/)src\/components\/settings\//,
   /(^|\/)src\/components\/shell\//,
+  /(^|\/)src\/core\/ui\//,
   /(^|\/)node_modules\//,
   /(^|\/)tooling\//,
 ];
@@ -291,12 +301,32 @@ function canonOf(source, importer) {
 export const RULES = [
   /* ── 1. Строгая направленность 5 верхних слоёв и серверная граница ── */
   {
-    pattern: /^src\/(?:hooks|components|content|server|routes)\//,
+    /**
+     * Ядро не знает доменов: модули подключаются портами/реестром, а не
+     * импортом. Единственное исключение — `db.server.ts`: это сборка схемы БД,
+     * где ресурсы модулей обязаны быть в одном списке (план §6 сам помещает
+     * `db.server` в `core/server`); остальной `core` — чистый.
+     */
+    pattern: /^src\/modules\//,
     allow: [/.*/],
-    deny: [NON_TEST(/(^|\/)src\/lib\//)],
+    deny: [NON_TEST(/(^|\/)src\/core\//)],
+    violates: ({ importer }) => !/(^|\/)src\/core\/server\/db\.server\.ts$/.test(importer),
     message: ({ source, importer }) =>
       [
-        `[layer-guard] Нарушение иерархии слоёв: пакет нижнего слоя \`src/lib/\` не может импортировать «${source}».`,
+        `[layer-guard] Ядро не может импортировать модуль («${source}»).`,
+        `  файл: ${importer || '<неизвестный импортёр>'}`,
+        '',
+        '  Доменное — через порт, реестр или `src/composition`; `db.server.ts` —',
+        '  единственное исключение (сборка ресурсов схемы).',
+      ].join('\n'),
+  },
+  {
+    pattern: /^src\/(?:core\/(?:hooks|ui|server)|hooks|components|content|server|routes)\//,
+    allow: [/.*/],
+    deny: [NON_TEST(/(^|\/)src\/core\/lib\//)],
+    message: ({ source, importer }) =>
+      [
+        `[layer-guard] Нарушение иерархии слоёв: пакет нижнего слоя \`src/core/lib/\` не может импортировать «${source}».`,
         `  файл: ${importer || '<неизвестный импортёр>'}`,
         '',
         '  Слой `#lib/*` полностью независим от хуков приложения, UI-компонентов,',
@@ -304,21 +334,21 @@ export const RULES = [
       ].join('\n'),
   },
   {
-    pattern: /^src\/(?:components|content|routes)\//,
+    pattern: /^src\/(?:core\/ui|components|content|routes)\//,
     allow: [/.*/],
-    deny: [NON_TEST(/(^|\/)src\/hooks\//)],
+    deny: [NON_TEST(/(^|\/)src\/(?:core\/hooks|hooks)\//)],
     message: ({ source, importer }) =>
       [
-        `[layer-guard] Нарушение иерархии слоёв: \`src/hooks/\` не может импортировать «${source}».`,
+        `[layer-guard] Нарушение иерархии слоёв: \`src/core/hooks/\` не может импортировать «${source}».`,
         `  файл: ${importer || '<неизвестный импортёр>'}`,
         '',
         '  Хуки (`#hooks/*`) стоят ниже UI-компонентов (`#components/*`), контента (`#content/*`) и роутов.',
       ].join('\n'),
   },
   {
-    pattern: /^src\/(?:content|server|routes)\//,
+    pattern: /^src\/(?:content|server|routes|core\/server)\//,
     allow: [/.*/],
-    deny: [NON_TEST(/(^|\/)src\/components\//)],
+    deny: [NON_TEST(/(^|\/)src\/(?:components|core\/ui)\//)],
     message: ({ source, importer }) =>
       [
         `[layer-guard] Нарушение иерархии слоёв: UI-компонент из \`src/components/\` не может импортировать «${source}».`,
@@ -341,12 +371,12 @@ export const RULES = [
       ].join('\n'),
   },
   {
-    pattern: /^src\/components\//,
+    pattern: /^src\/(?:components|core\/ui)\//,
     allow: [/.*/],
-    deny: [NON_TEST(/(^|\/)src\/server\//)],
+    deny: [NON_TEST(/(^|\/)src\/(?:server|core\/server)\//)],
     message: ({ source, importer }) =>
       [
-        `[layer-guard] Серверный слой \`src/server/\` не может импортировать UI-компоненты («${source}»).`,
+        `[layer-guard] Серверный слой \`src/core/server/\` не может импортировать UI-компоненты («${source}»).`,
         `  файл: ${importer || '<неизвестный импортёр>'}`,
       ].join('\n'),
   },
@@ -407,13 +437,13 @@ export const RULES = [
   {
     pattern: /^\$(?:app|env)\//,
     allow: [/.*/],
-    deny: [/(^|\/)src\/server\/trusted-origins\.ts$/],
+    deny: [/(^|\/)src\/(?:core\/server|server)\/trusted-origins\.ts$/],
     message: ({ source, importer }) =>
       [
         `[layer-guard] В \`trusted-origins.ts\` запрещён импорт «${source}».`,
         `  файл: ${importer || '<неизвестный импортёр>'}`,
         '',
-        '  `vite.config.ts` импортирует `src/server/trusted-origins.ts` до инициализации',
+        '  `vite.config.ts` импортирует `src/core/server/trusted-origins.ts` до инициализации',
         '  виртуальных модулей SvelteKit — используйте только чистый `process.env`.',
       ].join('\n'),
   },
@@ -470,7 +500,7 @@ export const RULES = [
   {
     pattern: /import\s*\{[\s\S]*?\bgoto\b[\s\S]*?\}\s*from\s*['"]\$app\/navigation['"]/,
     isSourceCheck: true,
-    scope: [/(^|\/)src\/(?:lib|hooks|components)\//],
+    scope: [/(^|\/)src\/(?:core\/(?:lib|hooks|ui)|lib|hooks|components)\//],
     allow: [...NAV_PRIMITIVES, ADDRESS_LIB],
     message: ({ importer }) =>
       [
@@ -517,10 +547,10 @@ export const RULES = [
   },
   {
     pattern: /^@zag-js\/(focus-trap|remove-scroll|aria-hidden)$/,
-    allow: [/(^|\/)src\/lib\/overlay\//, /(^|\/)node_modules\//],
+    allow: [/(^|\/)src\/core\/lib\/overlay\//, /(^|\/)node_modules\//],
     message: ({ source, importer }) =>
       [
-        `[layer-guard] «${source}» подключается только в src/lib/overlay.`,
+        `[layer-guard] «${source}» подключается только в src/core/lib/overlay.`,
         `  файл: ${importer || '<точка входа>'}`,
       ].join('\n'),
   },
@@ -530,8 +560,9 @@ export const RULES = [
     pattern: /<\/?(?:form|input|select|textarea|FORM|INPUT|SELECT|TEXTAREA)(?=[\s/>])/,
     isTemplateCheck: true,
     allow: [
-      /(^|\/)src\/lib\/form\/svelte\/Form\.svelte$/,
+      /(^|\/)src\/core\/lib\/form\/svelte\/Form\.svelte$/,
       /(^|\/)src\/components\/ui\//,
+      /(^|\/)src\/core\/ui\//,
       /(^|\/)src\/components\/settings\//,
       /(^|\/)src\/components\/shell\//,
       /(^|\/)node_modules\//,
@@ -554,6 +585,7 @@ export const RULES = [
     allow: [
       /(^|\/)src\/components\/form\//,
       /(^|\/)src\/components\/ui\//,
+      /(^|\/)src\/core\/ui\//,
       /(^|\/)src\/components\/settings\//,
       /(^|\/)node_modules\//,
     ],
@@ -574,6 +606,7 @@ export const RULES = [
     allow: [
       /(^|\/)src\/components\/form\//,
       /(^|\/)src\/components\/ui\//,
+      /(^|\/)src\/core\/ui\//,
       /(^|\/)src\/components\/settings\//,
       /(^|\/)src\/components\/shell\//,
       /(^|\/)node_modules\//,
@@ -649,7 +682,7 @@ export const RULES = [
     pattern: /\.(?:error|pending)[ \t]*=(?![=>])/,
     isSourceCheck: true,
     scope: SRC_ONLY,
-    allow: [/(^|\/)src\/lib\/form\//, /(^|\/)src\/components\/form\//],
+    allow: [/(^|\/)src\/core\/lib\/form\//, /(^|\/)src\/components\/form\//],
     require: /\b(?:takeover\s*=|FieldTakeover\b|FieldHandle\b)/,
     message: ({ importer }) =>
       [
@@ -662,7 +695,7 @@ export const RULES = [
   {
     pattern: /\brequest\s*\.\s*(?:clone\s*\(\s*\)\s*\.\s*)?formData\s*\(|\bawait\s+request\s*\.\s*json\s*\(/,
     isSourceCheck: true,
-    allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
+    allow: [/(^|\/)src\/core\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
     require: /from ['"]#lib\/form\/server\.js['"]/,
     message: ({ importer }) =>
       [
@@ -673,13 +706,13 @@ export const RULES = [
       ].join('\n'),
   },
   {
-    pattern: /\bexport const actions\s*[:=]/,
+    pattern: /\bexport const (?:actions|\w*Actions)\s*[:=]/,
     isSourceCheck: true,
-    allow: [/(^|\/)src\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//],
-    require: /from ['"](?:#lib\/form\/|\.\.?\/handle(?:\.server)?(?:\.js)?['"])/,
+    allow: [/(^|\/)src\/core\/lib\/form\//, /(^|\/)node_modules\//, /(^|\/)tooling\//, /(^|\/)src\/routes\//],
+    require: /from ['"](?:#core\/lib\/form\/|\.\.?\/handle(?:\.server)?(?:\.js)?['"])/,
     message: ({ importer }) =>
       [
-        `[layer-guard] form-экшены обязаны идти через '#lib/form/index.js'.`,
+        `[layer-guard] form-экшены обязаны идти через '#core/lib/form/index.js'.`,
         `  файл: ${importer || '<точка входа>'}`,
       ].join('\n'),
   },

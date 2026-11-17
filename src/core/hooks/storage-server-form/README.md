@@ -1,0 +1,31 @@
+# `storage-server-form` — одна форма сервера хранилища
+
+Общее определение полей S3 / WebDAV для пула БД и куки-сейфа. Хук не пишет ни в PostgreSQL, ни в куки: пул вызывает `saveStorageServer`, сейф — `saveVaultEntry` / `removeVaultEntry` / `resetVaultKey`. Транспорт остаётся у вызывающего. Тексты тоже передаёт вызывающий: разбор здесь один и проверяет только длину ключа (8–256), а уточнение про управляющие символы ASCII живёт в `STORAGE_POOL_MESSAGES` (`src/content/storage-servers/form.ts`) — у куки-сейфа такой проверки нет, и общий текст показывать её он не должен.
+
+`priority` и `clear_encryption_key` есть только у пула (`withPriority: true`). В сейфе слот перезаписывается по имени, отдельного `server_id` нет.
+
+Парсер `parseStorageServerEntry` после `trim()` проверяет для непустого ключа только длину 8–256 символов; это сохраняет совместимость cookie-сейфа. Боевой пул использует отдельную серверную проверку `saveStorageServer`: кроме длины она запрещает управляющие символы ASCII (C0 и DEL). При обновлении пула пустой ключ сохраняет прежний, если не выбран явный сброс. Эти правила не означают проверку всех непечатных символов Unicode.
+
+Идентификаторы разные, иначе реестр форм падает:
+
+| Кто | `id` |
+|---|---|
+| Пул `/storage-servers` | `storage-server-admin` |
+| Куки-сейф | `storage-server-vault` |
+
+## Вход
+
+`#core/hooks/storage-server-form/index.js`
+
+| Имя | Назначение |
+|---|---|
+| `defineStorageServerForm({ id, withPriority, allowEditExisting?, messages? })` | `defineForm`: действия `save`, `delete` (`validate: 'none'`), `reset-key` (`validate: 'none'`). |
+| `storageServerFields({ withPriority, allowEditExisting })` | Поля с одинаковыми именами. |
+| `parseStorageServerEntry(values, options?)` | Разбор в `{ id, entry }` или список `IssueLike`. Схемы `s3://` и `webdav://` проверяет `#core/lib/storage`. |
+| `maskStorageServerEntry(id, entry)` | Публичная карточка без секретов. |
+| `STORAGE_SERVER_ADMIN_FORM_ID` / `STORAGE_SERVER_VAULT_FORM_ID` | Канонические id. |
+| `STORAGE_SERVER_RESERVED_SLOTS` | Имена, которые нельзя занять слотом. |
+
+`messages` передаёт вызывающий. Этот хук не импортирует `#content/*`.
+
+Кнопка отправки остаётся в теле `StorageServerForm`. Сброс ключа сейфа — отдельная кнопка `form={formId}` и `bound.intent('reset-key')`, без своего `<Form>` и без `confirm_scope`.

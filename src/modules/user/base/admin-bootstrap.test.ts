@@ -1,0 +1,132 @@
+/**
+ * Первый администратор на настоящей БД: заводится один раз при открытии БД
+ * в рантайме, получает `admin` в правах и не обманывается лимитом страницы
+ * `pageSize: 20` поверх 100 демо-аккаунтов. Ключ либо генерируется здесь (и тогда
+ * печатается в лог), либо приходит из окружения (`ADMIN_SEED`) — такой только
+ * выводит публичный seed и остаётся тем же от запуска к запуску.
+ */
+import assert from 'node:assert/strict'
+import { PGlite } from '@electric-sql/pglite'
+import { afterAll, it } from 'vitest'
+import { conservativeLimits, createDb } from '#core/lib/db/index.js'
+import { pgliteAdapter } from '#core/lib/db/adapters/pglite.js'
+import { defineSchema } from '#core/lib/db/sync/index.js'
+import { SERVER } from '#modules/user/base/service/auth.js'
+import { generateKeyPair, seedOf } from '#modules/user/base/service/keys.js'
+import { auth } from '#modules/user/base/model/schema.js'
+import { ensureSeedAdmin } from './service/admin-bootstrap.server.js'
+
+const test = (name: string, fn: () => Promise<void>) => it(name, fn, 60_000)
+
+let shared: PGlite | undefined
+afterAll(async () => {
+  await shared?.close()
+})
+
+async function withDb(fn: (db: ReturnType<typeof createDb>) => Promise<void>) {
+  shared ??= new PGlite()
+  await shared.exec('DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
+  const driver = pgliteAdapter(shared)
+  assert.equal((await defineSchema({ resources: [auth] }).sync(driver)).status, 'ok')
+  await fn(createDb({ driver, limits: conservativeLimits, resources: [auth] }))
+}
+
+test('схема появилась — администратор создан, seed настоящий и он же в БД', async () => {
+  await withDb(async (db) => {
+    const created = await ensureSeedAdmin(db)
+    assert.ok(created, 'администратор создан')
+    assert.equal(created.seed.length, 43, 'seed — base64url от 32 байт')
+    assert.equal(created.secret.length, 43, 'ключ для входа тоже 32 байта')
+
+    const rows = (await db.resource(auth).select(SERVER, {})) as unknown as {
+      id: string
+      seed: string | null
+      permissions: string[]
+    }[]
+    assert.equal(rows.length, 1)
+    assert.deepEqual(rows[0]!.permissions, ['admin'])
+    assert.equal(rows[0]!.seed, created.seed, 'в БД лежит публичная половина')
+    assert.notEqual(rows[0]!.seed, created.secret, 'приватная половина в БД не попадает')
+  })
+})
+
+test('ключ из окружения (ADMIN_SEED): в БД ложится выведенный из него seed', async () => {
+  await withDb(async (db) => {
+    const { secret, seed } = await generateKeyPair()
+    const created = await ensureSeedAdmin(db, secret)
+    assert.ok(created, 'администратор создан')
+    assert.equal(created.secret, secret, 'ключ не перегенерирован, взят из окружения')
+    assert.equal(created.seed, seed, 'seed выведен из заданного ключа')
+    assert.equal(created.seed, await seedOf(secret), 'вывод детерминирован')
+
+    const rows = (await db.resource(auth).select(SERVER, {})) as unknown as {
+      seed: string | null
+      permissions: string[]
+    }[]
+    assert.equal(rows.length, 1)
+    assert.deepEqual(rows[0]!.permissions, ['admin'])
+    assert.equal(rows[0]!.seed, seed, 'в БД лежит только публичная половина')
+  })
+})
+
+test('повторный запуск администратора не плодит даже при > pageSize (100 демо-аккаунтов)', async () => {
+  await withDb(async (db) => {
+    const created = await ensureSeedAdmin(db)
+    assert.ok(created, 'первый вызов создаёт администратора')
+
+    await db.query({
+      text: `INSERT INTO public.user_auth (seed, permissions, subnet_salt, created_at, updated_at)
+               SELECT 'demo-' || substr(md5('seed-' || n), 1, 19) || substr(md5('salt-' || n), 1, 19),
+                      '{}',
+                      substr(md5('sub-' || n), 1, 32),
+                      clock_timestamp() - (n * interval '1 day'),
+                      clock_timestamp() - (n * interval '1 day')
+                 FROM generate_series(1, 100) n`,
+    })
+
+    const second = await ensureSeedAdmin(db)
+    assert.equal(second, null, 'существующий админ среди 101 строки найден — дубль не создан')
+
+    const countRes = await db.query<{ total: number; admins: number }>({
+      text: `SELECT count(*)::int AS total,
+                    count(*) FILTER (WHERE 'admin' = ANY(permissions))::int AS admins
+               FROM public.user_auth`,
+    })
+    assert.equal(countRes.rows[0]!.total, 101, '100 демо-аккаунтов + 1 администратор')
+    assert.equal(countRes.rows[0]!.admins, 1)
+  })
+})
+
+test('идемпотентно повышает существующий обычный или мягко удалённый аккаунт с тем же ADMIN_SEED без ошибки UNIQUE(seed)', async () => {
+  await withDb(async (db) => {
+    const { secret, seed } = await generateKeyPair()
+    const inserted = (await db.resource(auth).insert(SERVER, {
+      seed,
+      permissions: [],
+    })) as unknown as { id: string }
+
+    // 1. Обычный аккаунт с тем же seed получает роль admin вместо UNIQUE-падения
+    const promoted = await ensureSeedAdmin(db, secret)
+    assert.ok(promoted, 'существующий аккаунт повышен до администратора')
+    assert.equal(promoted.id, inserted.id)
+    assert.equal(promoted.seed, seed)
+
+    // 2. Мягко удаляем этого администратора — активных админов снова 0
+    await db.query({
+      text: 'UPDATE public.user_auth SET deleted_at = clock_timestamp() WHERE id = $1',
+      values: [inserted.id],
+    })
+
+    // 3. Повторный ensureSeedAdmin восстанавливает deleted_at = NULL и сохраняет admin
+    const restored = await ensureSeedAdmin(db, secret)
+    assert.ok(restored, 'мягко удалённый аккаунт восстановлен как администратор')
+    assert.equal(restored.id, inserted.id)
+
+    const check = await db.query<{ deleted_at: string | null; permissions: string[] }>({
+      text: 'SELECT deleted_at, permissions FROM public.user_auth WHERE id = $1',
+      values: [inserted.id],
+    })
+    assert.equal(check.rows[0]!.deleted_at, null)
+    assert.deepEqual(check.rows[0]!.permissions, ['admin'])
+  })
+})

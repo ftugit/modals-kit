@@ -1,30 +1,8 @@
 <script lang="ts">
-  // Страница своих настроек (`/user/config`) — тонкий носитель + ACL-гейт.
-  import { useHeadSeo } from '#components/shell/index.js'
-  import Acl from '#content/user/ui/Acl.svelte'
-  import { UserConfig } from '#content/user/ui/user-config/index.js'
+  import ConfigPage from '#sections/user/config/ConfigPage.svelte'
   import type { PageProps } from './$types'
 
   let { data }: PageProps = $props()
-
-  useHeadSeo({
-    subTitle: 'Настройки',
-    description: 'Персональные настройки аккаунта и приватности профиля.',
-    noindex: true,
-  })
 </script>
 
-<div class="mx-auto w-full max-w-md">
-  {#if data.fact}
-    <Acl status={data.fact} enabled={data.enabled} backHref={'/'} />
-  {:else}
-    <UserConfig
-      initial={data}
-      enabled={data.enabled}
-      authorized={Boolean(data.slice)}
-      doneHref={data.uid ? `/user/${data.uid}` : '/'}
-      action={`/user/config?next=${encodeURIComponent(data.uid ? `/user/${data.uid}` : '/')}`}
-      stepsMode="hybrid"
-    />
-  {/if}
-</div>
+<ConfigPage {data} />

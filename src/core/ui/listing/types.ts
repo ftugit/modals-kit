@@ -1,0 +1,121 @@
+import type { Snippet } from 'svelte'
+import type { SidebarPlace } from '#core/ui/shell/index.js'
+import type { SurfaceVariant } from '#core/ui/index.js'
+import type { PaginatorState } from '#core/lib/paginate/index.js'
+
+/** Первая порция `load`. Домен может нести рядом свои флаги (`canCreate`). */
+export interface ListingInitial<Item extends { id: string }> {
+  snapshot: PaginatorState<Item> | null
+  fact: string | null
+}
+
+export interface ListingFilters {
+  /** Имя модалки фильтров. */
+  modal: string
+  /** Параметры модалки. Функция видит живой `extra` пагинатора. */
+  params?: Record<string, unknown> | ((extra: Record<string, unknown>) => Record<string, unknown>)
+  /** Страница фильтров без query: `/users/filters`. */
+  path: string
+  /** Чужие query страницы фильтров (`uid`). Пустые значения не пишутся. */
+  query?: Record<string, string>
+  /** Ключи extra, которые входят в счётчик кнопки. Поиск и срез id сюда не кладут. */
+  keys: readonly string[]
+  defaults: Readonly<Record<string, string>>
+  /** Размер порции по умолчанию. Отличие тоже считается. */
+  pageSize: number
+  /**
+   * Имя поля формы для размера порции. Чип счётчика открывает этот блок.
+   * По умолчанию `size` — так поле названо в формах списков.
+   */
+  sizeKey?: string
+  /** Ключи, которые в этом срезе счётчик пропускает. */
+  ignore?: readonly string[]
+  /**
+   * Подписи чипов. Список берёт их из описания своей формы и передаёт сюда:
+   * оболочка вторую схему не заводит.
+   */
+  labels?: Readonly<Record<string, string>>
+  /** Человекочитаемое значение. Нет — сырое значение extra. */
+  text?: (key: string, value: string) => string
+  testId?: string
+}
+
+/** Что оболочка знает про строку и отдаёт хосту в сниппет `row`. */
+export interface ListingRowContext {
+  /** Строка отмеченной: смысл выбора задаёт хост через `isSelected`. */
+  selected: boolean
+  /** Номер страницы пагинатора. */
+  page: number
+  /** Позиция строки внутри страницы. */
+  index: number
+}
+
+export interface ListingFrame<Item extends { id: string }> {
+  extra: Record<string, unknown>
+  payload: ListingInitial<Item>
+}
+
+export interface ListingProps<Item extends { id: string }> {
+  /** Имя зарегистрированного пагинатора. Регистрацию делает доменный список до монтирования. */
+  name: string
+  /** Адресный ключ порции (`users`, `blocks`). */
+  pageParam: string
+  /** Путь `load` без query. */
+  route: string
+  /**
+   * Когда переспрашивать первую порцию, если `initial` нет.
+   * `href` — при смене собранного адреса. Иначе имя ключа extra (`ids`):
+   * переспрос только при его смене, а в запрос уходят все ключи адреса.
+   */
+  watch?: 'href' | string
+  /** Ключи адреса, которые self-fetch не копирует. */
+  omitKeys?: readonly string[]
+  /** Код отказа, если `preloadData` не вернул `loaded`. */
+  loadError?: string
+  ariaLabel: string
+  title: string
+  variant?: SurfaceVariant
+  class?: string
+  scope?: string | null
+  url?: boolean
+  initial?: ListingInitial<Item> | null
+  onAcl?: (fact: string) => void
+  /**
+   * Строка целиком: элемент и его атрибуты выбирает хост, оболочка не диктует,
+   * ссылка это или нет. Готовый вариант строки-ссылки — `ListingRow`.
+   */
+  row: Snippet<[Item, ListingRowContext]>
+  /**
+   * Отмеченные строки. Оболочка считает признак и отдаёт его в `row`; что с ним
+   * делать и что означает выбор — дело хоста.
+   */
+  isSelected?: (id: string) => boolean
+  listTestId?: string
+  pendingTestId?: string
+  filters?: ListingFilters
+  /**
+   * Зона sidebar для формы фильтров. Страница передаёт, модалка — нет.
+   * Нет зоны — всегда кнопка. Зона есть — форма в слоте, видимость классами.
+   */
+  sidebar?: SidebarPlace
+  /** Форма фильтров этой схемы. Оболочка поля не знает, только регистрирует сниппет. */
+  filtersForm?: Snippet
+  search?: {
+    label: (extra: Record<string, unknown>) => string
+    placeholder: (extra: Record<string, unknown>) => string
+  }
+  /** Смена этого ключа в `extra` снапшота заменяет окно целиком. */
+  identityKey?: string
+  /** Смена актора сбрасывает ленту. Домен передаёт id, оболочка хранилище не знает. */
+  actor?: string | null
+  skeleton?: Snippet<[Record<string, unknown>]>
+  controls?: Snippet<[ListingFrame<Item>]>
+  /**
+   * Встроенный/«без шапки» режим: оболочка отдаёт шапку (controls, кнопка
+   * фильтров, счётчик) и тело (поиск, чипы, пагинатор) родителю через этот
+   * сниппет. Родитель рисует свой `Surface` и размещает их у себя.
+   * Без `frame` оболочка рисует текущий `Surface` — поведение не меняется.
+   * Получает и pending-ветку (скелетон), чтобы список не терял загрузку.
+   */
+  frame?: (parts: { header: Snippet; body: Snippet }) => unknown
+}

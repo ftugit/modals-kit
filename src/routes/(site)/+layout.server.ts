@@ -3,8 +3,8 @@
 // load не перезапускается; изменения пишет сам ShellState.
 import { randomUUID } from 'node:crypto'
 import type { LayoutServerLoad } from './$types'
-import { parseShellPrefs, SHELL_COOKIE } from '#components/shell/prefs.js'
-import { resolveVault } from '#content/user/gateway.server.js'
+import { parseShellPrefs, SHELL_COOKIE } from '#core/ui/shell/prefs.js'
+import { resolveVault } from '#modules/user/base/service/gateway.server.js'
 
 export const load: LayoutServerLoad = async (event) => ({
   shell: parseShellPrefs(event.cookies.get(SHELL_COOKIE)) ?? null,

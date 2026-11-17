@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { checkFile, collectSpecifiers, formatProblems, isFrameworkZone, CORE_MODULES } from './core-purity.mjs'
 
-const ROOT = 'src/lib/modals'
+const ROOT = 'src/core/lib/modals'
 
 /* ── разбор импортов ───────────────────────────────────────────────── */
 
@@ -105,7 +105,7 @@ test('зона фреймворка существует и непуста (ин
 
 // lib/links удалён (R1): связки — правила `disabledWhen` самой формы.
 test('зона фреймворка есть у каждого ядра с адаптерами (form/paginate)', () => {
-  for (const root of ['src/lib/form', 'src/lib/paginate']) {
+  for (const root of ['src/core/lib/form', 'src/core/lib/paginate']) {
     const zones = walk(root).map((f) => relative(root, f)).filter(isFrameworkZone)
     assert.ok(zones.length > 0, `${root}: нет ни одного файла в зоне фреймворка`)
   }

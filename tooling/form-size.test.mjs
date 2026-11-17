@@ -7,7 +7,7 @@ import {
   isAdapterZone, isRuntimeFile, measure, report, zoneOf,
 } from './form-size.mjs'
 
-const ROOT = 'src/lib/form'
+const ROOT = 'src/core/lib/form'
 
 /* ── состав рантайма ──────────────────────────────────────────────── */
 

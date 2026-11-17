@@ -93,7 +93,7 @@ const GENERATED_APP = '.svelte-kit/generated/build/client-optimized/app.js'
 // 242.2 (+5.7), immutable 249.9 → 255.7 (+5.8), /db-demo 195.3 → 201.1 (+5.8), /form
 // 169.8 → 170.0. Решение оператора («Да, увеличивай»): весь JS 243, immutable 256.5,
 // /db-demo 201.5.
-// REVISION 2026-10-15, ход 189 (глобальный лоадер, src/lib/task/README.md):
+// REVISION 2026-10-15, ход 189 (глобальный лоадер, src/core/lib/task/README.md):
 // полоска сверху в корневом layout — на КАЖДОМ маршруте +1.1–1.2. Факт: весь JS 243.2,
 // immutable 256.8, /form 171.1, /paginator 206.0, /db-demo 202.3, /cards/[id] 138.7.
 // По постоянному решению оператора (+5, сообщить): весь JS 244, immutable 257.5, /form 171.5,
@@ -187,7 +187,7 @@ const LIMITS = {
   // не вызван; аватар реально тянет ядро+mozjpeg при первом выборе файла.
   // Построутовые лимиты не тронуты — начальные загрузки не изменились.
   // Лимиты = факт + 0.5.
-  // 2026-10-22: модуль `src/hooks/component-form/` + `content/user/acl.ts` и
+  // 2026-10-22: модуль `src/core/hooks/component-form/` + `content/user/acl.ts` и
   // `ui/Acl.svelte` (21 экран: статусы авторизации/аккаунта + отказы моделей
   // `lib/db`), удаление `/user/profile` и `ProfileModal`: начальные маршруты
   // без изменений (0.0 KiB), ленивый чанк +1.0 KiB gzip (411.8 → 412.8 — в

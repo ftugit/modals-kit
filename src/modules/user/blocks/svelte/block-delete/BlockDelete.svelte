@@ -1,0 +1,208 @@
+<script lang="ts">
+  /**
+   * Компонент удаления записи блокировки (`user.block`): подтверждение
+   * удержанием кнопки (`HoldButton`) + условный чекбокс полного удаления
+   * (`hard`), который отображается ТОЛЬКО при наличии у вызывающего права
+   * `canHardDelete` (если запись ещё не помечена удалённой).
+   */
+  import { preloadData } from '$app/navigation'
+  import { untrack } from 'svelte'
+  import { grants } from '#core/lib/db/index.js'
+  import { Form, formTask } from '#core/lib/form/svelte/index.js'
+  import type { Result } from '#core/lib/form/index.js'
+  import { bindComponentForm } from '#core/hooks/component-form/index.js'
+  import { forms } from '#core/ui/form/forms.config.js'
+  import Field from '#core/ui/form/Field.svelte'
+  import Common from '#core/ui/form/Common.svelte'
+  import HoldButton from '#core/ui/button/HoldButton.svelte'
+  import { Button, Skeleton } from '#core/ui/index.js'
+  import { cn } from '#core/ui/utils.js'
+  import type { AuthErrorCode } from '#modules/user/base/model/error.js'
+  import { useGrants } from '#modules/user/base/svelte/grants.svelte.js'
+  import { block as blockResource } from '#modules/user/base/model/schema.js'
+  import { describeBlockScope } from '#modules/user/base/model/spec-block.js'
+  import type { BlockDeleteRouteData } from '#modules/user/base/model/types.js'
+  import { userSession, vault } from '#modules/user/base/svelte/vault.svelte.js'
+  import { userSurfaceVariants, type UserSurfaceVariant } from '#modules/user/base/svelte/Acl.svelte'
+  import { invalidatePaginator } from '#core/lib/paginate/index.js'
+  import { BLOCKS_NAME } from '../blocks-list/source.js'
+  import { mirrorToField } from '#modules/user/base/svelte/field-mirror.svelte.js'
+  import { blockDeleteForm } from './form.js'
+
+  const gBlock = grants(blockResource)
+
+  interface Props {
+    blockId: string
+    uid?: string | null
+    initial?: BlockDeleteRouteData | null
+    doneHref?: string
+    action?: string
+    form?: { result?: Result } | null
+    onAcl?: (fact: AuthErrorCode) => void
+    onDone?: () => void
+    variant?: UserSurfaceVariant
+    class?: string
+  }
+
+  let {
+    blockId,
+    uid = null,
+    initial = null,
+    doneHref,
+    action,
+    form,
+    onAcl,
+    onDone,
+    variant = 'plain',
+    class: className,
+  }: Props = $props()
+
+  const fixedUid = $derived(uid?.trim() || null)
+  let routeData = $state<BlockDeleteRouteData | null>(untrack(() => initial))
+  let askedUrl = ''
+
+  $effect(() => {
+    if (initial) {
+      askedUrl = ''
+      routeData = initial
+      return
+    }
+    const id = blockId.trim()
+    if (!id) {
+      routeData = null
+      onAcl?.('auth.identity-unknown')
+      return
+    }
+    const url = fixedUid
+      ? `/user/${encodeURIComponent(fixedUid)}/blocks/${encodeURIComponent(id)}/delete`
+      : `/blocks/${encodeURIComponent(id)}/delete`
+    if (askedUrl === url) return
+    askedUrl = url
+    routeData = null
+    let cancelled = false
+    void (async () => {
+      const r = await preloadData(url)
+      if (cancelled || askedUrl !== url) return
+      if (r.type !== 'loaded') {
+        onAcl?.('auth.expired')
+        return
+      }
+      const d = r.data as BlockDeleteRouteData
+      if (d.fact) {
+        onAcl?.(d.fact)
+        return
+      }
+      if (!d.detail?.canDelete) {
+        onAcl?.('auth.forbidden')
+        return
+      }
+      routeData = d
+    })()
+    return () => { cancelled = true }
+  })
+
+  const bound = bindComponentForm(forms, blockDeleteForm, {
+    action: untrack(() => action),
+    continuation: untrack(() => form?.result ?? undefined),
+    session: userSession,
+  })
+
+  mirrorToField(bound, 'block_id', () => blockId)
+  mirrorToField(bound, 'subject', () => fixedUid ?? routeData?.detail?.block.authId ?? '')
+
+  const hardDeleteGrant = useGrants(gBlock.hardDelete)
+  const detail = $derived(routeData?.detail ?? null)
+  const canHardDelete = $derived(
+    vault.principal !== null ? hardDeleteGrant.current : Boolean(detail?.canHardDelete),
+  )
+  const holdSeconds = $derived(routeData?.holdSeconds ?? 2)
+  const alreadyDeleted = $derived(detail?.block.deletedAt != null)
+  const scopeInfo = $derived(detail ? describeBlockScope(detail.block.scope) : null)
+
+  let lastHandledSubmission = ''
+  const done = $derived(
+    (bound.state.result?.data as { step?: string } | undefined)?.step === 'done',
+  )
+
+  $effect(() => {
+    const r = bound.state.result
+    if (!r?.ok || r.submissionId === lastHandledSubmission) return
+    const d = r.data as { step?: string } | undefined
+    if (d?.step === 'done') {
+      lastHandledSubmission = r.submissionId
+      void invalidatePaginator(BLOCKS_NAME)
+      onDone?.()
+    }
+  })
+</script>
+
+{#if done}
+  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3 text-left', userSurfaceVariants({ variant }), className)} data-testid="block-delete-done">
+    <h2 class="text-lg font-semibold leading-tight tracking-tight">Запись блокировки удалена</h2>
+    <p class="text-sm text-muted-foreground">
+      Изменения применены к истории блокировок аккаунта.
+    </p>
+    {#if doneHref}
+      <Button href={doneHref} variant="outline" class="self-start">К списку блокировок</Button>
+    {/if}
+  </div>
+{:else if !detail}
+  <div class={cn('mx-auto flex w-full max-w-sm flex-col gap-3', userSurfaceVariants({ variant }), className)} aria-busy="true">
+    <Skeleton class="h-5 w-44" />
+    <Skeleton class="h-14 w-full" />
+    <Skeleton class="h-9 w-48" />
+  </div>
+{:else}
+  <Form
+    id="user-block-delete"
+    form={bound}
+    hiddenFields={bound.hidden()}
+    class={cn('mx-auto flex w-full max-w-sm flex-col gap-4 text-left', userSurfaceVariants({ variant }), className)}
+    data-testid="block-delete-form"
+  >
+    <Common errors={bound.common} title="Не получилось удалить блокировку" />
+
+    <div hidden aria-hidden="true">
+      <Field of={bound.f.block_id} />
+      <Field of={bound.f.subject} />
+    </div>
+
+    <div class="flex flex-col gap-3">
+      <h2 class="text-lg font-semibold leading-tight tracking-tight">Удаление блокировки</h2>
+      <p class="text-sm text-muted-foreground">
+        Сфера: <strong class="text-foreground">{scopeInfo?.title ?? detail.block.scope}</strong>
+        — {detail.block.reason}
+      </p>
+
+      {#if alreadyDeleted}
+        <p class="text-sm text-destructive" data-testid="block-delete-already-soft">
+          Запись уже помечена удалённой. Подтверждение сотрёт её из базы данных окончательно.
+        </p>
+      {:else}
+        <p class="text-sm text-muted-foreground">
+          По умолчанию запись помечается удалённой и перестаёт действовать, но сохраняется для аудита.
+        </p>
+        {#if canHardDelete}
+          <div data-testid="block-delete-hard-option">
+            <Field of={bound.f.hard} />
+          </div>
+        {/if}
+      {/if}
+
+      <HoldButton
+        type="submit"
+        name="intent"
+        value="delete"
+        variant="destructive"
+        seconds={holdSeconds}
+        when="fill"
+        hover
+        task={formTask(bound.state, 'delete')}
+        class="self-start"
+        data-testid="block-delete-submit"
+      >
+        Удерживайте, чтобы удалить
+      </HoldButton>
+    </div>
+  </Form>
+{/if}

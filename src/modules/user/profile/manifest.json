@@ -1,0 +1,13 @@
+{
+  "name": "user/profile",
+  "parent": "user",
+  "version": "1.0.0",
+  "required": false,
+  "dependsOn": ["user"],
+  "entries": {
+    ".": "./index.ts",
+    "./model": "./model/index.ts",
+    "./svelte": "./svelte/index.ts",
+    "./server": "./service/index.ts"
+  }
+}

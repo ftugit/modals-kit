@@ -1,0 +1,14 @@
+{
+  "name": "user/blocks",
+  "parent": "user",
+  "version": "1.0.0",
+  "required": false,
+  "dependsOn": [
+    "user"
+  ],
+  "entries": {
+    ".": "./index.ts",
+    "./svelte": "./svelte/index.ts",
+    "./server": "./service/index.ts"
+  }
+}

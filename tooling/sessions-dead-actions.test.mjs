@@ -7,8 +7,8 @@ import { join } from 'node:path'
 // одиночный отзыв карточки — `?/revoke`. Оба экшена живы; страж не даёт ни
 // удалить одиночный отзыв, ни вернуть карточку на массовый набор.
 const LIST_ROUTES = [
-  'src/routes/(site)/(app)/user/sessions/+page.server.ts',
-  'src/routes/(site)/(app)/user/[id=uuid]/sessions/+page.server.ts',
+  'src/sections/user/sessions/load.server.ts',
+  'src/sections/user/user-sessions/load.server.ts',
 ]
 
 test('списки сессий экспортируют живые экшены revoke и others', () => {
@@ -20,7 +20,7 @@ test('списки сессий экспортируют живые экшены
 })
 
 test('карточка закрывает одну строку экшеном ?/revoke, а не набором ?/others', () => {
-  const src = readFileSync('src/content/user/ui/SessionCard.svelte', 'utf8')
+  const src = readFileSync('src/modules/user/sessions/svelte/SessionCard.svelte', 'utf8')
   assert.match(src, /\?\/revoke/, 'карточка должна POST-ить на ?/revoke')
   assert.doesNotMatch(src, /\?\/others/, 'карточка не должна использовать массовый набор')
 })
@@ -37,5 +37,5 @@ test('адрес ?/revoke в UI живёт только в карточке', ()
     }
   }
   walk('src')
-  assert.deepEqual(problems, ['src/content/user/ui/SessionCard.svelte'])
+  assert.deepEqual(problems, ['src/modules/user/sessions/svelte/SessionCard.svelte'])
 })

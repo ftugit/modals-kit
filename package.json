@@ -4,11 +4,13 @@
   "version": "0.0.1",
   "type": "module",
   "imports": {
-    "#components/*": "./src/components/*",
-    "#content/*": "./src/content/*",
-    "#hooks/*": "./src/hooks/*",
-    "#lib/*": "./src/lib/*",
-    "#server/*": "./src/server/*"
+    "#core/*": "./src/core/*",
+    "#hooks/*": "./src/core/hooks/*",
+    "#lib/*": "./src/core/lib/*",
+    "#modules/*": "./src/modules/*",
+    "#sections/*": "./src/sections/*",
+    "#server/*": "./src/core/server/*",
+    "#content/*": "./src/content/*"
   },
   "engines": {
     "node": ">=22.17 <25"
@@ -47,9 +49,9 @@
     "test:browser:shikimori": "node test/browser/shikimori.mjs",
     "test:browser:select-trace": "node test/browser/select-trace.mjs",
     "test:browser:errors": "node test/browser/errors.mjs",
-    "test:db:probes": "node --no-liftoff --import tsx src/lib/db/probes/pglite.probe.mts && node --no-liftoff --import tsx src/lib/db/probes/order.probe.mts",
-    "probe:user:sessions-bulk": "node --no-liftoff --import tsx src/content/user/probes/sessions-bulk.probe.mts",
-    "test:db": "vitest run src/lib/db",
+    "test:db:probes": "node --no-liftoff --import tsx src/core/lib/db/probes/pglite.probe.mts && node --no-liftoff --import tsx src/core/lib/db/probes/order.probe.mts",
+    "probe:user:sessions-bulk": "node --no-liftoff --import tsx src/modules/user/base/probes/sessions-bulk.probe.mts",
+    "test:db": "vitest run src/core/lib/db",
     "test:browser:live": "node test/browser/shikimori.mjs && node test/browser/rickmorty.mjs",
     "test:browser:loader": "node test/browser/loader.mjs",
     "test:browser:a11y": "node test/browser/a11y.mjs",

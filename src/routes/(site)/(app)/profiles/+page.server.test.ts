@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest'
 import { load } from './+page.server.js'
 
 const mock = vi.hoisted(() => ({ listProfiles: vi.fn(), enabled: true }))
-vi.mock('#content/user/gateway.server.js', () => ({
+vi.mock('#modules/user/base/service/gateway.server.js', () => ({
   auth: () => ({ enabled: mock.enabled, listProfiles: mock.listProfiles }),
 }))
 

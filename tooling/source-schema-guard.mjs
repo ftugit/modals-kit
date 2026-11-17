@@ -21,14 +21,14 @@ const TEST_RE = /\.test\.(ts|mts|js|mjs)$|(^|\/)tooling\//
 
 /** Зоны, которым позволено знать о внешнем API Shikimori. */
 export const UPSTREAM_ZONES = [
-  /^src\/server\//,
+  /^src\/(?:core\/server|server)\//,
   /^src\/content\/demo-catalog\/shikimori\/[^/]+\.server\.ts$/,
   /^src\/routes\/api\//,
 ]
 
 /** Где объявлен контракт имён фильтров (единственное место, кроме тестов). */
 export const KEY_ZONES = [
-  /^src\/lib\/paginate\/filters\//,
+  /^src\/core\/lib\/paginate\/filters\//,
   /^src\/content\/demo-catalog\/shikimori\/filters\.ts$/,
 ]
 
@@ -40,17 +40,17 @@ export const PIPELINE_ZONE = /^src\/content\/demo-catalog\/shikimori\/filters\.s
 
 /** Кому можно читать готовую схему `getShikimoriFilterSchema` (сервер целиком). */
 export const SCHEMA_READERS = [
-  /^src\/server\//,
+  /^src\/(?:core\/server|server)\//,
   /^src\/content\/demo-catalog\/shikimori\/[^/]+\.server\.ts$/,
   /^src\/routes\/api\//,
   /^src\/routes\/\(site\)\/\(app\)\/paginator\/\+page\.server\.ts$/,
 ]
 
 /**
- * Запрещённое в зоне чистых фильтров (`src/lib/paginate/filters`): модуль изоморфный и
+ * Запрещённое в зоне чистых фильтров (`src/core/lib/paginate/filters`): модуль изоморфный и
  * framework-free — его импортируют и серверная зона, и форма в браузере.
  */
-export const FILTERS_LIB = /^src\/lib\/paginate\/filters\//
+export const FILTERS_LIB = /^src\/core\/lib\/paginate\/filters\//
 export const FILTERS_LIB_FORBIDDEN_SPECIFIERS = [
   /^svelte(\/|$)/,
   /^@sveltejs\//,
@@ -58,10 +58,10 @@ export const FILTERS_LIB_FORBIDDEN_SPECIFIERS = [
   /^react(-dom)?(\/|$)/,
   /^solid-js(\/|$)/,
   /^#(?:server|hooks|components|content)\//,
-  /^#lib\/server\//,
-  /^#lib\/paginate\//,
-  /^#lib\/modals\//,
-  /^#lib\/form\/(svelte|react|solid|vue)\//,
+  /^#(?:core\/lib|lib)\/server\//,
+  /^#(?:core\/lib|lib)\/paginate\//,
+  /^#(?:core\/lib|lib)\/modals\//,
+  /^#(?:core\/lib|lib)\/form\/(svelte|react|solid|vue)\//,
 ]
 export const FILTERS_LIB_FORBIDDEN_GLOBALS = [/\bwindow\./, /\bdocument\./, /\blocalStorage\b/, /\bfetch\s*\(/]
 
@@ -73,7 +73,7 @@ export const CONTENT_RULES = [
     zones: [...KEY_ZONES, ...UPSTREAM_ZONES],
     why:
       'канонический ключ фильтра выписан в коде. Ключи объявлены один раз\n' +
-      '    (`src/lib/paginate/filters` + `content/shikimori-filters`) и раздаются\n' +
+      '    (`src/core/lib/paginate/filters` + `content/shikimori-filters`) и раздаются\n' +
       '    `catalogFilterFieldNames`; рукописный ключ в компоненте/роуте\n' +
       '    разъезжается со схемой молча — фильтр «есть», а параметра нет.',
   },
@@ -196,7 +196,7 @@ function lineOf(source, index) {
 
 /**
  * Проверяет ОДИН файл: правила содержимого + чистота зоны фильтров.
- * @param {string} relPath путь от корня проекта ('src/lib/paginate/filters/values.ts')
+ * @param {string} relPath путь от корня проекта ('src/core/lib/paginate/filters/values.ts')
  * @param {string} source
  * @returns {Array<{rule: string, line: number, found: string, why: string}>}
  */

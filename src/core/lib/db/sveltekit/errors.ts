@@ -1,0 +1,108 @@
+import { DbFailure, normalizeFailure, type FailureKind, type FieldError } from "../errors";
+import { BodyTooLarge } from "./query";
+
+/** Те же коды, что и в источнике (presentFailure), но без сборки Response. */
+export const FAILURE_STATUS: Record<FailureKind, number> = {
+  validation: 422,
+  forbidden: 403,
+  not_found: 404,
+  unsupported: 501,
+  conflict: 409,
+  database: 500,
+  unavailable: 503,
+  cursor: 400,
+  transaction: 409,
+  post_commit: 500,
+  /** Модели разошлись со схемой БД так, что само не применить (`defineSchema`). */
+  schema_pending: 503,
+};
+export interface KitErrorBody {
+  message: string;
+  /** Стабильный код для UI/тестов: `code: 'not_found'` и т. п. */
+  code: string;
+  fields?: readonly string[];
+  /** Ошибки по полям (`validation`, а также `unique`/`check` у `conflict`). */
+  errors?: readonly Omit<FieldError, "template">[];
+  committed?: boolean;
+  /**
+   * Только в dev: код SQLSTATE, имя условия и причины (`issues`: настройка
+   * ресурса, сбой транспорта). SQL/параметры/cause — никогда.
+   */
+  diagnostic?: Record<string, unknown>;
+}
+
+/**
+ * Нагрузку в `throw error(status, body)` (SvelteKit) либо `return fail(status, body)`.
+ * Возвращаем данные, а не бросаем: `error()` импортируется из `@sveltejs/kit`,
+ * и импорт оставлен приложению — пакет не зависит от kit в рантайме.
+ */
+export function toKitError(
+  error: unknown,
+  development = false,
+): { status: number; body: KitErrorBody } {
+  if (error instanceof BodyTooLarge)
+    return { status: 413, body: { message: "Body too large", code: "payload_too_large" } };
+  const e = normalizeFailure(error);
+  const body: KitErrorBody = {
+    message: e.message,
+    code: e.kind,
+    ...(e.details.publicFields ? { fields: e.details.publicFields } : {}),
+    ...(e.details.errors?.length
+      ? { errors: e.details.errors.map(({ template: _t, ...rest }) => rest) }
+      : {}),
+    ...(e.details.committed ? { committed: true } : {}),
+    ...(development
+      ? {
+          diagnostic: {
+            sqlstate: e.details.sqlstate,
+            condition: e.details.condition,
+            field: e.details.field,
+            ...(e.details.issues?.length ? { issues: [...e.details.issues] } : {}),
+          },
+        }
+      : {}),
+  };
+  return { status: FAILURE_STATUS[e.kind] ?? 500, body };
+}
+
+/**
+ * Для form actions: поле + текст ошибки из Standard Schema. В источнике
+ * сообщения схемы терялись (`fail('validation', key)`), поэтому в UI
+ * доезжал только «Invalid input» — здесь они идут в `fieldErrors`
+ * в формате `#core/lib/form/index.js`-ошибок (`path`/`message`).
+ *
+ * `issues` клиенту — только у `validation`: это тексты схем про присланные
+ * значения. У прочих видов там бывает внутреннее (сырой текст Postgres от
+ * транспорта, подсказки об инфраструктуре) — в production вместо них общий
+ * текст вида сбоя, сами причины — только в dev (DB-2).
+ */
+export function toFormFailure(
+  error: unknown,
+  development = false,
+): {
+  status: number;
+  data: {
+    message: string;
+    code: string;
+    fieldErrors: Record<string, string[]>;
+    formErrors: string[];
+  };
+} {
+  const { status, body } = toKitError(error, development);
+  const e = normalizeFailure(error);
+  const fieldErrors: Record<string, string[]> = {};
+  const formErrors: string[] = [];
+  if (e instanceof DbFailure && e.details.errors?.length) {
+    for (const x of e.details.errors)
+      if (x.field) (fieldErrors[x.field] ??= []).push(x.message);
+      else formErrors.push(x.message);
+  } else if (e instanceof DbFailure) {
+    const shown = development || e.kind === "validation";
+    const messages = shown && e.details.issues?.length ? [...e.details.issues] : [];
+    if (e.details.field) {
+      fieldErrors[e.details.field] = messages.length ? messages : [e.message];
+    } else formErrors.push(...(messages.length ? messages : [e.message]));
+  }
+  if (body.fields) for (const field of body.fields) fieldErrors[field] ??= [e.message];
+  return { status, data: { message: body.message, code: body.code, fieldErrors, formErrors } };
+}

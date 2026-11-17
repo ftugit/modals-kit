@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateKeyPair } from '#content/user/keys.js'
+import { generateKeyPair } from '#modules/user/base/service/keys.js'
 import { variables } from './env.js'
 
 const adminSeedSchema = variables.ADMIN_SEED.schema!['~standard']

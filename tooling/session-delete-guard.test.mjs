@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import { findSessionDeleteViolations, run } from './session-delete-guard.mjs'
 
 const ok = () => [
-  { path: 'src/content/user/ui/session-delete/SessionDelete.svelte', source: 'const title = "Закрыть"' },
-  { path: 'src/content/user/ui/SessionDeleteModal.svelte', source: 'const ldr = useLoader()' },
+  { path: 'src/modules/user/base/svelte/session-delete/SessionDelete.svelte', source: 'const title = "Закрыть"' },
+  { path: 'src/modules/user/sessions/svelte/SessionDeleteModal.svelte', source: 'const ldr = useLoader()' },
   {
-    path: 'src/content/user/ui/session-delete/session-delete.form.server.ts',
+    path: 'src/modules/user/sessions/service/session-delete.form.server.ts',
     source: 'redirectOnSuccess: () => "/user/sessions"',
   },
 ]

@@ -28,7 +28,7 @@ export const FRAMEWORK_SPECIFIERS = [
 
 /**
  * Где фреймворк разрешён. Всё остальное внутри модуля обязано быть чистым.
- * Пути — от корня модуля (src/lib/modals).
+ * Пути — от корня модуля (src/core/lib/modals).
  */
 export const FRAMEWORK_ZONES = [
   // слой реактивности и разметки
@@ -110,7 +110,7 @@ export function checkFile(relPath, source) {
 }
 
 /** @returns {string} */
-export function formatProblems(relPath, problems, root = 'src/lib/modals') {
+export function formatProblems(relPath, problems, root = 'src/core/lib/modals') {
   if (!problems.length) return ''
   const out = [`\n[core-purity] ${relPath}`]
   for (const p of problems) {
@@ -134,14 +134,14 @@ export function formatProblems(relPath, problems, root = 'src/lib/modals') {
  * Новые ядра добавляются сюда, а не в обход проверки.
  */
 export const CORE_MODULES = [
-  'src/lib/address',
-  'src/lib/modals',
-  'src/lib/form',
-  'src/lib/paginate', // вместе с search/ и filters/ — части пакета
-  'src/lib/cache',
-  'src/lib/fetch',
-  'src/lib/db', // переносимый: PGlite, Hyperdrive, схема — без SvelteKit
-  'src/lib/image', // конвейер кадра и state-коллектор — без фреймворка
-  'src/lib/storage', // потоковое хранилище файлов — без фреймворка
-  'src/lib/task', // крошечный баррель, но правило одно для всех ядер
+  'src/core/lib/address',
+  'src/core/lib/modals',
+  'src/core/lib/form',
+  'src/core/lib/paginate', // вместе с search/ и filters/ — части пакета
+  'src/core/lib/cache',
+  'src/core/lib/fetch',
+  'src/core/lib/db', // переносимый: PGlite, Hyperdrive, схема — без SvelteKit
+  'src/core/lib/image', // конвейер кадра и state-коллектор — без фреймворка
+  'src/core/lib/storage', // потоковое хранилище файлов — без фреймворка
+  'src/core/lib/task', // крошечный баррель, но правило одно для всех ядер
 ]
