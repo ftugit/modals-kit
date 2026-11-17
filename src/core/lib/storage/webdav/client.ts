@@ -12,10 +12,10 @@
 //   `readOnly` на самом драйвере (любые `put`/`del`/`copyObject`/`MKCOL` мгновенно отклоняются
 //   ошибкой `StorageReadOnlyError` до отправки сетевого запроса).
 
-import { normalizeStoragePath, StorageReadOnlyError } from './index.js'
-import { basenameOfStoragePath } from './memory.js'
-import { StreamFile } from './stream-file.js'
-import type { DriverPutInput, DriverStoredMeta, StorageDriver } from './types.js'
+import { normalizeStoragePath, StorageReadOnlyError } from '../index.js'
+import { basenameOfStoragePath } from '../memory.js'
+import { StreamFile } from '../stream-file.js'
+import type { DriverPutInput, DriverStoredMeta, StorageDriver } from '../types.js'
 
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
