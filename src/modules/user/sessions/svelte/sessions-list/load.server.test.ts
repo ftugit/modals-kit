@@ -6,7 +6,7 @@ import type { SessionsPage } from '#modules/user/base/model/types.js'
 // частичного набора валидируются; расхождение показывается только при
 // `requested > revoked` — подделанный адрес не рисует объявление.
 const mock = vi.hoisted(() => ({ listSessionsPage: vi.fn(), enabled: true }))
-vi.mock('../../gateway.server.js', () => ({
+vi.mock('#modules/user/base/service/gateway.server.js', () => ({
   auth: () => ({ enabled: mock.enabled, listSessionsPage: mock.listSessionsPage }),
 }))
 
