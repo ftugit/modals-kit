@@ -49,7 +49,7 @@ import {
 } from './ledger.js'
 import { basenameOfStoragePath, memoryDriver, type MemoryDriverOptions } from './memory.js'
 import { s3Driver } from './s3.js'
-import { isWebdavDsn, webdavDriver } from './webdav.js'
+import { isWebdavDsn, webdavDriver } from './webdav/client.js'
 import type { StorageStateListener } from './state.js'
 import {
   defineStorageStore,

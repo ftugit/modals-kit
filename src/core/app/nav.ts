@@ -6,24 +6,19 @@ const CORE_ITEMS = [{ to: '/', label: 'Главная' }] satisfies readonly (Na
   readonly to: Path
 })[]
 
-const navModules = import.meta.glob<{ navExtension?: NavModuleExtension }>(
-  '/src/modules/**/nav.ext.ts',
-  { eager: true },
-)
+const extensions: NavModuleExtension[] = []
 
-const sortedExtensions = Object.keys(navModules)
-  .sort()
-  .map((key) => navModules[key]?.navExtension)
-  .filter((ext): ext is NavModuleExtension => Boolean(ext))
-  .sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
+function rebuild(): void {
+  const sorted = [...extensions].sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
+  NAV_ITEMS.splice(0, NAV_ITEMS.length, ...CORE_ITEMS, ...sorted.flatMap((ext) => ext.navItems ?? []))
+  HOME_CARDS.splice(0, HOME_CARDS.length, ...sorted.flatMap((ext) => ext.homeCards ?? []))
+}
 
-/** Пункты навигации каркаса: базовый маршрут и пункты установленных модулей. */
-export const NAV_ITEMS: readonly NavItem[] = [
-  ...CORE_ITEMS,
-  ...sortedExtensions.flatMap((ext) => ext.navItems ?? []),
-]
+export function registerNavExtension(ext: NavModuleExtension): void {
+  extensions.push(ext)
+  rebuild()
+}
 
-/** Карточки разделов установленных модулей для стартовой страницы (`/`). */
-export const HOME_CARDS: readonly ModuleHomeCard[] = sortedExtensions.flatMap(
-  (ext) => ext.homeCards ?? [],
-)
+export const NAV_ITEMS: NavItem[] = [...CORE_ITEMS]
+
+export const HOME_CARDS: ModuleHomeCard[] = []
