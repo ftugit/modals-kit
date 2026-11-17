@@ -37,11 +37,8 @@ test('адрес ?/revoke в UI живёт только там, где экше�
     }
   }
   walk('src')
-  // `?/revoke` legitimately also lives in the WebDAV token screen: there `revoke`
-  // is a real action on `/user/config/dav` (see `sections/drive/dav-tokens.server.ts`).
   const allowed = new Set([
     'src/modules/user/sessions/svelte/SessionCard.svelte',
-    'src/modules/drive/ui/DriveDavTokens.svelte',
   ])
   problems = problems.filter((p) => !allowed.has(p))
   assert.deepEqual(problems, [])

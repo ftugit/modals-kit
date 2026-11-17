@@ -18,16 +18,8 @@
   // Нет субмодуля — нет записи в реестре, и база не тянет его компоненты.
   import.meta.glob('/src/modules/**/auth.ext.ts', { eager: true })
   import.meta.glob('/src/modules/**/config.ext.ts', { eager: true })
-  // Навигационные расширения модулей (homeCards/navItems) подхватываются
-  // здесь, в слое маршрутов, а не в ядре — иначе ядро импортирует модуль.
-  const navExtensionModules = import.meta.glob<{
-    navExtension?: import('#core/hooks/module-ext.js').NavModuleExtension
-  }>('/src/modules/**/nav.ext.ts', { eager: true })
-  for (const mod of Object.values(navExtensionModules)) {
-    if (mod?.navExtension) registerNavExtension(mod.navExtension)
-  }
   import ModalSystem from '#core/app/ModalSystem.svelte'
-  import { NAV_ITEMS, registerNavExtension } from '#core/app/nav.js'
+  import { NAV_ITEMS } from '../../composition/nav.js'
   import { AppShell, useHeaderSlot, useSidebarSlot } from '#core/ui/shell/index.js'
   import {
     LogoSlot,

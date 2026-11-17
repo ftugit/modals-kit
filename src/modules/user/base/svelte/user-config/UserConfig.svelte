@@ -15,7 +15,7 @@
   import type { Result } from '#core/lib/form/index.js'
   import { Steps, useSteps } from '#core/ui/steps/index.js'
   import type { Snippet } from 'svelte'
-  import { configStepOf } from './extensions.js'
+  import { configStepOf, configStepsFor } from './extensions.js'
   import { useModalLink } from '#core/hooks/links/index.js'
   import { Button, Skeleton, Surface } from '#core/ui/index.js'
   import { cn } from '#core/ui/utils.js'
@@ -138,8 +138,13 @@
   const showStepsNav = $derived(nonEmptyGroupKeys.length >= 2)
   // Шаг «Сессии» поставляет субмодуль; без него раздел настроек остаётся.
   const sessionsStep = $derived(configStepOf('sessions'))
-  // Шаг «Пароли WebDAV» поставляет модуль «Диск»; без него шага нет.
-  const davStep = $derived(configStepOf('dav'))
+  const extraSteps = $derived(configStepsFor('security', slice?.isOwn ?? false).filter((step) => step.id !== 'sessions'))
+  const activeExtraStep = $derived.by(() => {
+    const key = steps.fullKey
+    if (typeof key !== 'string' || !key.startsWith('security.')) return null
+    const id = key.split('.')[1]
+    return extraSteps.find((step) => step.id === id) ?? null
+  })
 
   // Запрещённый шаг, открытый прямой ссылкой: его нет в списке разрешённых
   // групп, поэтому в навигации он скрыт; при прямом переходе показываем ACL
@@ -160,10 +165,6 @@
       (steps.fullKey === 'security.sessions' ||
         (steps.fullKey as string).startsWith('security.sessions.')),
   )
-  const davMode = $derived(
-    steps.currentKey === 'security' && steps.fullKey === 'security.dav',
-  )
-
   $effect(() => {
     if (!sessionsMode) sessionsParts = null
   })
@@ -183,7 +184,7 @@
 {/snippet}
 
 {#snippet sessionsLink()}
-  {#if sessionsMode || davMode}
+  {#if sessionsMode}
     <a
       href={steps.href('security')}
       class="inline-flex items-center rounded-md border border-border px-2.5 py-1 text-sm font-medium hover:bg-muted"
@@ -198,34 +199,34 @@
       Настройки
     </a>
   {:else}
-    <a
-      href={steps.href('security.sessions')}
-      class="inline-flex items-center rounded-md border border-border px-2.5 py-1 text-sm font-medium hover:bg-muted"
-      data-testid="config-sessions-open"
-      onclick={(e: MouseEvent) => {
-        if (steps.mode !== 'url') {
-          e.preventDefault()
-          void steps.switch('security.sessions')
-        }
-      }}
-    >
-      Сессии
-    </a>
-    {#if davStep}
-      <a
-        href={steps.href('security.dav')}
+          <a
+        href={steps.href('security.sessions')}
         class="inline-flex items-center rounded-md border border-border px-2.5 py-1 text-sm font-medium hover:bg-muted"
-        data-testid="config-dav-open"
+        data-testid="config-sessions-open"
         onclick={(e: MouseEvent) => {
           if (steps.mode !== 'url') {
             e.preventDefault()
-            void steps.switch('security.dav')
+            void steps.switch('security.sessions')
           }
         }}
       >
-        WebDAV
+        Сессии
       </a>
-    {/if}
+      {#each extraSteps as step (step.id)}
+        <a
+          href={steps.href(`security.${step.id}`)}
+          class="inline-flex items-center rounded-md border border-border px-2.5 py-1 text-sm font-medium hover:bg-muted"
+          data-testid={`config-${step.id}-open`}
+          onclick={(e: MouseEvent) => {
+            if (steps.mode !== 'url') {
+              e.preventDefault()
+              void steps.switch(`security.${step.id}`)
+            }
+          }}
+        >
+          {step.label ?? step.id}
+        </a>
+      {/each}
   {/if}
 {/snippet}
 
@@ -283,10 +284,10 @@
           <p class="font-medium text-foreground">{specConfig.emptyTitle}</p>
           <p class="mt-1 text-xs">{specConfig.emptyText}</p>
         </div>
-      {:else if davMode && davStep}
-        {@const DavStep = davStep.component}
-        {#key 'dav'}
-          <DavStep uid={slice.isOwn ? null : slice.uid} context={sessionsContext} />
+      {:else if activeExtraStep}
+        {@const ExtraStep = activeExtraStep.component}
+        {#key activeExtraStep.id}
+          <ExtraStep uid={slice.isOwn ? null : slice.uid} context={sessionsContext} />
         {/key}
       {:else if sessionsMode && sessionsStep}
         {@const SessionsStep = sessionsStep.component}

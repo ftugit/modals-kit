@@ -29,8 +29,14 @@ export interface ModuleHomeCard {
 }
 
 // Расширение меню и главной страницы от установленного модуля (nav.ext.ts в папке модуля).
+export interface NavModuleHomeEntry {
+  readonly id: string
+  readonly component: import('svelte').Component
+}
+
 export interface NavModuleExtension {
   readonly order?: number
   readonly navItems?: readonly ModuleNavItem[]
   readonly homeCards?: readonly ModuleHomeCard[]
+  readonly homeEntries?: readonly NavModuleHomeEntry[]
 }
