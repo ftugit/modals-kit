@@ -11,7 +11,7 @@
 
 - ветка `arch` содержит приложение-основу, библиотеки и общие механизмы
   подключения модулей; собирается без `demo` и без `drive`;
-- ветка `drive` содержит устанавливаемый пакет `modules/drive/files/...`,
+- ветка `module-drive` содержит устанавливаемый пакет `modules/drive/files/...`,
   а не вторую копию приложения с вшитым диском;
 - `MODULES=none`, `demo`, `drive`, `demo,drive` — четыре допустимых состава;
 - установка и снятие пакета не требуют редактировать файлы ядра;
@@ -39,7 +39,7 @@
 | `src/modules/drive/config.ext.ts` | Регистрирует только `{ id: 'dav', component }`; нынешнему контракту не хватает метаданных для общей навигации настроек. |
 | `src/core/server/db.server.ts` | Собирает `db.ext.ts` и содержит существующие прямые зависимости на встроенный user/profile. Новую прямую зависимость на drive добавлять нельзя. |
 | `src/hooks.server.ts` | Уже подхватывает `init.ext.server.ts` и `*.form.server.ts`; общие hooks не должны перечислять drive. |
-| `tooling/module-guard.mjs` | Список payload берёт из фиксированного `refs/tags/modules`, fallback — локальное installed-state. Пакет из новой ветки drive может не попасть в проверку. |
+| `tooling/module-guard.mjs` | Список payload берёт из фиксированного `refs/tags/modules`, fallback — локальное installed-state. Пакет из ветки `module-drive` может не попасть в проверку. |
 | `.github/workflows/module-guard.yml` | Сейчас целевые ветки `img, main`, а не `arch`. |
 | `.gitignore` | Есть список demo-путей, часть ещё по старым `src/server/...`; нет полного покрытия новых установочных путей. |
 
@@ -188,21 +188,21 @@ Drive регистрирует `id: 'dav', group: 'security', label: 'WebDAV', o
 
 ## 5. Сделать упаковку совместимой с двумя ветками
 
-Текущий `tooling/mod.mjs` не умеет взять `drive` из отдельной ветки при
+Текущий `tooling/mod.mjs` не умеет взять `drive` из отдельной ветки `module-drive` при
 `MODULES=demo,drive`: один `MODULES_SOURCE`/`MODULES_REF` применяется ко всему
 каталогу, а формат каталога ожидает один внешний `manifest.json` на пакет.
 Нельзя делать вид, что текущий `mod.mjs` уже поддерживает два репозитория.
 
 Для требуемых разных веток реализовать контракт **MODULES_REFS** ниже.
 Один общий каталог описан только для объяснения ограничения, это не замена
-решению владельца о ветках `arch` и `drive`.
+решению владельца о ветках `arch` и `module-drive`.
 
 ### 5.1. Единственный сценарий веток
 
 Один репозиторий `ftugit/modals-kit`:
 
 - `refs/heads/arch` — основное приложение без optional payload;
-- `refs/heads/drive` — пакет `modules/drive/manifest.json` и `modules/drive/files/**`;
+- `refs/heads/module-drive` — пакет `modules/drive/manifest.json` и `modules/drive/files/**`;
 - `refs/tags/modules` — существующий каталог demo (`modules/demo/**`).
 
 Не переносить drive в общий тег modules и не создавать альтернативный каталог.
@@ -217,7 +217,7 @@ repo и JSON-переменную `MODULES_REFS`, например:
 ```bash
 export MODULES_REPO='ftugit/modals-kit'
 export MODULES_REF='refs/tags/modules'
-export MODULES_REFS='{"demo":"refs/tags/modules","drive":"refs/heads/drive"}'
+export MODULES_REFS='{"demo":"refs/tags/modules","drive":"refs/heads/module-drive"}'
 export MODULES='demo,drive'
 unset MODULES_SOURCE
 ```
@@ -405,7 +405,7 @@ git grep -n -E "#modules/drive|#sections/drive|/api/dav|/drive" -- \
 - Put `nav.ext.ts` in payload; do not add a drive line to arch files.
 - Make routes, API and section files appear only after installing drive.
 - Не merge/cherry-pick всей ветки приложения в пакет или обратно. Пакетную
-  ветку создавать с modules/drive/manifest.json и files/...; в arch отправлять
+  ветку `module-drive` создавать с modules/drive/manifest.json и files/...; в arch отправлять
   только изменения общих контрактов и библиотек. Коммиты/push — по отдельному
   разрешению владельца; этот аудит их сам по себе не разрешает.
 
@@ -435,7 +435,7 @@ SHA-256 manifest и digest каждого payload. Один и тот же ка�
 export MODULES_SOURCE='<абсолютный путь внутри проекта>/.audit-input/catalog'
 export MODULES_REPO='ftugit/modals-kit'
 export MODULES_REF='refs/tags/modules'
-export MODULES_REFS='{"demo":"refs/tags/modules","drive":"refs/heads/drive"}'
+export MODULES_REFS='{"demo":"refs/tags/modules","drive":"refs/heads/module-drive"}'
 export DATABASE_RESET='0'
 # Для каждой отдельной копии выбрать ровно соответствующий состав:
 # none → none; demo → demo; drive → drive; both → demo,drive
@@ -450,7 +450,7 @@ KIT_ADAPTER=vercel npm run build
 ```
 
 Выбор remote refs проверяется fixture-тестом loader: demo запрашивается из
-refs/tags/modules, drive из refs/heads/drive; чужой пакет из архива игнорируется,
+refs/tags/modules, drive из refs/heads/module-drive; чужой пакет из архива игнорируется,
 ошибка/отсутствие manifest даёт отказ до записи. Офлайн MODULES_SOURCE проверяет
 точные payload без публикации, но не доказывает доступность будущей remote-ветки.
 Для будущей remote-установки используются настройки §5.2 с unset MODULES_SOURCE;
