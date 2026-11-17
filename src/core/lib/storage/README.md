@@ -34,13 +34,13 @@
 
 ## 1. Точки входа и зависимости
 
-Снаружи `src/lib/storage/` разрешены только входы, перечисленные в [`entrypoints.json`](./entrypoints.json):
+Снаружи `src/core/lib/storage/` разрешены только входы, перечисленные в [`entrypoints.json`](./entrypoints.json):
 
 | Спецификатор | Среда | Экспортируемые примитивы |
 |---|---|---|
 | `#core/lib/storage/index.js` | любая Web-среда (`0` `node:*`) | `createStorage`, `StreamFile`, `memoryDriver`, `defineStorageLedger`, `memoryLedger`, `defineStorageStore`, `memoryStore`, `createBandwidthLimiter`, `createConcurrencyGate`, `createSha256Hasher`, `hashStreamSha256`, `encryptedSize`, `decryptedSize`, `normalizeStoragePath`, `matchesUploadAccept`, `sanitizeUploadFileName`, классы ошибок |
 | `#core/lib/storage/s3.js` | любая Web-среда (`fetch` + Web Crypto) | `s3Driver`, `parseS3Url`, `formatS3Url`, `maskS3Url` |
-| `#core/lib/storage/webdav.js` | любая Web-среда (`fetch`) | `webdavDriver`, `parseWebdavUrl`, `formatWebdavUrl`, `maskWebdavUrl` |
+| `#core/lib/storage/webdav.js` | любая Web-среда (`fetch` + `Request`/`Response`) | клиент: `webdavDriver`, `parseWebdavUrl`, `formatWebdavUrl`, `maskWebdavUrl`; сервер: `createWebdavServer`, `memoryDavBackend`, `memoryDavLockStore`, `basicAuthGuard`; протокол: `DavResource`, `DavBackend`, `weakEtag`, `encodeDavHref` |
 | `#core/lib/storage/local.js` | Node.js / Bun (`node:fs`) | `localDriver`, `jsonLedger`, `localSpool` |
 | `#core/lib/storage/state.js` | любая Web-среда (`0` зависимостей) | `createStorageState` и типы событий/снимков телеметрии |
 
@@ -58,7 +58,7 @@
 
 ## 2. Composition root и устройство конфигурации
 
-Как и у `#core/lib/db` и `#core/lib/cache`, библиотека не читает `process.env` сама: сборка серверов, реестра квот и лимитеров живёт в серверных модулях композиции приложения — [`src/server/app-storage.server.ts`](../../server/app-storage.server.ts) (боевой пул серверов из таблицы `storage_server` под `STORAGE_ACL` + раздача `/api/storage/[...path]`) и [`src/server/storage.server.ts`](../../server/storage.server.ts) (изолированный куки-сейф демо-стенда `/upload-demo` + раздача `/api/files/[...path]`).
+Как и у `#core/lib/db` и `#core/lib/cache`, библиотека не читает `process.env` сама: сборка серверов, реестра квот и лимитеров живёт в серверных модулях композиции приложения — [`src/core/server/app-storage.server.ts`](../../server/app-storage.server.ts) (боевой пул серверов из таблицы `storage_server` под `STORAGE_ACL` + раздача `/api/storage/[...path]`) и [`src/modules/demo/storage.server.ts`](../../server/storage.server.ts) (изолированный куки-сейф демо-стенда `/upload-demo` + раздача `/api/files/[...path]`).
 
 ```ts
 import { createStorage, createConcurrencyGate } from '#core/lib/storage/index.js'
@@ -159,9 +159,17 @@ const r2 = s3Driver({
 - **Гарантии целостности S3.** При любой ошибке или отмене `AbortSignal` вызывается `AbortMultipartUpload` (чтобы в бакете не копились платные «осиротевшие» части). При `CompleteMultipartUpload` части сортируются по `PartNumber`, `<ETag>` экранируется в XML, а тело даже при статусе `200 OK` проверяется на встроенный `<Error>` (специфика S3/R2 при сбое сборки на стороне кластера).
 - **Серверный `CopyObject` и защита редиректов.** Внутри одного S3-сервера без перешифрования задействуется нативный `CopyObject` с RFC-3986 кодированием `x-amz-copy-source` и проверкой `200 OK` `<Error>`. Все запросы выполняются с `redirect: 'manual'`, чтобы `301`/`302` не уводил заголовки авторизации и не превращал `PUT` в `GET`.
 
-### 3.2. WebDAV-драйвер (`#core/lib/storage/webdav.js`)
+### 3.2. WebDAV: клиент и сервер (`#core/lib/storage/webdav.js`)
 
-Чистый Web-драйвер на стандартном `fetch` и потоках `ReadableStream` (`0` зависимостей от Node-пакетов; проверен вживую на `https://webdav.cloud.mail.ru`).
+Обе стороны протокола живут в одном входе, но в разных файлах:
+
+| Файл | Что это |
+|---|---|
+| `src/core/lib/storage/webdav/client.ts` | клиентский драйвер хранилища (`webdavDriver`) на `fetch` и `ReadableStream` |
+| `src/core/lib/storage/webdav/protocol.ts` | общие примитивы: DAV-пути, `href`, XML, `Depth`/`Destination`/`Overwrite`, lock-токены, `weakEtag` |
+| `src/core/lib/storage/webdav/server.ts` | серверный обработчик `Request → Response` (`createWebdavServer`) поверх контракта `DavBackend`, плюс `memoryDavBackend` и `memoryDavLockStore` для тестов и стендов |
+
+**Клиент.** Чистый Web-драйвер на стандартном `fetch` и потоках `ReadableStream` (`0` зависимостей от Node-пакетов; проверен вживую на `https://webdav.cloud.mail.ru`).
 
 ```ts
 import { webdavDriver } from '#core/lib/storage/webdav.js'
@@ -177,6 +185,30 @@ const dav = webdavDriver({
 - **Строгая изоляция `basePath`.** Все операции физически заперты внутри корневой папки `basePath`: драйвер никогда не поднимается выше неё, не трогает соседние пользовательские каталоги и отбрасывает любые `<d:href>` в ответах `PROPFIND`, выходящие за пределы запрошенного префикса (`HREF-ESCAPE` защита).
 - **Устойчивый разбор `PROPFIND` и `MKCOL`.** Создание вложенных директорий `MKCOL` кэшируется и дедуплицируется между параллельными потоками (`inflightMkcol`), чтобы конкурентные загрузки не ловили `405`/`409`. В `PROPFIND` учитываются только `<d:propstat>` со статусом `2xx`, требуется корневой `<multistatus` (защита от `200 OK` HTML-страниц входа прокси), размер XML-ответа ограничен `8 МиБ`, а `410 Gone` обрабатывается наравне с `404 Not Found`.
 - **Режим `readOnly`.** При `readOnly: true` любые попытки `put` / `del` / `copy` на этот сервер блокируются как на уровне `Storage` (`StorageReadOnlyError`), так и внутри самого драйвера до отправки сетевого запроса.
+
+**Сервер.** `createWebdavServer({ backend, basePath?, authorize?, locks?, maxDepth? })` отдаёт `{ handle(request) }` и не привязан к фреймворку или маршруту:
+
+```ts
+import {
+  createWebdavServer,
+  memoryDavBackend,
+  basicAuthGuard,
+} from '#core/lib/storage/webdav.js'
+
+const dav = createWebdavServer({
+  backend: memoryDavBackend(),            // в приложении — DavBackend поверх «Диска»
+  basePath: '/dav',                       // href вернутся с этим префиксом
+  authorize: basicAuthGuard({ username: 'user', password: 'app-password' }),
+})
+
+// src/routes/api/dav/[...path]/+server.ts
+export const GET = ({ request }) => dav.handle(request)
+```
+
+- **Методы RFC 4918:** `OPTIONS`, `PROPFIND` (`Depth: 0|1`, по умолчанию `infinity` отклоняется как `403`), `PROPPATCH` (мёртвые свойства не хранятся — `403` в `propstat`), `GET`/`HEAD`, `PUT`, `DELETE`, `MKCOL`, `COPY`, `MOVE`, `LOCK`/`UNLOCK` (`DAV: 1, 2`). Без `locks` сервер объявляет только Class 1 и отвечает `501`.
+- **Раздача через `createFileResponse`** (`@remix-run/response/file`): `Range`/`If-Range` (`206`), `If-None-Match` (`304`), `If-Match`/`If-Unmodified-Since` (`412`), `416`; `ETag` в `GET` совпадает с `getetag` в `PROPFIND` (`weakEtag` = `W/"size-lastModified"`).
+- **Границы безопасности:** `basePath` + запрет `..`, `/`, `\` и управляющих символов в сегментах (`400`); Basic-пароль приложения сравнивается за постоянное время; блокировки проверяются по `If`/`Lock-Token` (`423`), рекурсивные `DELETE`/`MOVE` учитывают блокировки детей.
+- **Бэкенд ни о чём не догадывается:** `stat`/`list`/`read`/`write`/`mkdir`/`remove`/`copy`/`move`; приложение подставляет дерево «Диска» из БД, а `memoryDavBackend` служит тестам и демо-стенду. Тесты протокола — `src/core/lib/storage/webdav/server.test.ts`.
 
 ### 3.3. Дисковые примитивы (`#core/lib/storage/local.js`) и самопроверка `probe()`
 
@@ -284,7 +316,7 @@ export const GET: RequestHandler = async (event) => {
 
 ## 6. Потоковое шифрование `AES-256-GCM`
 
-Если на сервере или в конкретном вызове (`put` / `get` / `lazy` / `serve` / `copy`) передан `key` (`Uint8Array` от 16 байт или непустая парольная фраза; `key: null` на вызове принудительно отключает ключ сервера), данные шифруются на лету по схеме **STREAM AEAD** (`src/lib/storage/crypto.ts`):
+Если на сервере или в конкретном вызове (`put` / `get` / `lazy` / `serve` / `copy`) передан `key` (`Uint8Array` от 16 байт или непустая парольная фраза; `key: null` на вызове принудительно отключает ключ сервера), данные шифруются на лету по схеме **STREAM AEAD** (`src/core/lib/storage/crypto.ts`):
 
 ```
 [ 8 Б: "MKSG1\0\0\0" ][ 24 Б: случайная соль файла ][ Кадр 0 ][ Кадр 1 ] ... [ Финальный кадр ]
@@ -360,7 +392,7 @@ const sharedGate = createConcurrencyGate('public-dl', {
 
 ### Связка с `wss://`-загрузкой форм и стендом `/upload-demo`
 
-В приложении `#core/lib/storage` работает в паре с потоковым WebSocket-транспортом форм (`src/hooks/component-form/{ws-session.server.ts,ws-client.ts,ws-integrity.ts}`):
+В приложении `#core/lib/storage` работает в паре с потоковым WebSocket-транспортом форм (`src/core/hooks/component-form/{ws-session.server.ts,ws-client.ts,ws-integrity.ts}`):
 1. На Кадре 0 сервер проверяет права (`authorize`) и поля формы при `0` переданных файловых байтов.
 2. Файлы передаются сегментами по `256 КиБ` с опциональной одноразовой солёной цепочкой `HMAC-SHA-256` и оборачиваются в ленивый `StreamFile`, откуда байты без промежуточного накопления в памяти текут напрямую в `storage.put(...)`.
 3. Полный интерактивный стенд всех режимов загрузки, куки-сейфа S3/WebDAV, нарезки `split` (`shard_a + shard_b`), проверки склейки `Range 206` поперёк шва, `ETag 304`, `rate` и `concurrency` расположен на маршруте `/upload-demo` ([`src/routes/(site)/(app)/upload-demo/+page.svelte`](../../routes/(site)/(app)/upload-demo/+page.svelte)).
@@ -383,7 +415,7 @@ const sharedGate = createConcurrencyGate('public-dl', {
 Команды проверки пакета и его архитектурных границ:
 
 ```bash
-npx vitest run src/lib/storage src/hooks/storage-db.test.ts "src/routes/api/files/[...path]/files.server.test.ts"
+npx vitest run src/core/lib/storage src/core/hooks/storage-db.test.ts "src/routes/api/files/[...path]/files.server.test.ts"
 node tooling/public-api.mjs
 node --test tooling/core-purity.test.mjs tooling/public-api.test.mjs tooling/layer-guard.test.mjs
 npm run check

@@ -1,7 +1,7 @@
-# src/lib/paginate — headless-пагинация (Svelte 5)
+# src/core/lib/paginate — headless-пагинация (Svelte 5)
 
 Headless-библиотека пагинации с разделением framework-neutral ядра и тонкого адаптера движка (сейчас — Svelte 5; адаптер SolidJS удалён в аудите, C9, будет написан заново).
-Ядро не зависит от фреймворков, DOM и роутера: `src/lib/paginate/` предоставляет чистые функции, контракты, хранилища, трекинг якорей и state machine.
+Ядро не зависит от фреймворков, DOM и роутера: `src/core/lib/paginate/` предоставляет чистые функции, контракты, хранилища, трекинг якорей и state machine.
 
 ## Обновление серверного снимка
 
@@ -58,9 +58,9 @@ Headless-библиотека пагинации с разделением frame
   <ErrorRow {name} />                                   <!-- коды по умолчанию: ['cursor'] -->
   <ErrorRow {name} restartCodes={['cursor', 'gone']} /> <!-- свои коды источника -->
   ```
-- **Ядро — 1-в-1 с исходником** (`SolidHono`, `src/lib/paginate/`): `core.ts`, `types.ts`, реестр и конфиг держат ту же семантику и тот же набор опций (`maxPages`, `reloadKeys`), поэтому «загрузка видна» обеспечивается источником, а не надстройками: в исходнике данные идут по сети, в порте демо-источник моделирует ту же транспортную задержку (`DEMO_TRANSPORT_MS` в `src/content/demo-catalog/items/items.ts`), и скелетоны/плавающий индикатор живут столько же, сколько занял бы реальный запрос.
+- **Ядро — 1-в-1 с исходником** (`SolidHono`, `src/core/lib/paginate/`): `core.ts`, `types.ts`, реестр и конфиг держат ту же семантику и тот же набор опций (`maxPages`, `reloadKeys`), поэтому «загрузка видна» обеспечивается источником, а не надстройками: в исходнике данные идут по сети, в порте демо-источник моделирует ту же транспортную задержку (`DEMO_TRANSPORT_MS` в `src/modules/demo/items/items.ts`), и скелетоны/плавающий индикатор живут столько же, сколько занял бы реальный запрос.
 - **Тонкий адаптер**:
-  - `src/lib/paginate/svelte/` — Svelte 5 runes (`$state`, `$derived`, `$effect`) и компоненты со сниппетами.
+  - `src/core/lib/paginate/svelte/` — Svelte 5 runes (`$state`, `$derived`, `$effect`) и компоненты со сниппетами.
 - **Адрес — единственная правда о положении окна.** Ключ состояния, объявленный
   в поиске адреса (`extraSearch`), но отсутствующий в самом адресе, снимается
   первым же чтением адреса: «нет в адресе» = «значение по умолчанию». Поэтому
@@ -68,7 +68,7 @@ Headless-библиотека пагинации с разделением frame
   начала видимой порции курсора в демо), либо пишется в адрес под своим именем,
   либо не объявляется вовсе — третьего пути нет. Пересборку окна переживают
   только `positionKeys`, и то не всегда (см. `dropPositionKeys` в `core.ts`).
-- **Адрес принадлежит транспорту, не хосту**: URL-ветку включает сам адаптер (у него есть `setRouter`/`observeExternal` — канон: `bindsUrl`), хост лишь отдаёт ему роутер адаптера пакета (`src/lib/paginate/sveltekit/router.ts`; адрес пишет общий писатель `#core/lib/address`) и реактивный срез поиска. У адаптеров без адреса (local/memory) этих методов нет, и хост адрес не читает вовсе — переключение хранилища не рождает гибрид «страница из storage, фильтры из URL». Ключи адреса, их умолчания (`extraDefaults`) и размеры страниц знает только адаптер; у хоста таких пропсов нет.
+- **Адрес принадлежит транспорту, не хосту**: URL-ветку включает сам адаптер (у него есть `setRouter`/`observeExternal` — канон: `bindsUrl`), хост лишь отдаёт ему роутер адаптера пакета (`src/core/lib/paginate/sveltekit/router.ts`; адрес пишет общий писатель `#core/lib/address`) и реактивный срез поиска. У адаптеров без адреса (local/memory) этих методов нет, и хост адрес не читает вовсе — переключение хранилища не рождает гибрид «страница из storage, фильтры из URL». Ключи адреса, их умолчания (`extraDefaults`) и размеры страниц знает только адаптер; у хоста таких пропсов нет.
 - **Адрес наружу — только через адаптер** (ход 246). Ядро и хуки говорят на языке цели, не адреса;
   что из этого получится — ссылка, имя поля формы или ничего — решает адаптер:
   ```ts
@@ -82,7 +82,7 @@ Headless-библиотека пагинации с разделением frame
   `getInitial` кладёт умолчания под прочитанное из хранилища.
 - **Пагинатор не рисует UI и не пишет текст**: у `PaginatorHost` нет своих надписей — `ariaLabel`
   обязателен, озвучку загрузки и ошибок ставит UI-компонент `<LiveStatus {name} />`.
-- **Готовые UI-компоненты**: `src/components/paginator/` (`PageList`, `PageColumns`, `PageSlice`, `PageDivider`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `ErrorRow`, `ResetButton`, `LiveStatus`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
+- **Готовые UI-компоненты**: `src/core/ui/paginator/` (`PageList`, `PageColumns`, `PageSlice`, `PageDivider`, `PageNav`, `PageLink`, `PaginatorSettings`, `LoadingIndicator`, `LoadMoreLink`, `ErrorRow`, `ResetButton`, `LiveStatus`, `EventLog` и др.) и хук поиска без разметки `usePaginatorSearch`.
 
 ## Extra-ключи списка — одно описание (`defineListExtras`)
 
@@ -154,7 +154,7 @@ definePaginator({
 ```svelte
 <script lang="ts">
   import { PaginatorHost } from '#core/lib/paginate/svelte/index.js'
-  import { PageList, PageNav, LiveStatus, LoadingIndicator, LoadMoreLink } from '#components/paginator/index.js'
+  import { PageList, PageNav, LiveStatus, LoadingIndicator, LoadMoreLink } from '#core/ui/paginator/index.js'
 </script>
 
 <PaginatorHost name="products" ariaLabel="Товары" class="h-[500px] overflow-y-auto">
@@ -175,7 +175,7 @@ definePaginator({
 
 ## Структура библиотеки
 
-- `src/lib/paginate/` — framework-neutral ядро:
+- `src/core/lib/paginate/` — framework-neutral ядро:
   - `types.ts` — контракты и типы данных.
   - `pure.ts` — чистые функции вычисления метаданных и списков.
   - `layout.ts` — чистая геометрия и распределение колонок.
@@ -200,14 +200,14 @@ definePaginator({
     поэтому вторая монтировка не перетирает загруженные порции и скролл первой, а на SSR каждый вызов создаёт одноразовый `Store` без удержания в модульном `Map`.
     Ключ выбирает владелец, читает и пишет его же фильтр-экран через
     `findScopedStore`; последняя ссылка удаляет состояние целиком. Сессионный транспорт для модалок (`m<k>.<pageParam>` с общим `queryOwner: 'modals'` или чисто-памятевый `{ url: false }`) создаёт `adapter.forSession(...)` и принимает проп `url` на `<PaginatorHost>`.
-- `src/lib/paginate/search/` — поиск поверх источника (fuzzy-сканирование, словарь
+- `src/core/lib/paginate/search/` — поиск поверх источника (fuzzy-сканирование, словарь
   терминов, коррекция опечаток, статистика перехвата): `#core/lib/paginate/search/index.js`.
   Часть пакета, но отдельный вход — ядро пагинатора его не тянет. Документация —
   [`search/README.md`](./search/README.md).
-- `src/lib/paginate/filters/` — фильтры источника: схема → форма `lib/form`, ключи адреса
+- `src/core/lib/paginate/filters/` — фильтры источника: схема → форма `lib/form`, ключи адреса
   `?page.filters.*`, связки и серверная проверка, картина панели (`#core/lib/paginate/filters/index.js`).
   Единственная связь с другим пакетом — `lib/form`. Документация — [`filters/README.md`](./filters/README.md).
-- `src/lib/paginate/svelte/` — Svelte 5 адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`,
+- `src/core/lib/paginate/svelte/` — Svelte 5 адаптер (`PaginatorHost`, `PageAnchor`, `EdgeSentinel`, хуки `usePaginator*`,
   `getPaginatorContext` с доступом к имени и DOM-контейнеру enclosing-хоста,
   `paginatorTask(state, page?)` — загрузка в формате задачи `#core/lib/task` для ссылок и глобального лоадера;
   тип повторён структурно, пакет от `#core/lib/task` не зависит. Ход загрузки источник сообщает через
@@ -215,4 +215,4 @@ definePaginator({
   устаревший запрос не пишет; `paginatorTask` отдаёт его, если он уже в формате задачи —
   так `fetchWithTask(url, { onTask: look.report })` из `#core/lib/fetch` даёт процент у ссылки страницы);
   `svelte/search/` — хуки поиска (`useSearchCorrection`, `useSearchStats`).
-- `src/components/paginator/` — готовые UI-компоненты (UI не часть пакета: переносится только логика).
+- `src/core/ui/paginator/` — готовые UI-компоненты (UI не часть пакета: переносится только логика).

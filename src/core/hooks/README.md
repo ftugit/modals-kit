@@ -10,7 +10,7 @@
 |---|---|---|
 | `api-error.ts` | клиент / SSR × формат ошибок API | Изоморфный разбор и человекочитаемое представление ошибок API без затягивания серверных секретов в клиентский бандл. |
 | `app-errors.svelte.ts` | UI-оболочка × ошибки приложения | Реактивное хранилище глобальных уведомлений об ошибках. |
-| `cache-db.ts` | `#core/lib/cache` × `#core/lib/db` | Общее между инстансами KV-хранилище в PostgreSQL (`pgStore`, ресурс `cacheKv` → таблица `public.cache_kv`), часы базы (`clock_timestamp()`), атомарные `add`/`incr` и оппортунистическая вычистка просроченных строк. В приложении экземпляр экспортируется как `sharedStore` из `src/server/cache.server.ts`. |
+| `cache-db.ts` | `#core/lib/cache` × `#core/lib/db` | Общее между инстансами KV-хранилище в PostgreSQL (`pgStore`, ресурс `cacheKv` → таблица `public.cache_kv`), часы базы (`clock_timestamp()`), атомарные `add`/`incr` и оппортунистическая вычистка просроченных строк. В приложении экземпляр экспортируется как `sharedStore` из `src/core/server/cache.server.ts`. |
 | `cookie-vault/` | зашифрованные HttpOnly-куки × `#core/lib/form` | Универсальный браузерный куки-сейф (`AES-256-GCM` со связкой `AUTH_SEAL_SECRET` и `AAD`) для динамического подключения пользовательских секретов/облаков на лету (`0` env-ключей и `0` записей в общей БД). |
 | `storage-db.ts` | `#core/lib/storage` × `#core/lib/db` × `#core/lib/cache` | Реестр учёта места, броней и манифестов файлов в PostgreSQL (`pgStorageLedger`, ресурсы `storageFile` → `public.storage_file` и `storageReservation` → `public.storage_reservation`, часы базы `clock_timestamp()`) и адаптер `cacheStorageStore` поверх `#core/lib/cache` (`localStore` / `sharedStore`). |
 | `storage-schema.ts` | `#core/lib/db` × клиентские гранты пула серверов | Изолированное описание `STORAGE_ACL` и модели `storageServer` (`public.storage_server`) без импорта `#core/lib/storage` — чтобы `MenuBody.svelte` и `StorageServersEntry.svelte` проверяли `grants(storageServer)` без затягивания движка хранилища в клиентский бандл. |
@@ -18,7 +18,7 @@
 | `component-form/` | `#core/lib/form` × SvelteKit `Handle` / `$app/state` | Маршрутно-независимые формы компонентов: компонент со своей формой (`SeedForm`, `ProfileForm`, `MenuBody`, `/fields`) монтируется на любой странице или в модалке без `actions` в `+page.server.ts`. |
 | `db-form.ts` | `#core/lib/db` × `#core/lib/form` | Вывод параметров и валидаторов полей формы из дескриптора ресурса БД (`formParams(resource)`), включая доказательство полноты правил `rulesFrom` для `pick`. |
 | `db-grants.svelte.ts` | `#core/lib/db` (`grants`, `checkGrants`) × Svelte 5 `$derived` | Универсальная фабрика реактивного хука `createUseGrants(getDefaultActor)` для синхронной проверки прав модели и полей БД в SSR и браузере (`0` запросов в БД, мгновенный пересчёт при смене сессии или владельца). |
-| `db-schema.ts` | `#core/lib/db` (`/sync`) × `#core/lib/form` | Изоморфный экран переноса схемы: отчёт `SchemaReport` → слова для человека (`StepView`) → описание формы решений (`defineForm`). Читают `#core/hooks/db-schema.server.ts`, `#components/db-schema/SchemaPending.svelte` и страница `/schema`. |
+| `db-schema.ts` | `#core/lib/db` (`/sync`) × `#core/lib/form` | Изоморфный экран переноса схемы: отчёт `SchemaReport` → слова для человека (`StepView`) → описание формы решений (`defineForm`). Читают `#core/hooks/db-schema.server.ts`, `#core/ui/db-schema/SchemaPending.svelte` и страница `/schema`. |
 | `db-schema.server.ts` | `#core/lib/db` (`/sync`, `createSchemaAdmin`) × `#core/server/db.server.js` × `#core/lib/form/server` | Серверная половина `/schema`: сборка отчёта, приём решений под `DB_ADMIN_TOKEN`, инвалидация живого кэша и разбор ошибок формы. |
 | `graphql.server.ts` | `#core/lib/fetch` × GraphQL | Серверный адаптер запросов к внешним GraphQL-источникам с нормализацией ошибок и очередей. |
 | `js-only.svelte.ts` | гидратация Svelte 5 | Реактивный флаг оживления клиента после гидратации (` hydrated()`). |
@@ -26,7 +26,7 @@
 | `links/` | `#core/lib/modals` × SvelteKit `<a>` | Перехват переходов по ссылкам (`asLink`) для бесшовного открытия модальных маршрутов поверх текущей страницы с graceful degradation без JS. |
 | `loader.svelte.ts` | `$app/state` navigating × UI | Отложенный индикатор навигации без мелькания на быстрых переходах. |
 | `modal-paginator.svelte.ts` | `#core/lib/modals` × `#core/lib/paginate` × `#core/lib/address` | Привязка `ScopedStore` пагинатора к жизни слота в `modals.chain` (`useSlotPaginatorScope`), поиск стора модалки-владельца для экранов фильтров (`useOwnerPaginatorStore`) и регистрация поуровневых слоевых ключей `m<k>.*` в `claimLayerKeys`. |
-| `module-ext.ts` | `#core/lib/db` × опциональные модули в `src/content/*` | Контракты автоподхватываемых расширений модулей (`db.ext.ts`, `nav.ext.ts`) для бесконфликтной установки модулей поверх чистого ядра. |
+| `module-ext.ts` | `#core/lib/db` × опциональные модули в `src/modules/*` | Контракты автоподхватываемых расширений модулей (`db.ext.ts`, `nav.ext.ts`) для бесконфликтной установки модулей поверх чистого ядра. |
 | `schema-route.ts` | `#core/lib/address` × страница ошибок | Один адрес экрана переноса схемы (`SCHEMA_PATH = '/schema'`, `schemaHref(from)`) без зависимостей — чтобы `ErrorPage.svelte` не тянул в клиент `#core/lib/db/sync` ради строки адреса. |
 | `task-stream.server.ts` | `#core/lib/task` × HTTP NDJSON | Серверный ответ `taskResponse(request, run, { watch })` с потоковой отдачей шагов задачи. |
 | `use-drawer.svelte.ts` | `matchMedia` × UI-шторки | Реактивное переключение мобильной шторки / десктопной панели. |
@@ -55,10 +55,10 @@
 
 ## Реактивная проверка прав модели — `db-grants.svelte.ts` (`createUseGrants`)
 
-Ядро `#core/lib/db` остаётся чистым от Svelte (`core-purity`), а слой `src/hooks/` не импортирует предметную область `src/content/` (`layer-guard`). Поэтому реактивная склейка `checkGrants` с рунами Svelte 5 живёт в `src/hooks/db-grants.svelte.ts` как фабрика `createUseGrants(getDefaultActor)`, а конкретный домен (`src/content/user/grants.svelte.ts`) передаёт в неё свой стор сессии:
+Ядро `#core/lib/db` остаётся чистым от Svelte (`core-purity`), а слой `src/core/hooks/` не импортирует предметную область `src/modules/` (`layer-guard`). Поэтому реактивная склейка `checkGrants` с рунами Svelte 5 живёт в `src/core/hooks/db-grants.svelte.ts` как фабрика `createUseGrants(getDefaultActor)`, а конкретный домен (`src/modules/user/base/svelte/grants.svelte.ts`) передаёт в неё свой стор сессии:
 
 ```ts
-// src/content/user/grants.svelte.ts
+// src/modules/user/base/svelte/grants.svelte.ts
 import { createUseGrants } from '#core/hooks/db-grants.svelte.js'
 import { vault } from './vault.svelte.js'
 
@@ -100,8 +100,8 @@ export const useGrants = createUseGrants(() =>
 
 ## Правило добавления новых связок
 
-- Одиночный компактный переходник без внутренних подмодулей — один файл `src/hooks/<имя>.ts` (и `<имя>.test.ts` рядом); строго серверные связки носят суффикс `*.server.ts`.
-- Связка из нескольких файлов (раздельные `client` / `server.server` / `types`) — отдельная папка `src/hooks/<имя>/` с явными точками входа.
-- Внутри `src/hooks/` нет визуальной разметки и доменных текстов: разметка и домен живут в `src/content/<модуль>/` и `src/components/`.
+- Одиночный компактный переходник без внутренних подмодулей — один файл `src/core/hooks/<имя>.ts` (и `<имя>.test.ts` рядом); строго серверные связки носят суффикс `*.server.ts`.
+- Связка из нескольких файлов (раздельные `client` / `server.server` / `types`) — отдельная папка `src/core/hooks/<имя>/` с явными точками входа.
+- Внутри `src/core/hooks/` нет визуальной разметки и доменных текстов: разметка и домен живут в `src/modules/<модуль>/` и `src/core/ui/`.
 
 `form-portal.ts` связывает контролы перенесённого блока с формой по `form`: сохраняет явно заданные атрибуты и отслеживает новые узлы. `cleanup` снимает только собственные атрибуты, `nextFrame` повторяет привязку на следующем кадре.

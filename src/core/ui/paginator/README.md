@@ -1,4 +1,4 @@
-# `src/components/paginator` — UI-компоненты пагинатора
+# `src/core/ui/paginator` — UI-компоненты пагинатора
 
 Папочный модуль визуализации поверх `#core/lib/paginate/svelte/index.js`: собирает `PaginatorHost`, списочную (`PageList`) и колоночную (`PageColumns`) раскладки, разделители страниц (`PageDivider`), плашку активного среза выдачи (`PageSlice`), панель настроек (`PaginatorSettings`), поисковую строку (`SearchBar`) и фильтры (`FiltersPanel`).
 
@@ -20,7 +20,7 @@
 
 ## Плашка среза выдачи (`PageSlice`)
 
-Извлекает метку времени активного среза из `state.extra` (`sliceAt`, постраничный `asof` вида `<ISO>|<id>` или курсорный `begAt`), отображает живое человеческое время через `TimeAgo` (`#components/ui/index.js`) и контрол сброса (`useLinkTo('reset', ...)` + `reset()`).
+Извлекает метку времени активного среза из `state.extra` (`sliceAt`, постраничный `asof` вида `<ISO>|<id>` или курсорный `begAt`), отображает живое человеческое время через `TimeAgo` (`#core/ui/index.js`) и контрол сброса (`useLinkTo('reset', ...)` + `reset()`).
 
 ### Опции `PageSlice`
 

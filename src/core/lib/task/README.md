@@ -65,9 +65,9 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
 | модалка | `asModalLink` (`#core/hooks/links`) | ссылка-открывашка, полоса |
 | пагинатор | `paginatorTask(state, page?)` — `#core/lib/paginate/svelte` | ссылка страницы, «Ещё», «Сброс», поиск, полоса |
 | форма | `formTask(state, intent?)` — `#core/lib/form/svelte` | `Button task`, полоса |
-| своё | `trackTask(() => task)` — `#components/loader` | полоса |
+| своё | `trackTask(() => task)` — `#core/ui/loader` | полоса |
 
-Полоса сверху — `LoaderBar` (`#components/loader`), один раз в корневом layout.
+Полоса сверху — `LoaderBar` (`#core/ui/loader`), один раз в корневом layout.
 
 ## Ход сервера: строки ответа
 
@@ -84,7 +84,7 @@ taskLabel({ status: 'pending', scope: 'global', label: 'Запуск базы',
   ждал; иначе ответ прежний, байт в байт; таймеров нет;
 - клиент: `fetchWithTask(url, { onTask })` / `readTaskStream(res, onTask)` из `#core/lib/fetch` — ход
   в `onTask`, на выходе тот же `Response` с настоящим кодом;
-- сервер приложения: `taskResponse(request, run, { watch })` — `src/hooks/task-stream.server.ts`;
+- сервер приложения: `taskResponse(request, run, { watch })` — `src/core/hooks/task-stream.server.ts`;
 - ход доходит до показа через ядра своими словами: `PageRequest.report` → `state.progress`
   пагинатора, `TransportRequest.report` → `FormState.progress` формы; адаптеры
   `paginatorTask`/`formTask` отдают его как задачу.

@@ -22,16 +22,16 @@
 
 | Место | Факт |
 |---|---|
-| `Issue` валидатора (`src/lib/form/validators.ts`) | `{ code, params?, path?, message? }` — правило отдаёт код и параметры, а не зашитый русский текст |
-| `FormError` (`src/lib/form/result.ts`) | `{ id, code, message?, template?, params? }`; `id` стабилен (`path:code:hash(params)`) |
-| Базовый словарь ядра (`src/lib/form/messages.ts`) | `MessageDictionary` + английский словарь `en` по умолчанию (сохраняет чистоту и компактность `#lib/form` в пределах бюджета `tooling/form-size.mjs`) |
-| Русский словарь приложения (`src/components/form/messages.ru.ts`) | Полный словарь `ru` системных кодов валидаторов и приёма (`body.too-large`, `body.too-many-keys`, `request.too-many`, `form.budget` и др.), подключённый в `src/components/form/forms.config.ts` |
-| Клиентская расшифровка серверных кодов (`src/lib/form/svelte/bind.svelte.ts`) | При получении серверного `Result` привязка `bind()` пропускает ошибки без локализованного текста (или с базовым серверным шаблоном) через словарь `config.messages`, поэтому и клиентские, и серверные ошибки отображаются на языке приложения |
+| `Issue` валидатора (`src/core/lib/form/validators.ts`) | `{ code, params?, path?, message? }` — правило отдаёт код и параметры, а не зашитый русский текст |
+| `FormError` (`src/core/lib/form/result.ts`) | `{ id, code, message?, template?, params? }`; `id` стабилен (`path:code:hash(params)`) |
+| Базовый словарь ядра (`src/core/lib/form/messages.ts`) | `MessageDictionary` + английский словарь `en` по умолчанию (сохраняет чистоту и компактность `#core/lib/form` в пределах бюджета `tooling/form-size.mjs`) |
+| Русский словарь приложения (`src/core/ui/form/messages.ru.ts`) | Полный словарь `ru` системных кодов валидаторов и приёма (`body.too-large`, `body.too-many-keys`, `request.too-many`, `form.budget` и др.), подключённый в `src/core/ui/form/forms.config.ts` |
+| Клиентская расшифровка серверных кодов (`src/core/lib/form/svelte/bind.svelte.ts`) | При получении серверного `Result` привязка `bind()` пропускает ошибки без локализованного текста (или с базовым серверным шаблоном) через словарь `config.messages`, поэтому и клиентские, и серверные ошибки отображаются на языке приложения |
 | Подстановка | `policy.interpolate(template, params)` — одна точка на всё ядро |
 
 ## 3. Дальнейшее развитие (при появлении второй локали)
 
-1. Вынос прикладных текстов доменных модулей (`src/content/*`) в словари по локалям, когда приложению потребуется переключение языка интерфейса.
+1. Вынос прикладных текстов доменных модулей (`src/modules/*`) в словари по локалям, когда приложению потребуется переключение языка интерфейса.
 2. Диагностические `throw new Error('…')` внутри библиотек предназначены для разработчика и переводу под локаль пользователя не подлежат.
 
 ## 4. Чего не делаем

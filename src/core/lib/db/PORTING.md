@@ -59,7 +59,7 @@ npm-пакет, потребляемый как зависимость**. `apply
 | `server/modules/probe/rest.ts` | `test/fixtures/probe-rest.ts` + `src/core/lib/db/sveltekit/query.ts` | разбор `?limit/page/filter/order/fields/include/includeDeleted` стал `parseListInput`; conflict-правило `page`+`after` сохранено |
 | `server/modules/probe/api.ts` | — (не переносится) | реестр Hono-роутов: в SvelteKit его роль выполняют `+page.server.ts`/`+server.ts` |
 | `server/runtime/request-body.ts` | `src/core/lib/db/sveltekit/query.ts` | `readBoundedBody`/`readJson` (лимит 64 KiB по умолчанию, `BodyTooLarge` → 413) |
-| `SolidHono/tooling/vite/db.mjs` | — (не переносится) | «серверная граница» в SvelteKit — `#core/lib/server/*` + `svelte-check`; vite-плагин не нужен (проверено: импорт `#core/lib/server` из клиента ломает сборку) |
+| `SolidHono/tooling/vite/db.mjs` | — (не переносится) | «серверная граница» в SvelteKit — `#core/server/*` + `svelte-check`; vite-плагин не нужен (проверено: импорт `#core/server` из клиента ломает сборку) |
 | `src/core/lib/db/migrations/001-db-probe.sql`, `002-db-probe-page-index.sql` | `src/core/lib/db/migrations/*` | 1:1, как образец схемы под этот слой (не автоприменение) |
 | `docs/db-lib.md`, `docs/en/db-lib.md` | [`README.md`](./README.md) | переписано под SvelteKit-идиомы, добавлены §5–§7 (драйверы, миграции, API-матрица) |
 | `test/checks/db-lib.mjs` | `src/core/lib/db/test/ported/db-lib.script.ts` | 16/16 групп, без правок ожиданий |
@@ -281,7 +281,7 @@ done
 Обновление **приложения** (`modals-kit`): слой лежит в том же дереве, поэтому апгрейд
 может задеть и его — при переносе новой ревизии сверяют базовые потребители в ядре: `src/app.d.ts`
 (augmentation), `src/hooks.server.ts` (`dbHandle`), `src/core/server/db.server.ts` (composition
-root с автоподхватом расширений `db.ext.ts`), `src/content/user/gateway.server.ts` и `src/content/user/schema.ts`
+root с автоподхватом расширений `db.ext.ts`), `src/modules/user/base/service/gateway.server.ts` и `src/modules/user/base/model/schema.ts`
 (сессии, списки пользователей, блокировки и модели ядра; при подключённом опциональном модуле `demo` — также витрину `/db-demo` и `/api/db-posts/**`). Ниже — чек-лист того, что в приложении обязательно.
 
 ## 9. Интеграция в приложение: чек-лист и грабли
@@ -310,20 +310,20 @@ npm run dev -- --host 0.0.0.0 --port 5173 && node browser-check.mjs
 
 Исторический порядок обновления отдельной копии (не выполнять в рабочем дереве): `git archive <ref> | tar -x -C
 $INTEGRATION_DIR`, затем `rm` путей из `git diff --name-status <старый> <новый> | grep -E
-'^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#core/lib/demo/{form,modals}/**`,
-`ui/paginator/fields/*` → `#core/lib/components/settings/*`), затем вернуть своё: deps в `package.json`,
-`src/app.d.ts`, `src/hooks.server.ts`, `src/core/server/db.server.ts`, `src/content/user/gateway.server.ts`,
-`src/content/user/schema.ts` (и при установленном модуле `demo` — `src/routes/api/db-posts/**`, `src/routes/(site)/(app)/db-demo/**`). Дальше
+'^(D|R)'` (на `5d08da7` это 29 путей: `src/routes/{form,modals}/**` → `#modules/demo/{form,modals}/**`,
+`ui/paginator/fields/*` → `#core/ui/settings/*`), затем вернуть своё: deps в `package.json`,
+`src/app.d.ts`, `src/hooks.server.ts`, `src/core/server/db.server.ts`, `src/modules/user/base/service/gateway.server.ts`,
+`src/modules/user/base/model/schema.ts` (и при установленном модуле `demo` — `src/routes/api/db-posts/**`, `src/routes/(site)/(app)/db-demo/**`). Дальше
 `npm install && npx svelte-kit sync && npx svelte-check && npm run build && npm run test:guard`.
 
 Что потребовало правок именно на `5d08da7`:
 
 - **`tooling/layer-guard.mjs` запретил сырые form-теги** (`pattern /<(form|input|select|textarea)([
-  \t\n>])/`, allow-list: `src/lib/form/`, `src/components/ui/`, `src/components/settings/`,
-  `src/components/shell/`). Это vite-плагин из `vite.config.ts`, идущий первым, — валит и `vite dev`, и
+  \t\n>])/`, allow-list: `src/core/lib/form/`, `src/core/ui/`, `src/core/ui/settings/`,
+  `src/core/ui/shell/`). Это vite-плагин из `vite.config.ts`, идущий первым, — валит и `vite dev`, и
   `vite build`; смотрит по исходнику файла целиком, поэтому закомментированный тег в шапке тоже
   красит сборку. `src/routes/(site)/(app)/db-demo/+page.svelte` переписан на `Form` из `#core/lib/form/svelte/index.js` и
-  `Input`/`Button` из `#components/ui/index.js`: `Form` требует `formProps()`, и демо отдаёт
+  `Input`/`Button` из `#core/ui/index.js`: `Form` требует `formProps()`, и демо отдаёт
   `{ method: 'post', action, onsubmit: () => {} }` — submit остаётся нативным SvelteKit-путём
   (демо проверяет слой БД, а не формы кита), скрытые id-пары идут через `hiddenFields`.
 - `package.json` приложения изменился только скриптами (`test:browser:errors`) — зависимости не
@@ -356,10 +356,10 @@ $INTEGRATION_DIR`, затем `rm` путей из `git diff --name-status <ст
   такому хосту только порвёт соединение. Строку подключения не печатать: в зондах пароль
   маскируется (`…:***@host`), так же стоит делать и в логах `getRuntime()`.
 - **Вход в демо обязан быть кликабельным**: ссылка на `/db-demo` - в шапку
-  (`src/routes/(site)/nav.ts`) и на главную (массив `demos` в `src/routes/(site)/(app)/+page.svelte`).
+  (`src/core/app/nav.ts`) и на главную (массив `demos` в `src/routes/(site)/(app)/+page.svelte`).
   Превью не даёт менять URL, поэтому демо без ссылки из превью непроверяемо; заодно прод-сборка
   (`npm run build` + `npm run preview`) проверяет layer-guard, а `dev` - нет.
-- `db`/ресурсы — только в `#core/lib/server/**`; импорт оттуда в `.svelte` должен падать на
+- `db`/ресурсы — только в `#core/server/**`; импорт оттуда в `.svelte` должен падать на
   сборке (в `modals-kit` за этим и так следит `tooling/layer-guard.mjs`).
 - `getRuntime()` — ленивый синглтон; `dbHandle({ db })` принимает и фабрику, чтобы
   PGlite не поднимался на каждый запрос.

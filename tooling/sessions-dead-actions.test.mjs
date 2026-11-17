@@ -25,8 +25,8 @@ test('карточка закрывает одну строку экшеном ?
   assert.doesNotMatch(src, /\?\/others/, 'карточка не должна использовать массовый набор')
 })
 
-test('адрес ?/revoke в UI живёт только в карточке', () => {
-  const problems = []
+test('адрес ?/revoke в UI живёт только там, где экшен revoke реально есть', () => {
+  let problems = []
   const walk = (dir) => {
     for (const name of readdirSync(dir)) {
       const path = join(dir, name)
@@ -37,5 +37,12 @@ test('адрес ?/revoke в UI живёт только в карточке', ()
     }
   }
   walk('src')
-  assert.deepEqual(problems, ['src/modules/user/sessions/svelte/SessionCard.svelte'])
+  // `?/revoke` legitimately also lives in the WebDAV token screen: there `revoke`
+  // is a real action on `/user/config/dav` (see `sections/drive/dav-tokens.server.ts`).
+  const allowed = new Set([
+    'src/modules/user/sessions/svelte/SessionCard.svelte',
+    'src/modules/drive/ui/DriveDavTokens.svelte',
+  ])
+  problems = problems.filter((p) => !allowed.has(p))
+  assert.deepEqual(problems, [])
 })

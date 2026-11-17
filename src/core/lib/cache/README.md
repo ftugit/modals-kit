@@ -3,12 +3,12 @@
 Один контракт на любое место, где сервер помнит что-то между запросами: кэш внешнего
 API, короткая память условного GET, бронь отправки формы, счётчик. Библиотека не
 читает окружение и не выбирает хранилище сама. Какое хранилище куда передать, решает
-приложение в одном файле (`src/server/cache.server.ts`), а место в коде получает
+приложение в одном файле (`src/core/server/cache.server.ts`), а место в коде получает
 хранилище явно.
 
 Почему так, а не «подбор хранилища по параметрам» или Redis под всем: кэши живут в
 памяти процесса (сеть на каждом обращении стоит дороже выигрыша), а общее между
-инстансами хранилище в PostgreSQL (`pgStore`, см. `src/hooks/README.md`) нужно
+инстансами хранилище в PostgreSQL (`pgStore`, см. `src/core/hooks/README.md`) нужно
 только брони отправки и координируемым записям у форм, которые и так пишут в базу.
 
 ## 1. Контракт
@@ -89,7 +89,7 @@ export const sharedStore = pgStore(db)                // db — Database из li
   минуту на инстанс (`sweepIntervalMs`).
 - **Охват честный:** на dev-движке PGlite база одна на процесс — там
   `sharedStore` равен памяти по охвату; общее оно на настоящем Postgres
-  (`src/hooks/cache-db.ts`, см. `src/hooks/README.md`).
+  (`src/core/hooks/cache-db.ts`, см. `src/core/hooks/README.md`).
 
 ## 4. Области
 
@@ -108,7 +108,7 @@ export const sharedStore = pgStore(db)                // db — Database из li
 ## 5. Подключение в приложении
 
 ```ts
-// src/server/cache.server.ts — единственное место, которое решает, что куда передать
+// src/core/server/cache.server.ts — единственное место, которое решает, что куда передать
 export const localStore = memoryStore()
 export const sharedStore = pgStore(db)   // модель cacheKv зарегистрирована в db.ts
 ```

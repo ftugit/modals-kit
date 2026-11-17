@@ -6,47 +6,49 @@
 
 ---
 
-## Состав репозитория (5 верхних слоёв)
+## Состав репозитория (слои core → modules → sections)
 
-### 1. Библиотеки (`src/lib/` — `#lib/*`)
+### 1. Библиотеки (`src/core/lib/` — `#core/lib/*`)
 
-| Пакет (`#lib/*`) | Назначение | Документация |
+| Пакет (`#core/lib/*`) | Назначение | Документация |
 |---|---|---|
-| `#lib/modals` | Адресуемая стопка модальных слоёв, переговоры о возможностях среды, области видимости реестра, инвалидация кэша загрузчиков (`invalidateLoader`), `svelte/`-хост и `cores/sveltekit.ts` | [`src/lib/modals/README.md`](./src/lib/modals/README.md) |
-| `#lib/form` | Изоморфные формы без DOM: единое описание `defineForm` (`budget`, `limits`, `checks`, `invalidFrom`), валидаторы, конверт, слои сервера, `takeover` поля, `queued`-протокол и `svelte/`-связка | [`src/lib/form/README.md`](./src/lib/form/README.md) |
-| `#lib/paginate` | Headless-пагинация (`single` / `accumulate`, URL / localStorage / cursor, якоря скролла, `patchItems`), подпакеты `filters` и `search` | [`src/lib/paginate/README.md`](./src/lib/paginate/README.md), [`filters`](./src/lib/paginate/filters/README.md), [`search`](./src/lib/paginate/search/README.md) |
-| `#lib/db` | Серверный слой данных PostgreSQL / PGlite / Hyperdrive / Proxy: модели, пирамида прав `defineAcl` (`validateResourceAcl`, `grants`, `checkGrants`, `forOwner`), Standard Schema, keyset-курсоры, `exists`-фильтры и `defineSchema` sync | [`src/lib/db/README.md`](./src/lib/db/README.md), [`PORTING.md`](./src/lib/db/PORTING.md) |
-| `#lib/address` | Единый писатель URL/history, глобальная бронь query-ключей, чтение видимого адреса и типизированный реестр маршрутов (`routes.ts`, `kitRoute`) | [`src/lib/address/README.md`](./src/lib/address/README.md) |
-| `#lib/fetch` | Надёжный `fetch` к внешним API: таймауты, ретраи с `Retry-After`, скользящие лимиты `rps`/`rpm`, склейка запросов, поток хода задачи | [`src/lib/fetch/README.md`](./src/lib/fetch/README.md) |
-| `#lib/cache` | Контракт ключ–значение со сроками жизни, областями (`scope`), `singleflight` и атомарными `add`/`incr` | [`src/lib/cache/README.md`](./src/lib/cache/README.md) |
-| `#lib/storage` | Мультисерверное потоковое хранилище без буферизации в ОЗУ: `local` / `S3` / `WebDAV` / `memory`, нарезка `split` со склейкой `Range 206`, потоковое `AES-256-GCM`, лимитеры `rate` и `concurrency`, сильный `ETag` под авто-докачку `If-Range`, `upload()` и изолирующий `serve()` | [`src/lib/storage/README.md`](./src/lib/storage/README.md) |
-| `#lib/image` | Изоморфный конвейер изображений: чтение заголовков без декодирования (`probe`), обрезка/ресайз, подбор качества под бюджет байт, серверный WASM-декодер (`node.ts`) | [`src/lib/image/README.md`](./src/lib/image/README.md) |
-| `#lib/task` | Единый формат состояния ожидания и прогресса (`TaskState`) для ссылок, кнопок и верхней полосы загрузки | [`src/lib/task/README.md`](./src/lib/task/README.md) |
-| `#lib/assets` | Пакет-ассеты (не код): единственный вход `favicon.svg`, объявленный в `entrypoints.json`; иконка подключается в `src/routes/+layout.svelte` | — (`entrypoints.json`) |
+| `#core/lib/modals` | Адресуемая стопка модальных слоёв, переговоры о возможностях среды, области видимости реестра, инвалидация кэша загрузчиков (`invalidateLoader`), `svelte/`-хост и `cores/sveltekit.ts` | [`src/core/lib/modals/README.md`](./src/core/lib/modals/README.md) |
+| `#core/lib/form` | Изоморфные формы без DOM: единое описание `defineForm` (`budget`, `limits`, `checks`, `invalidFrom`), валидаторы, конверт, слои сервера, `takeover` поля, `queued`-протокол и `svelte/`-связка | [`src/core/lib/form/README.md`](./src/core/lib/form/README.md) |
+| `#core/lib/paginate` | Headless-пагинация (`single` / `accumulate`, URL / localStorage / cursor, якоря скролла, `patchItems`), подпакеты `filters` и `search` | [`src/core/lib/paginate/README.md`](./src/core/lib/paginate/README.md), [`filters`](./src/core/lib/paginate/filters/README.md), [`search`](./src/core/lib/paginate/search/README.md) |
+| `#core/lib/db` | Серверный слой данных PostgreSQL / PGlite / Hyperdrive / Proxy: модели, пирамида прав `defineAcl` (`validateResourceAcl`, `grants`, `checkGrants`, `forOwner`), Standard Schema, keyset-курсоры, `exists`-фильтры и `defineSchema` sync | [`src/core/lib/db/README.md`](./src/core/lib/db/README.md), [`PORTING.md`](./src/core/lib/db/PORTING.md) |
+| `#core/lib/address` | Единый писатель URL/history, глобальная бронь query-ключей, чтение видимого адреса и типизированный реестр маршрутов (`routes.ts`, `kitRoute`) | [`src/core/lib/address/README.md`](./src/core/lib/address/README.md) |
+| `#core/lib/fetch` | Надёжный `fetch` к внешним API: таймауты, ретраи с `Retry-After`, скользящие лимиты `rps`/`rpm`, склейка запросов, поток хода задачи | [`src/core/lib/fetch/README.md`](./src/core/lib/fetch/README.md) |
+| `#core/lib/cache` | Контракт ключ–значение со сроками жизни, областями (`scope`), `singleflight` и атомарными `add`/`incr` | [`src/core/lib/cache/README.md`](./src/core/lib/cache/README.md) |
+| `#core/lib/storage` | Мультисерверное потоковое хранилище без буферизации в ОЗУ: `local` / `S3` / `WebDAV` / `memory`, нарезка `split` со склейкой `Range 206`, потоковое `AES-256-GCM`, лимитеры `rate` и `concurrency`, сильный `ETag` под авто-докачку `If-Range`, `upload()` и изолирующий `serve()` | [`src/core/lib/storage/README.md`](./src/core/lib/storage/README.md) |
+| `#core/lib/image` | Изоморфный конвейер изображений: чтение заголовков без декодирования (`probe`), обрезка/ресайз, подбор качества под бюджет байт, серверный WASM-декодер (`node.ts`) | [`src/core/lib/image/README.md`](./src/core/lib/image/README.md) |
+| `#core/lib/task` | Единый формат состояния ожидания и прогресса (`TaskState`) для ссылок, кнопок и верхней полосы загрузки | [`src/core/lib/task/README.md`](./src/core/lib/task/README.md) |
+| `#core/lib/assets` | Пакет-ассеты (не код): единственный вход `favicon.svg`, объявленный в `entrypoints.json`; иконка подключается в `src/routes/+layout.svelte` | — (`entrypoints.json`) |
 
-### 2. Связки со средой и между библиотеками (`src/hooks/` — `#hooks/*`)
+### 2. Связки со средой и между библиотеками (`src/core/hooks/` — `#core/hooks/*`)
 
-Переходники без визуальной разметки (подробно — [`src/hooks/README.md`](./src/hooks/README.md)):
-- `cache-db.ts` (`#lib/cache` × `#lib/db` → `sharedStore` в `public.cache_kv`), `storage-db.ts` (`#lib/storage` × `#lib/db` × `#lib/cache`), `storage-schema.ts` (`STORAGE_ACL` и модель `storage_server` без серверного рантайма для клиентских проверок прав), `module-ext.ts` (контракты автоподхватываемых расширений опциональных модулей `DbModuleExtension` и `NavModuleExtension`), `db-grants.svelte.ts` (реактивный хук `createUseGrants` поверх `grants` и `checkGrants`), `cookie-vault/` (зашифрованные `HttpOnly`-куки × `#lib/form`), `db-form.ts` (`#lib/db` × `#lib/form`), `db-schema.ts` (+ `db-schema.server.ts`, `schema-route.ts`) — экран переноса схемы `/schema`, `api-error.ts`, `graphql.server.ts`, `task-stream.server.ts`;
+Переходники без визуальной разметки (подробно — [`src/core/hooks/README.md`](./src/core/hooks/README.md)):
+- `cache-db.ts` (`#core/lib/cache` × `#core/lib/db` → `sharedStore` в `public.cache_kv`), `storage-db.ts` (`#core/lib/storage` × `#core/lib/db` × `#core/lib/cache`), `storage-schema.ts` (`STORAGE_ACL` и модель `storage_server` без серверного рантайма для клиентских проверок прав), `module-ext.ts` (контракты автоподхватываемых расширений опциональных модулей `DbModuleExtension` и `NavModuleExtension`), `db-grants.svelte.ts` (реактивный хук `createUseGrants` поверх `grants` и `checkGrants`), `cookie-vault/` (зашифрованные `HttpOnly`-куки × `#core/lib/form`), `db-form.ts` (`#core/lib/db` × `#core/lib/form`), `db-schema.ts` (+ `db-schema.server.ts`, `schema-route.ts`) — экран переноса схемы `/schema`, `api-error.ts`, `graphql.server.ts`, `task-stream.server.ts`;
 - `links/` (`asLink`, `asModalLink`), `loader.svelte.ts`, `js-only.svelte.ts`, `use-drawer.svelte.ts`, `app-errors.svelte.ts`;
 - `component-form/` — маршрутно-независимые формы компонентов через `createComponentFormsHandle` и `bindComponentForm`: маршрутизация по `x-form-id`, однопроходный контроль бюджета тела (`FORM_BODY_LIMIT` и `limits.budget`) с полноценным `Result` `413` как в JSON, так и на SSR без JS, штатный `303` на `statusUrl` для `queued`-задач без JS и потоковый конвейерный `wss://`-транспорт файлов с прогнозом времени (`upload-eta.ts`) и целостностью `HMAC-SHA-256`.
 
-### 3. UI-примитивы и проектно-независимые компоненты (`src/components/` — `#components/*`)
+### 3. UI-примитивы и проектно-независимые компоненты (`src/core/ui/` — `#core/ui/*`)
 
-- `src/components/ui/` — единая система примитивов на Ark UI + CVA (`variants`) + UnoCSS на системном стеке шрифтов без внешних запросов к Google Fonts, включая `Attachment`, `FileAttachment`, `HoldButton`, `PasswordInput`, `RadioGroup` и `Range` (правила слоя — [`src/components/ui/README.md`](./src/components/ui/README.md));
-- `src/components/shell/` — каркас приложения (`AppShell`, `CollapsingHeader`) и реактивный стековый контур метаданных `useHeadSeo` / `PageHead` / `PageTitleSlot` (документация — [`src/components/shell/README.md`](./src/components/shell/README.md));
-- `src/components/steps/` — хост шагов `useSteps` (`url` / `local` / `hybrid`), неадресуемые служебные шаги `addressable: false` и форм-режим `formSteps` (документация — [`src/components/steps/README.md`](./src/components/steps/README.md));
-- `src/components/{modals,form,fields,paginator,settings,demo,db-schema,loader}/` — прикладные компонентные модули (включая русский словарь системных сообщений формы `src/components/form/messages.ru.ts`).
+- `src/core/ui/` — единая система примитивов на Ark UI + CVA (`variants`) + UnoCSS на системном стеке шрифтов без внешних запросов к Google Fonts, включая `Attachment`, `FileAttachment`, `HoldButton`, `PasswordInput`, `RadioGroup` и `Range` (правила слоя — [`src/core/ui/README.md`](./src/core/ui/README.md));
+- `src/core/ui/shell/` — каркас приложения (`AppShell`, `CollapsingHeader`) и реактивный стековый контур метаданных `useHeadSeo` / `PageHead` / `PageTitleSlot` (документация — [`src/core/ui/shell/README.md`](./src/core/ui/shell/README.md));
+- `src/core/ui/steps/` — хост шагов `useSteps` (`url` / `local` / `hybrid`), неадресуемые служебные шаги `addressable: false` и форм-режим `formSteps` (документация — [`src/core/ui/steps/README.md`](./src/core/ui/steps/README.md));
+- `src/core/ui/{modals,form,fields,paginator,settings,demo,db-schema,loader}/` — прикладные компонентные модули (включая русский словарь системных сообщений формы `src/core/ui/form/messages.ru.ts`).
 
-### 4. Контент и домены (`src/content/` — `#content/*`)
+### 4. Модули и домены (`src/modules/` — `#modules/*`)
 
-- `src/content/user/` — автономный модуль пользователя и авторизации по Ed25519 `seed`: пирамида прав `defineAcl` и реактивный `useGrants`, вход и сессии (`SeedForm`), профиль с аватарами по неизменяемым ссылкам `/api/storage/avatars/…` (`Profile`, `ProfileForm`, `ProfileDelete`), универсальные пользовательские и системные настройки (`UserConfig`: модалка `user.config` + `/user/config` и `/user/[id]/config`), список аккаунтов и пикер (`SeedUsersList`, `UserPicker`) и система блокировок `user.block` (`BlocksList`, `BlockForm` с одиночной и массовой выдачей, `BlockDelete`). Документация — [`src/content/user/README.md`](./src/content/user/README.md);
-- `src/content/storage-servers/` — администрирование боевого пула серверов хранения в БД (`storage_server` под `STORAGE_ACL`, шифрование ключей `AUTH_SEAL_SECRET`, живая предпроверка `probe` с защитой от SSRF, модалка `storage.servers` и страница `/storage-servers`). Документация — [`src/content/storage-servers/README.md`](./src/content/storage-servers/README.md);
-- опциональный модуль `demo` (устанавливается поверх чистого ядра через `npm run mod -- add demo` или переменную окружения `MODULES=demo` при сборке): добавляет `src/content/demo-catalog/` (`items`, `posts`, `rickmorty`, `shikimori` + автоподхватываемые `db.ext.ts`, `init.ext.server.ts`, `nav.ext.ts`), `src/content/storage-vault/` и интерактивные витрины `/modals`, `/paginator`, `/db-demo`, `/upload-demo`, `/form`, `/fields`, `/steps`.
+- `src/modules/user/` — автономный модуль пользователя и авторизации по Ed25519 `seed`: пирамида прав `defineAcl` и реактивный `useGrants`, вход и сессии (`SeedForm`), профиль с аватарами по неизменяемым ссылкам `/api/storage/avatars/…` (`Profile`, `ProfileForm`, `ProfileDelete`), универсальные пользовательские и системные настройки (`UserConfig`: модалка `user.config` + `/user/config` и `/user/[id]/config`), список аккаунтов и пикер (`SeedUsersList`, `UserPicker`) и система блокировок `user.block` (`BlocksList`, `BlockForm` с одиночной и массовой выдачей, `BlockDelete`). Документация — [`src/modules/user/base/README.md`](./src/modules/user/base/README.md);
+- `src/modules/storage-servers/` — администрирование боевого пула серверов хранения в БД (`storage_server` под `STORAGE_ACL`, шифрование ключей `AUTH_SEAL_SECRET`, живая предпроверка `probe` с защитой от SSRF, модалка `storage.servers` и страница `/storage-servers`). Документация — [`src/modules/storage-servers/README.md`](./src/modules/storage-servers/README.md);
+- опциональный модуль `demo` (устанавливается поверх чистого ядра через `npm run mod -- add demo` или переменную окружения `MODULES=demo` при сборке): добавляет `src/modules/demo/` (куки-сейф серверов S3 / WebDAV, `CookieVault*`, схемы и витрины демо-каталога) и интерактивные витрины `/modals`, `/paginator`, `/db-demo`, `/upload-demo`, `/form`, `/fields`, `/steps`.
 
-### 5. Серверные синглтоны и маршруты (`src/server/` — `#server/*`, `src/routes/`)
+### 5. Секции, композиция, серверные синглтоны и маршруты (`src/sections/` — `#sections/*`, `src/composition/`, `src/core/server/` — `#core/server/*`, `src/routes/`)
 
-- `src/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `app-storage.server.ts`, `storage-probe.server.ts`, `form-budget.server.ts`, `form-security.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `ws-upgrade.server.ts`, `vite-ws.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и чистый модуль `trusted-origins.ts` (единый список `csrf.trustedOrigins` + строгие директивы `kit.csp`);
+- `src/sections/` — страничные секции (`load.server.ts` и Svelte-компоненты); route-файлы в `src/routes/` остаются тонкими адаптерами;
+- `src/composition/index.server.ts` — композиционный корень: сборка схемы, доменные фабрики и порты;
+- `src/core/server/` — строго серверные синглтоны `*.server.ts` (`db.server.ts`, `cache.server.ts`, `app-storage.server.ts`, `storage-probe.server.ts`, `form-budget.server.ts`, `form-security.server.ts`, `live-cache.server.ts`, `fetch.server.ts`, `ws-upgrade.server.ts`, `vite-ws.server.ts`, `after-response.server.ts`, `api-error.server.ts`) и чистый модуль `trusted-origins.ts` (единый список `csrf.trustedOrigins` + строгие директивы `kit.csp`);
 - `src/routes/` — базовые маршруты стартового приложения (`/`, `/schema`, `/storage-servers`, `/users`, `/users/pick`, `/users/filters`, `/blocks`, `/blocks/new`, `/blocks/filters`, `/blocks/[blockId=uuid]`, `/user/auth`, `/user/menu`, `/user/config`, `/user/[id=uuid]`, `/api/storage/[...path]`, `/api/form-upload`). При установке модуля `demo` автоматически подключаются маршруты витрин (`/modals`, `/form`, `/fields`, `/steps`, `/paginator`, `/db-demo`, `/upload-demo`, `/cards/[id]`, `/cycle`, `/spike`, `/api/db-posts`, `/api/files/[...path]`, `/api/shikimori/*`, `/api/rickmorty/*`).
 
 ---
@@ -117,14 +119,14 @@ npm run mod -- sync               # синхронизировать набор 
 
 #### 3. Точки расширения ядра и создание собственных модулей
 
-Модули подключаются **бесконфликтно** — путём добавления файлов в дерево проекта без редактирования файлов ядра. Ядро автоматически подхватывает установленные модули через контракты `src/hooks/module-ext.ts` и `import.meta.glob`:
+Модули подключаются **бесконфликтно** — путём добавления файлов в дерево проекта без редактирования файлов ядра. Ядро автоматически подхватывает установленные модули через контракты `src/core/hooks/module-ext.ts` и `import.meta.glob`:
 
 | Файл внутри модуля | Что подключает автоматически |
 |---|---|
-| `src/content/<domain>/db.ext.ts` | Экспорт `dbExtension: DbModuleExtension` (`resources`, `sql`) — добавляет модели `#lib/db` и SQL-миграции/индексы в общую схему `src/server/db.server.ts` |
-| `src/content/<domain>/init.ext.server.ts` | Экспорт `initDbExtension(db)` — выполняется один раз при инициализации схемы БД в рантайме (стартовые сиды и справочники модуля) |
-| `src/content/<domain>/nav.ext.ts` | Экспорт `navExtension: NavModuleExtension` (`order`, `navItems`, `homeCards`) — добавляет пункты в шапку/боковое меню и карточки разделов на главную страницу `/` |
-| `src/content/<domain>/modals.ts` | Регистрирует глобальные модальные окна модуля в `globalScope` (автоимпорт в `src/routes/(site)/+layout.svelte`) |
+| `src/modules/<domain>/db.ext.ts` | Экспорт `dbExtension: DbModuleExtension` (`resources`, `sql`) — добавляет модели `#core/lib/db` и SQL-миграции/индексы в общую схему `src/core/server/db.server.ts` |
+| `src/modules/<domain>/init.ext.server.ts` | Экспорт `initDbExtension(db)` — выполняется один раз при инициализации схемы БД в рантайме (стартовые сиды и справочники модуля) |
+| `src/modules/<domain>/nav.ext.ts` | Экспорт `navExtension: NavModuleExtension` (`order`, `navItems`, `homeCards`) — добавляет пункты в шапку/боковое меню и карточки разделов на главную страницу `/` |
+| `src/modules/<domain>/modals.ts` | Регистрирует глобальные модальные окна модуля в `globalScope` (автоимпорт в `src/routes/(site)/+layout.svelte`) |
 | `src/**/*.form.server.ts` | Регистрирует серверные обработчики форм по `x-form-id` через `createComponentFormsHandle` в `src/hooks.server.ts` |
 | `src/routes/**` и `test/browser/*.mjs` | Добавляет страницы, раскладки и API-эндпоинты SvelteKit, а также браузерные E2E-сьюты (подхватываются `test/browser/run-all.mjs` по наличию файла) |
 
@@ -135,7 +137,7 @@ modules/
   <module-name>/
     manifest.json          # { "name": "demo", "version": "1.0.0", "description": "..." }
     files/                 # файлы модуля по их точным путям относительно корня проекта
-      src/content/...
+      src/modules/...
       src/routes/...
       test/browser/...
 ```
@@ -181,12 +183,12 @@ npm run test:browser # Playwright E2E-наборы в Chromium против prod
 
 ## Документация проекта
 
-- [`AGENTS.md`](./AGENTS.md) — правила репозитория, границы 5 слоёв и контракты подсистем.
-- [`src/components/ui/README.md`](./src/components/ui/README.md) — правила слоя UI-примитивов (`*Variants`, `field.ts`, иконки, баррель и глубокие импорты).
-- [`src/components/shell/README.md`](./src/components/shell/README.md) — каркас оболочки, слоты шапки и реактивный стек метаданных `useHeadSeo`.
-- [`src/hooks/README.md`](./src/hooks/README.md) — каталог межбиблиотечных и фреймворковых связок.
-- [`src/content/user/README.md`](./src/content/user/README.md) — модуль пользователя: вход по `seed`, `defineAcl` / `useGrants`, профиль, настройки `UserConfig` и блокировки `user.block`.
-- [`src/content/storage-servers/README.md`](./src/content/storage-servers/README.md) — боевой пул серверов хранения в БД (`STORAGE_ACL`, шифрование ключей, `probe` и UI управления).
+- [`AGENTS.md`](./AGENTS.md) — правила репозитория, границы слоёв core/modules/sections и контракты подсистем.
+- [`src/core/ui/README.md`](./src/core/ui/README.md) — правила слоя UI-примитивов (`*Variants`, `field.ts`, иконки, баррель и глубокие импорты).
+- [`src/core/ui/shell/README.md`](./src/core/ui/shell/README.md) — каркас оболочки, слоты шапки и реактивный стек метаданных `useHeadSeo`.
+- [`src/core/hooks/README.md`](./src/core/hooks/README.md) — каталог межбиблиотечных и фреймворковых связок.
+- [`src/modules/user/base/README.md`](./src/modules/user/base/README.md) — модуль пользователя: вход по `seed`, `defineAcl` / `useGrants`, профиль, настройки `UserConfig` и блокировки `user.block`.
+- [`src/modules/storage-servers/README.md`](./src/modules/storage-servers/README.md) — боевой пул серверов хранения в БД (`STORAGE_ACL`, шифрование ключей, `probe` и UI управления).
 - [`docs/pending.md`](./docs/pending.md) — **единственный** список незакрытого: что ещё требует кода и почему.
 - [`docs/design/image-transfer.md`](./docs/design/image-transfer.md) — конвейер изображений и хранение аватаров по неизменяемым ссылкам.
 - [`docs/design/client-integrity.md`](./docs/design/client-integrity.md) — защита клиентского контура, отказ от сторонних шрифтов и конфигурация `kit.csp`.

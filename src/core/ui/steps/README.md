@@ -19,7 +19,7 @@
 
 ```svelte
 <script lang="ts">
-  import { Steps, StepLink, useSteps } from '#components/steps/index.js'
+  import { Steps, StepLink, useSteps } from '#core/ui/steps/index.js'
 
   const steps = useSteps({
     owner: 'checkout',                          // владелец брони ключа (уникален)
@@ -87,7 +87,7 @@
 
 ```svelte
 <script lang="ts">
-  import { stepLink } from '#components/steps/index.js'
+  import { stepLink } from '#core/ui/steps/index.js'
 </script>
 
 <!-- обычная ссылка -->
@@ -234,7 +234,7 @@ useSteps({ owner: 'modal-wizard',    mode: 'local', /* адреса нет — k
 изоморфное: импортируют и страница, и экшен):
 
 ```ts
-// #content/my-form.ts — описание (без UI, без HTTP)
+// #modules/my-form.ts — описание (без UI, без HTTP)
 import { defineForm, field, v } from '#core/lib/form/index.js'
 
 export const myForm = defineForm({
@@ -255,11 +255,11 @@ export const myForm = defineForm({
 <!-- +page.svelte -->
 <script lang="ts">
   import { bind, Form, formTask } from '#core/lib/form/svelte/index.js'
-  import Field from '#components/form/Field.svelte'          // барреля у components/form нет
-  import { Button } from '#components/ui/index.js'
-  import { Steps, StepLink, useSteps } from '#components/steps/index.js'
-  import { myForm } from '#content/my-form.js'               // описание формы вашего проекта
-  import { forms } from '#components/form/forms.config.js'
+  import Field from '#core/ui/form/Field.svelte'          // барреля у components/form нет
+  import { Button } from '#core/ui/index.js'
+  import { Steps, StepLink, useSteps } from '#core/ui/steps/index.js'
+  import { myForm } from '#modules/my-form.js'               // описание формы вашего проекта
+  import { forms } from '#core/ui/form/forms.config.js'
   import { kitActionTransport } from '#core/hooks/component-form/transport.js'
 
   let { data, form: actionResult } = $props()

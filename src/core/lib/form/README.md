@@ -145,7 +145,7 @@ export const forms = createConfig({
 Ядро приезжает исходниками и не зависит от сборщика. Схема для любого фреймворка:
 
 1. **Импорт исходников.** Никаких пакетов — прямой импорт модулей по полному пути
-   через `imports` в `package.json` (в этом репозитории `#core/lib/*` → `src/lib/*`):
+   через `imports` в `package.json` (в этом репозитории `#core/lib/*` → `src/core/lib/*`):
 
    ```ts
    import { defineForm, field, v } from '#core/lib/form/index.js'     // ядро
@@ -237,7 +237,7 @@ export function useForm(description, opts) {
 | `live` | `'on-submit' \| 'on-blur' \| 'on-input' \| 'after-touched'` | когда поле перепроверяется |
 | `parallel` | `'block' \| 'replace' \| 'queue'` | `block` отклоняет параллельный запуск, `replace` отменяет текущий, `queue` ждёт освобождения слота и затем выполняет отправку |
 | `onErrors` | `ErrorHandler` | обработчик ошибок проекта |
-| `messages` | `MessageDictionary` | словарь системных сообщений приложения (ядро поставляет `en`; русский словарь подключён в UI-слое `src/components/form/messages.ru.ts`, а `bind()` переводит им и клиентские, и серверные коды `Result`) |
+| `messages` | `MessageDictionary` | словарь системных сообщений приложения (ядро поставляет `en`; русский словарь подключён в UI-слое `src/core/ui/form/messages.ru.ts`, а `bind()` переводит им и клиентские, и серверные коды `Result`) |
 | `invalidFrom` | `'fact' \| 'shown'` | источник подсветки по умолчанию |
 | `ui` | `Partial<UiPolicy>` | идентификаторы, `aria-describedby`, эскалация живой проверки |
 
@@ -327,7 +327,7 @@ const handle = createFormHandler({
 Представление (`input`) — то, как поле выглядит; тип значения (`kind`) — что из него
 декодируется. `field.<представление>(...)` находит тип по представлению. Библиотека
 отдаёт только `attrs`; компонент под представление выбирает приложение в `resolve`
-(в демо — `src/components/form/resolve.ts`, примитивы — `#components/ui`).
+(в демо — `src/core/ui/form/resolve.ts`, примитивы — `#core/ui`).
 
 | Представление | Тип значения | Атрибуты типа | Компонент демо → примитив |
 |---|---|---|---|
@@ -473,7 +473,7 @@ defineForm({
 ```
 
 Фильтры каталога получают эти правила готовыми из схемы источника
-(`formParams`, см. `src/lib/paginate/filters/README.md`).
+(`formParams`, см. `src/core/lib/paginate/filters/README.md`).
 
 `field.email()` задаёт представление и HTML-тип, но формат значения задаёт
 `v.email()`. Это необходимо для fetch-пути с `novalidate`: строки без структуры
@@ -553,13 +553,13 @@ signup.registry.registerType({
 видов в `checkFieldDefinition` — мета-валидация сама заметит, если новый тип
 не знает вида, который ему подсунули.
 
-Второй пример в демо — `phone` (`src/components/form/extend.ts`): значение — одна
+Второй пример в демо — `phone` (`src/core/ui/form/extend.ts`): значение — одна
 строка `+79991234567`. `decode` приводит номер, как его пишут люди (`+7 (999) 123-45-67`,
 `00…`), к этой строке и отклоняет номер не той длины (код `type.phone`): у страны из
 списка `PHONE_COUNTRIES` — длина национальной части обычного и мобильного номера (+7 —
 ровно 10 цифр, Беларусь — 9, Армения — 8, Финляндия — 5–10, Германия — 5–13), у кода не из
 списка — рамка E.164, 8–15 цифр вместе с кодом. Функция одна (`phoneLengthOk` в
-`components/ui/phone-input/phone.ts`, ~1 КБ таблицы вместо ~80 КБ метаданных libphonenumber), поэтому
+`src/core/ui/phone-input/phone.ts`, ~1 КБ таблицы вместо ~80 КБ метаданных libphonenumber), поэтому
 недобранный номер получает ошибку у поля и в живой проверке, и на сервере. Существование
 номера не проверяется.
 Как номер набирается, решает компонент приложения: `PhoneField` → примитив `PhoneInput`
@@ -759,7 +759,7 @@ email: field.email({ validate: [v.required(), v.email(),
 ```
 
 Сжатие картинок перехватом **не** делается: это возможность примитива
-(`FileInput`/`FileAttachment` с опцией `photoConvert`), см. `#components/ui`.
+(`FileInput`/`FileAttachment` с опцией `photoConvert`), см. `#core/ui`.
 
 Callback вызывается один раз после оживления и получает живую ручку
 поля `f`: тот же набор, что у `FieldView` (`f.value`, `f.errors`,
@@ -962,7 +962,7 @@ execute: async (c) => {
 значение приходит уже приведённым. Живой пример — страница `/fields`
 (`routes/(site)/(app)/fields/`): форма набора, форма записи на нём и пример записи;
 набор и запись лежат в `#core/lib/cache`. Разметка набора — `SchemaBuilder.svelte`, полей
-записи — `SchemaFields.svelte` (`src/components/fields/`), маршрут — `src/routes/(site)/(app)/fields/`.
+записи — `SchemaFields.svelte` (`src/core/ui/fields/`), маршрут — `src/routes/(site)/(app)/fields/`.
 
 ## Внешние схемы
 
@@ -1226,7 +1226,7 @@ Svelte переводит состояние формы в общий форма
 ```svelte
 <script lang="ts">
   import { bind, Form, formTask } from '#core/lib/form/svelte/index.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button } from '#core/ui/index.js'
   const form = bind(forms, signup)
 </script>
 

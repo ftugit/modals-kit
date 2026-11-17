@@ -1,4 +1,4 @@
-# `src/components/shell` — каркас приложения, шапка и реактивный стек SEO
+# `src/core/ui/shell` — каркас приложения, шапка и реактивный стек SEO
 
 Проектно-независимый модуль оболочки интерфейса: раскладка `AppShell` с нативным мобильным меню без JavaScript, сворачивающаяся при прокрутке многорядная шапка `CollapsingHeader`, контекстные слоты шапки/боковой панели и единый стековый контур метаданных документа (`useHeadSeo`, `PageHead`, `PageTitleSlot`).
 
@@ -10,7 +10,7 @@
 |---|---|
 | `AppShell.svelte` | Общий каркас экрана: десктопная 3-зонная боковая панель, мобильная шторка (с нативным CSS-откатом `:has(#fe-sidebar:checked)` без JS), синхронизированный скроллер `<main>` и сброс прокрутки при смене раздела. |
 | `CollapsingHeader.svelte` | Многорядная шапка с синхронизацией прокрутки `1:1`, закрепляемым средним рядом и плавной шкалой сворачивания. |
-| `HeaderSlot.svelte` / `ui/header/` / `ui/sidebar/` | Регистрация фрагментов навигации, контекстных кнопок и секций боковой панели с любой страницы без протечки доменных маршрутов в `src/components/`. |
+| `HeaderSlot.svelte` / `ui/header/` / `ui/sidebar/` | Регистрация фрагментов навигации, контекстных кнопок и секций боковой панели с любой страницы без протечки доменных маршрутов в `src/core/ui/`. |
 | `page.svelte.ts` | Контекст `PageState` (`createPageState`, `usePage`) и хук `useHeadSeo`: реактивный стек слоёв SEO, слотов шапки и сайдбара. |
 | `PageHead.svelte` | Единственный компонент `<svelte:head>` в корневом `src/routes/+layout.svelte`: рендерит актуальный верх стека `page.seo` на SSR и в браузере без дублей метатегов. |
 | `ui/header/PageTitleSlot.svelte` | Автоматический вывод заголовка текущей страницы в шапку из активного слоя `page.seo`. |
@@ -24,7 +24,7 @@
 
 ```svelte
 <script lang="ts">
-  import { useHeadSeo } from '#components/shell/index.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
 
   let { data } = $props()
 

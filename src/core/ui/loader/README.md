@@ -19,7 +19,7 @@
 Своя задача — `trackTask` внутри эффекта; отписка возвращается сама:
 
 ```ts
-import { trackTask } from '#components/loader/index.js'
+import { trackTask } from '#core/ui/loader/index.js'
 
 $effect(() => trackTask(() => upload.task)) // upload.task: TaskState из #core/lib/task
 ```

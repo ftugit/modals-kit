@@ -44,7 +44,7 @@ const schema: CatalogFilterSchema = {
 решает приложение — своё описание и свой компонент под каждую схему. Из схемы приходит то, что
 знает только источник: варианты, границы значений, пределы, связки и правила между полями.
 
-**Описание** — функция приложения, одна на браузер и сервер (`src/content/demo-catalog/shikimori/filters.ts`):
+**Описание** — функция приложения, одна на браузер и сервер (`src/modules/demo/shikimori/filters.ts`):
 
 ```ts
 export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogFilterFormOptions) {
@@ -92,7 +92,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 Ошибка любого поля отклоняет набор целиком — и в браузере (до отправки), и на сервере.
 
 **Компонент** — свой у каждой схемы, поля расставлены руками
-(`src/content/demo-catalog/shikimori/ui/ShikimoriFilters.svelte`):
+(`src/modules/demo/shikimori/ui/ShikimoriFilters.svelte`):
 
 ```svelte
 <script lang="ts">
@@ -112,7 +112,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 ```
 
 Нарезка не собирает поля заново. Кусок одного ключа схемы оборачивается `FilterBlock`
-(`#components/paginator`). Оболочка ничего не рисует, раскладка панели остаётся той,
+(`#core/ui/paginator`). Оболочка ничего не рисует, раскладка панели остаётся той,
 что написана в компоненте. Метка — `label` того же поля схемы. Поле без обёртки
 метку не теряет, но всплывашки у неё нет. Два ключа в одной обёртке не становятся
 одной меткой: блок не регистрируется. Открытая метка забирает этот же кусок в
@@ -120,7 +120,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 
 `Field` — тот же, что у остальных форм приложения. Поля, которого у источника нет,
 `filters.f[...]` не даёт, и `Field` ничего не рисует. `bindFilters`
-(`#components/paginator/index.js`) — `bind` формы с адресным контуром: набор применяется
+(`#core/ui/paginator/index.js`) — `bind` формы с адресным контуром: набор применяется
 целиком по «Применить», без JS форма уходит обычным GET. Связка гасит контрол только с JS: без
 него выключенное поле браузер не отправил бы и значение из адреса пропало бы молча; причина под
 полем видна и без JS.
@@ -161,7 +161,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 | `CATALOG_FILTER_NOJS_OPTIONS` | 200 — показ без JS | `schema.ts` |
 | `CATALOG_FILTER_OPTIONS_LIMIT` | 5000 — защита от гигантских форм, не размер показа | `schema.ts` |
 | `capCatalogFilterOptions(schema)` | поле длиннее 200 упорядочивает по частоте, при равной — по подписи; поле длиннее 5000 обрезает (аварийно) и пишет `optionsTruncated` | `schema.ts` |
-| `nativeLimit` у `Select` | сколько опций нативный `<select>` показывает до гидратации (0 — все) | `#components/ui/select/Select.svelte` |
+| `nativeLimit` у `Select` | сколько опций нативный `<select>` показывает до гидратации (0 — все) | `#core/ui/select/Select.svelte` |
 
 **Почему первые 200 — нужные.** Порядок задаёт сборщик схемы: частые первыми. Без частот в
 первые 200 попали бы студии по алфавиту, и популярной «Wit Studio» там могло бы не оказаться.
@@ -171,7 +171,7 @@ export function shikimoriFilterForm(schema: CatalogFilterSchema, opts?: CatalogF
 есть. Если бы выбранной студии из хвоста не было среди опций, выбор пропал бы при следующей
 отправке формы.
 
-**Где это включено.** Поле выбора демо-форм (`#components/form/SelectField.svelte`) — то же
+**Где это включено.** Поле выбора демо-форм (`#core/ui/form/SelectField.svelte`) — то же
 для фильтров и остальных форм:
 
 ```svelte
@@ -244,7 +244,7 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 
 Роут отвечает только страницам этого сайта: `Sec-Fetch-Site: same-origin`, иначе 403 без тела.
 В dev по http запрос без заголовка пропускается (`sameOriginFetch` в
-`src/server/trusted-origins.ts`). От парсеров это не защищает, заголовок подделывается
+`src/core/server/trusted-origins.ts`). От парсеров это не защищает, заголовок подделывается
 одной строкой. Данные те же, что и в HTML страницы. В Shikimori роут не ходит: схема собирается
 раз в 30 минут, одна сборка на всех.
 
@@ -268,8 +268,8 @@ catalogFilterSchemas.recall('shikimori')        // схема или null
 | `catalog-filter.test.ts` | порядок длинного поля (частые первыми, дальше по подписи), короткое не трогается, хвост законен, чужое — `oneOf`, предел 5000; `formParams`: свои подписи и порядок, пропуск отсутствующих полей, префикс, `noOverlap`/`notAbove`, подписи связок из описания, предупреждение о чужом ключе |
 | `rules.test.ts` | связки в живой форме и при отказе, нарушения панели — ошибки формы, словарь приложения |
 | `view.test.ts` | чипы из описания, нарушения применённого набора, патчи, ссылки через `href` и `null` без них |
-| `src/lib/form/range.test.ts` | `notAbove`/`notBelow`/`noOverlap`: ошибки, пустые стороны, даты, реестр |
+| `src/core/lib/form/range.test.ts` | `notAbove`/`notBelow`/`noOverlap`: ошибки, пустые стороны, даты, реестр |
 | `schema-memory.test.ts` | память по `source`, замена, выключенная на сервере |
-| `src/components/ui/select/select-native.test.ts` | серверная разметка `Select`: без предела — все опции, с `nativeLimit` — первые N плюс выбранное за пределом (оно отмечено `selected`) |
-| `src/content/demo-catalog/shikimori/schema.server.test.ts` | все 1934 студии в схеме без обрезки; сверх 5000 — аварийная обрезка |
+| `src/core/ui/select/select-native.test.ts` | серверная разметка `Select`: без предела — все опции, с `nativeLimit` — первые N плюс выбранное за пределом (оно отмечено `selected`) |
+| `src/modules/demo/shikimori/schema.server.test.ts` | все 1934 студии в схеме без обрезки; сверх 5000 — аварийная обрезка |
 | `test/browser/shikimori.mjs` | 11 полей формы схемы по `data-field`; без JS: 200 студий с пояснением, студия из хвоста по адресу показана выбранной и проходит проверку; с JS: поиск находит последнюю студию; переход внутри сайта — схемы нет в данных, панель из памяти; роут: 403 без заголовка |

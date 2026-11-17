@@ -5,6 +5,7 @@
   import { asLink } from '#core/hooks/links/index.js'
   import UserEntries from '#modules/user/base/svelte/UserEntries.svelte'
   import StorageServersEntry from '#modules/storage-servers/ui/StorageServersEntry.svelte'
+  import DriveEntry from '#modules/drive/ui/DriveEntry.svelte'
   import { HOME_CARDS } from '#core/app/nav.js'
   
   let { data }: { data: Awaited<ReturnType<typeof loadHome>> } = $props()
@@ -33,6 +34,7 @@
   <div class="mt-8 grid gap-4 sm:grid-cols-2">
     <UserEntries entries={data.siteEntries} />
     <StorageServersEntry />
+    <DriveEntry />
   </div>
   {#if HOME_CARDS.length > 0}
     <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

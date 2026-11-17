@@ -57,7 +57,7 @@
 
 ## 1. Composition root
 
-Единственный владелец соединения и ресурсов — серверный модуль (`#server`), как в
+Единственный владелец соединения и ресурсов — серверный модуль (`#core/server`), как в
 официальном SvelteKit FAQ «How do I set up a database?»: синглтон процесса, а не на
 запрос. Лень важна: `vite dev` и `vite build` спорят из-за file-lock каталога PGlite.
 
@@ -872,7 +872,7 @@ await admin.resolve(token, decisions)     // секрет сверяется Д�
 `lib/form`). Оба собирает `decisionsFrom`/`decisionsFromForm`; всё, что не является решением,
 отвергается до БД.
 
-Приложение показывает это экраном `/schema` (`src/components/db-schema/SchemaPending.svelte`,
+Приложение показывает это экраном `/schema` (`src/core/ui/db-schema/SchemaPending.svelte`,
 слова и описание формы — `#core/hooks/db-schema.ts`): кнопка «Выполнить» спрашивает
 `DB_ADMIN_TOKEN`; без переменной кнопки нет, экран объясняет, что задать. Любая страница с БД
 при `schema_pending` ведёт туда же (`?next=` возвращает назад), а страница ошибок показывает
@@ -1124,7 +1124,7 @@ export const block = defineResource({
   Роль, добавленная в `policy.update`, но забытая в `policy.select`, не будет поймана
   никем. Если ресурс остаётся на ручном `policy`, инвариант «каждая роль из `update`/
   `delete` входит в `select`» нужно закрепить собственным тестом — страж его не проверит.
-  В этом репозитории так устроен `user.config` (`src/content/user/schema.ts`).
+  В этом репозитории так устроен `user.config` (`src/modules/user/base/model/schema.ts`).
 - **`SKIP_ACL_GUARD`.** Символ из `src/core/lib/db/acl.ts`; ресурс с ним тоже получает
   `enforceGuard: false`. Его ставит `cloneResource` (`src/core/lib/db/clone.ts`) на
   клонированный ресурс, поэтому клоны не проходят страж аксиом.

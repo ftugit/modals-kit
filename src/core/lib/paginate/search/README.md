@@ -39,7 +39,7 @@ SSR-снапшоты, back/forward, ссылки без JS делает lib/pagi
 
 Готовая склейка «поле lib form → стор пагинатора» без разметки — хук
 `usePaginatorSearch` (форма, задержка, нормализация, «Найти»/«Сбросить» только
-до оживления, крестик — `clear`). Он живёт в `src/components/paginator`, а не
+до оживления, крестик — `clear`). Он живёт в `src/core/ui/paginator`, а не
 здесь: склеивает lib form, роутер, lib paginate и lib search.
 
 ```svelte
@@ -57,7 +57,7 @@ SSR-снапшоты, back/forward, ссылки без JS делает lib/pagi
 </Form>
 ```
 
-Пример страницы — `src/components/paginator/ui/SearchBar.svelte`.
+Пример страницы — `src/core/ui/paginator/ui/SearchBar.svelte`.
 
 ## Подключение (три шага)
 
@@ -247,7 +247,7 @@ applyUrl серверной формы — отдельная задача (v2).
 
 ## Происхождение
 
-Библиотека перенесена из исходника SolidHono (`src/lib/search`) — логика,
+Библиотека перенесена из исходника SolidHono (`src/core/lib/paginate/search`) — логика,
 контракты и правила сохранены без упрощений; отличия порта ровно два:
 импорты смотрят на `#core/lib/paginate/index.js`, а Solid-хук `useSearchCorrection` заменён
 Svelte 5-обвязкой в `#core/lib/paginate/svelte/search/index.js`. Единственный файл канона, который

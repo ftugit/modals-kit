@@ -6,7 +6,7 @@
 ```svelte
 <script lang="ts">
   import { asLink, useModalLink } from '#core/hooks/links/index.js'
-  import { Button } from '#components/ui/index.js'
+  import { Button } from '#core/ui/index.js'
 
   const asModalLink = useModalLink() // область ModalHost — из контекста, поэтому в <script>
 </script>

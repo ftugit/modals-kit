@@ -45,7 +45,7 @@ cores/<фреймворк>.ts      обвязка роутера     ← зна�
 not ok - ядро модалок не зависит ни от одного фреймворка
     [core-purity] core.ts
         импорт: svelte
-        • реактивность и разметка → src/lib/modals/<фреймворк>/
+        • реактивность и разметка → src/core/lib/modals/<фреймворк>/
 ```
 
 ### Оформление: утилиты, а не CSS-файл
@@ -543,7 +543,7 @@ const myCore: ModalCore = {
 | фильтр «`focusin` — не клик по фону» | **`persistentElements`** |
 | `role="dialog"` в разметке | `role` |
 
-Это не памятка, а проверка: `tooling/ark-owns.mjs` сканирует `src/lib/modals`
+Это не памятка, а проверка: `tooling/ark-owns.mjs` сканирует `src/core/lib/modals`
 и роняет `npm test`, если что-то из списка появилось. Отключение — по месту:
 
 ```ts
@@ -558,7 +558,7 @@ preOpenEl.focus() // ark-owns-ok: причина
 
 Числа проверок здесь не пишутся: они устаревают с первым новым тестом. Где что лежит:
 
-- **модульные тесты** (`npm run test:unit`): `src/lib/modals/*.test.ts` — сборка,
+- **модульные тесты** (`npm run test:unit`): `src/core/lib/modals/*.test.ts` — сборка,
   хранилища, кодек, реестр, загрузчик, матрица «среда × хранилище»;
   `cores/*.test.ts` — ядра, включая `sveltekit.test.ts`;
 - **стражи** (`npm run test:guard`): `tooling/ark-owns.mjs`, `core-purity.mjs`,
