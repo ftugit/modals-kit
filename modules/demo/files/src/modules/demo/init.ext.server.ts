@@ -1,3 +1,3 @@
 // Регистрация серверного транспорта списка `posts` при установленном модуле `demo`:
 // первая отрисовка списка на `/db-demo` и `/paginator` читается напрямую из слоя БД.
-import './posts/list.server.js'
+import '#content/demo-catalog/posts/list.server.js'

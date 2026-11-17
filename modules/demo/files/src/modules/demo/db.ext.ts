@@ -1,5 +1,5 @@
 import type { DbModuleExtension } from '#hooks/module-ext.js'
-import { posts } from './posts/posts.js'
+import { posts } from '#content/demo-catalog/posts/posts.js'
 
 export const dbExtension: DbModuleExtension = {
   resources: [posts],
