@@ -1,6 +1,0 @@
-{
-  "name": "drive",
-  "version": "1.0.0",
-  "description": "Drive UI, routes and WebDAV mount",
-  "requires": ["user"]
-}

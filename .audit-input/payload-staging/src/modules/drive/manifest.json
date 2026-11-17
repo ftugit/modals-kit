@@ -1,9 +1,0 @@
-{
-  "name": "drive",
-  "version": "1.0.0",
-  "required": false,
-  "dependsOn": ["user"],
-  "entries": {
-    ".": "./index.ts"
-  }
-}

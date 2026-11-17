@@ -78,3 +78,7 @@ data/
 
 # локальное состояние Serena (индексы LSP, кеш, машинный project.yml)
 .serena/
+
+# audit working data
+.audit-input/
+.audit-check/
