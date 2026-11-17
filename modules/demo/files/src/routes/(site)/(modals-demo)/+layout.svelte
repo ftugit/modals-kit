@@ -4,7 +4,7 @@
   // остального сайта (решение оператора 2026-10-10) — у них своя ветка `(app)`.
   import { demoScope } from './registry'
   import { demoSources } from './sources.svelte'
-  import ModalSystem from '../ModalSystem.svelte'
+  import ModalSystem from '#core/app/ModalSystem.svelte'
 
   let { children } = $props()
 </script>

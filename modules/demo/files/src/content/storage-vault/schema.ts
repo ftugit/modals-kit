@@ -1,4 +1,4 @@
-import { STORAGE_MESSAGES } from '#content/user/messages.js'
+import { STORAGE_MESSAGES } from '#modules/user/base/messages.js'
 import { defineCookieVault } from '#hooks/cookie-vault/index.js'
 import {
   defineStorageServerForm,

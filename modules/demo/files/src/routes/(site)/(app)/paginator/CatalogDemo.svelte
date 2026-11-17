@@ -15,7 +15,7 @@
     SearchBar,
     Skeleton,
     type SettingsField,
-  } from '#components/paginator/index.js'
+  } from '#core/ui/paginator/index.js'
   import {
     DEMO_PAGE_SIZES,
     demoExtraOf,
@@ -42,7 +42,7 @@
   import DbPostRow from '#content/demo-catalog/posts/ui/DbPostRow.svelte'
   import { useCursorMode } from '#content/demo-catalog/posts/cursor-mode.svelte.js'
   import ItemRow from '#content/demo-catalog/items/ui/ItemRow.svelte'
-  import Button from '#components/ui/button/Button.svelte'
+  import Button from '#core/ui/button/Button.svelte'
   import ShotTile from '#content/demo-catalog/items/ui/ShotTile.svelte'
 
   const searchFrom = $derived.by(() => {

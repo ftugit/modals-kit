@@ -7,8 +7,8 @@ import {
   demoDivider,
   demoSelect,
   demoToggle,
-} from '#components/demo/define.js'
-import type { DemoOption, DemoValues } from '#components/demo/types.js'
+} from '#core/ui/panel/define.js'
+import type { DemoOption, DemoValues } from '#core/ui/panel/types.js'
 
 export type UploadServerTarget = string
 export type UploadWriteStrategy = 'priority' | 'most-free' | 'round-robin'

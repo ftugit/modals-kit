@@ -1,5 +1,5 @@
 import type { Path } from '$app/types'
-import type { NavItem } from '#components/shell/index.js'
+import type { NavItem } from '#core/ui/shell/index.js'
 import type { ModuleHomeCard, NavModuleExtension } from '#hooks/module-ext.js'
 import { kitRoute } from '#lib/address/sveltekit.js'
 

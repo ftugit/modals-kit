@@ -3,7 +3,7 @@
   Размещается на шаге активной отправки строго между карточками `(Attachment)` и кнопкой `[Отменить загрузку]`.
 -->
 <script lang="ts">
-  import { Badge } from '#components/ui/index.js'
+  import { Badge } from '#core/ui/index.js'
   import {
     formatUploadBytesRu,
     formatUploadSpeedRu,

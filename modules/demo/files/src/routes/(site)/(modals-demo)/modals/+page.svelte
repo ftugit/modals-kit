@@ -1,7 +1,7 @@
 <script lang="ts">
   // 6.4: тот же путь выключения, что у пагинаторной панели (гейт гидратации + общая причина).
 import { asLink, useModalLink } from '#hooks/links/index.js'
-  import { Button, buttonVariants, Fieldset, Spinner } from '#components/ui/index.js'
+  import { Button, buttonVariants, Fieldset, Spinner } from '#core/ui/index.js'
   import { JS_ONLY_REASON, useJsOnly } from '#hooks/js-only.svelte.js'
   const jsOnly = useJsOnly()
 
@@ -19,8 +19,8 @@ import { asLink, useModalLink } from '#hooks/links/index.js'
   //     (состояние приложения, sources.svelte.ts).
   import { entryLabel } from '#lib/modals/index.js'
   import { useModals } from '#lib/modals/svelte/index.js'
-  import { CloseAllButton } from '#components/modals/index.js'
-  import { useHeadSeo } from '#components/shell/index.js'
+  import { CloseAllButton } from '#core/ui/modals/index.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
   import SettingsPanel from './SettingsPanel.svelte'
   import SourcesPanel from './SourcesPanel.svelte'
   import FloatingMenu from '../FloatingMenu.svelte'

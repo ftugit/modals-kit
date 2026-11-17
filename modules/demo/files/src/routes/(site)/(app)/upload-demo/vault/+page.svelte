@@ -4,7 +4,7 @@
    * работает при выключенном JS или прямом переходе по ссылке, а его `load`
    * переиспользуется модалкой `storage.vault` через `preloadData`.
    */
-  import { useHeadSeo } from '#components/shell/index.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
   import StorageVaultView from '#content/storage-vault/ui/StorageVaultView.svelte'
 
   let { data } = $props()

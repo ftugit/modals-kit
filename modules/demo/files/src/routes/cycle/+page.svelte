@@ -1,6 +1,6 @@
 <script lang="ts">
-import Button from '#components/ui/button/Button.svelte'
-  import { useHeadSeo } from '#components/shell/index.js'
+import Button from '#core/ui/button/Button.svelte'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
   import { onMount } from 'svelte'
   import { createModals, createRegistry, urlStorage } from '#lib/modals/index.js'
   import { svelteKitCore } from '#lib/modals/cores/sveltekit.js'

@@ -6,7 +6,7 @@
  * схеме видна на сборке. Объявлять схемы панелей принято в `demo-schema.ts`
  * рядом со страницей — скан ловит `defineDemoPanel` в других файлах.
  */
-import { defineDemoPanel, demoSelect, demoToggle } from '#components/demo/define.js'
+import { defineDemoPanel, demoSelect, demoToggle } from '#core/ui/panel/define.js'
 
 /** Режимы демо; jsOnly-варианты до оживления просто выключены — как в других панелях. */
 export const DEMO_MODES = [

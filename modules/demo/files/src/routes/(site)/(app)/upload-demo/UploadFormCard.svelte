@@ -1,10 +1,10 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import Common from '#components/form/Common.svelte'
-  import Field from '#components/form/Field.svelte'
-  import { forms } from '#components/form/forms.config.js'
-  import { Steps, useSteps } from '#components/steps/index.js'
-  import { Attachment, Button } from '#components/ui/index.js'
+  import Common from '#core/ui/form/Common.svelte'
+  import Field from '#core/ui/form/Field.svelte'
+  import { forms } from '#core/ui/form/forms.config.js'
+  import { Steps, useSteps } from '#core/ui/steps/index.js'
+  import { Attachment, Button } from '#core/ui/index.js'
   import {
     bindComponentForm,
     cancelComponentFormUpload,

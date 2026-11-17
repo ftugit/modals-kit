@@ -1,7 +1,7 @@
 // Изоморфное описание: его импортируют и страница, и серверное действие.
 // Ноль UI, ноль HTTP, ноль Svelte.
 import { defineForm, field, v } from '#lib/form/index.js'
-import { checks, emailTaken, inn, luhn } from '#components/form/extend.js'
+import { checks, emailTaken, inn, luhn } from '#core/ui/form/extend.js'
 
 /** Ответы, которые умеет изобразить демо-сервер (`signup.form.server.ts`). */
 export const ANSWERS = ['accept', 'redirect', 'queued', 'unknown'] as const

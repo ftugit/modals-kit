@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from '#components/ui/index.js'
+  import { Button } from '#core/ui/index.js'
   import type { UploadDemoValues } from './demo-schema.js'
   import type { UploadedDemoRecord } from './forms.js'
 

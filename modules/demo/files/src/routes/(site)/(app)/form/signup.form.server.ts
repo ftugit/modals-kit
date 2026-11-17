@@ -11,7 +11,7 @@ import { queuedData, type Result } from '#lib/form/index.js'
 import { localStore } from '#server/cache.server.js'
 import { watchDb } from '#server/db.server.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
-import '#components/form/extend.js'
+import '#core/ui/form/extend.js'
 import { ANSWERS, resolveDescription, signup, type Answer } from './signup'
 import { countCreated, jobStatus, queueJob, QUEUE_DELAY_MS } from './queue.server.js'
 

@@ -13,8 +13,8 @@
  * Файл без SvelteKit и без `.svelte`: его импортирует скан-тест
  * (`src/components/demo/schemas.test.ts`) вне приложения.
  */
-import { defineDemoPanel, demoDivider, demoSelect, demoToggle } from '#components/demo/define.js'
-import type { DemoValues } from '#components/demo/types.js'
+import { defineDemoPanel, demoDivider, demoSelect, demoToggle } from '#core/ui/panel/define.js'
+import type { DemoValues } from '#core/ui/panel/types.js'
 import { PSP_SAMPLES } from './psp'
 
 /** Значения панели: ключи полей — имена контролов (они же id, как раньше). */

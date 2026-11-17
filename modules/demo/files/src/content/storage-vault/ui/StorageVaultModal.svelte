@@ -3,7 +3,7 @@
   import { refreshAll } from '$app/navigation'
   import { onDestroy } from 'svelte'
   import { useLoader, useModals } from '#lib/modals/svelte/index.js'
-  import { Skeleton, Surface } from '#components/ui/index.js'
+  import { Skeleton, Surface } from '#core/ui/index.js'
   import type { CookieVaultSnapshot } from '#hooks/cookie-vault/index.js'
   import type { StorageVaultMeta } from '../schema.js'
   import StorageVaultView from './StorageVaultView.svelte'

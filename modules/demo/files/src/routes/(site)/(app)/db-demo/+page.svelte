@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { PageProps } from './$types'
-  import { useHeadSeo } from '#components/shell/index.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
   import { PaginatorScope } from '#lib/paginate/svelte/index.js'
   import { DB_LIST_NAME, ensureDbListPaginator } from '#content/demo-catalog/posts/source.js'
   import DbDemoBody from './DbDemoBody.svelte'

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import Field from '#components/form/Field.svelte'
-  import { forms } from '#components/form/forms.config.js'
-  import { Button } from '#components/ui/index.js'
+  import Field from '#core/ui/form/Field.svelte'
+  import { forms } from '#core/ui/form/forms.config.js'
+  import { Button } from '#core/ui/index.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { Form, formTask } from '#lib/form/svelte/index.js'
   import {

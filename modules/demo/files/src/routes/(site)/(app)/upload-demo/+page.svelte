@@ -1,12 +1,12 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { DemoPanel } from '#components/demo/index.js'
-  import { demoParams } from '#components/demo/schema.js'
-  import Common from '#components/form/Common.svelte'
-  import Field from '#components/form/Field.svelte'
-  import { forms } from '#components/form/forms.config.js'
-  import { useHeadSeo } from '#components/shell/index.js'
-  import { Badge, Button } from '#components/ui/index.js'
+  import { DemoPanel } from '#modules/demo/index.js'
+  import { demoParams } from '#core/ui/panel/schema.js'
+  import Common from '#core/ui/form/Common.svelte'
+  import Field from '#core/ui/form/Field.svelte'
+  import { forms } from '#core/ui/form/forms.config.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
+  import { Badge, Button } from '#core/ui/index.js'
   import {
     STORAGE_VAULT_MODAL,
     STORAGE_VAULT_ROUTE,

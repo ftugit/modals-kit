@@ -3,13 +3,13 @@
   // Состав 1:1: заголовок из загрузчика, индекс/id/глубина, цепочка,
   // «следующая» карточка (случайные размер и цвет, стабильные пока
   // запись в цепочке), обмен данными между слоями, футер с триггерами.
-import { Button } from '#components/ui/index.js'
-  import { Input } from '#components/ui/index.js'
+import { Button } from '#core/ui/index.js'
+  import { Input } from '#core/ui/index.js'
   import { useChain, useLoader, useModal, useModalData, useSharedData, useModals } from '#lib/modals/svelte/index.js'
   import { useModalLink } from '#hooks/links/index.js'
   import { entryLabel } from '#lib/modals/index.js'
-  import { CloseAllButton } from '#components/modals/index.js'
-  import { Select } from '#components/ui/index.js'
+  import { CloseAllButton } from '#core/ui/modals/index.js'
+  import { Select } from '#core/ui/index.js'
   import FloatingMenu from './FloatingMenu.svelte'
 
   let {

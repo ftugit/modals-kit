@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Button from '#components/ui/button/Button.svelte'
-  import { useHeadSeo } from '#components/shell/index.js'
+  import Button from '#core/ui/button/Button.svelte'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
   import { asLink } from '#hooks/links/index.js'
   // Порт CardView из src/features/modals/CardPage.tsx оригинала.
 

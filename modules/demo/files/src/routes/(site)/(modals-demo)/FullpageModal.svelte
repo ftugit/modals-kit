@@ -1,9 +1,9 @@
 <script lang="ts">
   // Порт FullpageModal из src/features/modals/demo-modals.tsx оригинала.
-import { Button } from '#components/ui/index.js'
+import { Button } from '#core/ui/index.js'
   import { useModal, useModals } from '#lib/modals/svelte/index.js'
   import { useModalLink } from '#hooks/links/index.js'
-  import { CloseAllButton } from '#components/modals/index.js'
+  import { CloseAllButton } from '#core/ui/modals/index.js'
 
   const me = useModal()
   const m = useModals()

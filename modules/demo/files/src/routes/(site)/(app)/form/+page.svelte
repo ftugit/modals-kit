@@ -5,23 +5,23 @@
   import { goto } from '$app/navigation'
   import { visibleAddress } from '#lib/address/sveltekit.js'
   import { asLink } from '#hooks/links/index.js'
-  import { Button, Fieldset } from '#components/ui/index.js'
+  import { Button, Fieldset } from '#core/ui/index.js'
   import { Form, formTask, type LiveMode } from '#lib/form/svelte/index.js'
   import type { ErrorHandler, ErrorSink, FormError, InvalidFrom, ParallelPolicy, Result } from '#lib/form/index.js'
   import {
     createRegistry, defineForm, isVisible, pollUntilDone, queuedData,
     type FormDescription, type PollOutcome,
   } from '#lib/form/index.js'
-  import { code6Described, code6Plain, ratingType } from '#components/form/extend.js'
-  import { forms, formsCustomUi } from '#components/form/forms.config.js'
+  import { code6Described, code6Plain, ratingType } from '#core/ui/form/extend.js'
+  import { forms, formsCustomUi } from '#core/ui/form/forms.config.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { normalizePsp, PSP_SAMPLES } from './psp'
   import { SPEC_ALL, SPEC_FIRST, signup, signupAll } from './signup'
-  import { DemoPanel, demoDefaults } from '#components/demo/index.js'
-  import { useHeadSeo } from '#components/shell/index.js'
+  import { DemoPanel, demoDefaults } from '#modules/demo/index.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
   import { demoPanelSchema } from './demo-schema.ts'
-  import Common from '#components/form/Common.svelte'
-  import Field from '#components/form/Field.svelte'
+  import Common from '#core/ui/form/Common.svelte'
+  import Field from '#core/ui/form/Field.svelte'
 
   let { data }: { data: { job: { done: boolean } | { missing: true } | null } } = $props()
 

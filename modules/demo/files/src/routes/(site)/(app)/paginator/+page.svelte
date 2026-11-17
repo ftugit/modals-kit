@@ -1,6 +1,6 @@
 <script lang="ts">
   import { asLink } from '#hooks/links/index.js'
-  import { useHeadSeo } from '#components/shell/index.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
   // Адрес здесь не читается и не пишется: страницу из `?page` / `?gallery` и навигацию
   // обслуживает URL-транспорт пагинатора, роутер ему отдаёт хост (канон: `bindsUrl`).
   import { onMount } from 'svelte'

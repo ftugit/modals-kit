@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useHeadSeo } from '#components/shell/index.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
   import StorageVaultDeleteModal from '#content/storage-vault/ui/StorageVaultDeleteModal.svelte'
   import type { PageProps } from './$types'
 

@@ -15,10 +15,10 @@
    * `aria-controls` на кнопке обязателен: по нему ловушка фокуса модалки
    * признаёт портированное меню своим (решение D31).
    */
-  import { Button } from '#components/ui/index.js'
-  import Floating from '#components/ui/floating/Floating.svelte'
+  import { Button } from '#core/ui/index.js'
+  import Floating from '#core/ui/floating/Floating.svelte'
   import { tryUseModals } from '#lib/modals/svelte/index.js'
-  import { cn } from '#components/utils.js'
+  import { cn } from '#core/ui/utils.js'
   import type { MobileAnchor } from '#lib/modals/index.js'
 
   interface Props {

@@ -3,7 +3,7 @@
 // выполняют самопроверку `storage.probe(server)`, создание реплик `storage.copy`, перенос `storage.move`
 // и пакетное клонирование `storage.clone`.
 import { randomUUID } from 'node:crypto'
-import { demoParams } from '#components/demo/schema.js'
+import { demoParams } from '#core/ui/panel/schema.js'
 import { registerComponentForm } from '#hooks/component-form/registry.js'
 import { reject } from '#lib/form/server.js'
 import {

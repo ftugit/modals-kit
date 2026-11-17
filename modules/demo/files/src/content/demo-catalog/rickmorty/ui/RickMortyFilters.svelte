@@ -4,8 +4,8 @@
    * Подписи и варианты — в описании `rickMortyFilterForm`.
    */
   import { Form } from '#lib/form/svelte/index.js'
-  import Field from '#components/form/Field.svelte'
-  import { bindFilters, FilterActions, FilterBlock, type FilterFormProps } from '#components/paginator/index.js'
+  import Field from '#core/ui/form/Field.svelte'
+  import { bindFilters, FilterActions, FilterBlock, type FilterFormProps } from '#core/ui/paginator/index.js'
 
   let props: FilterFormProps = $props()
   const filters = bindFilters(() => props)

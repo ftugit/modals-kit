@@ -1,5 +1,5 @@
 // Изоморфные описания форм демо-страницы `/upload-demo`.
-import { image, registerImageCheck } from '#components/form/image.js'
+import { image, registerImageCheck } from '#core/ui/form/image.js'
 import { CheckRegistry, defineForm, FILE_BUDGET_RESERVE, field, v, type ValidatorRef } from '#lib/form/index.js'
 import type {
   StorageCloneReport,

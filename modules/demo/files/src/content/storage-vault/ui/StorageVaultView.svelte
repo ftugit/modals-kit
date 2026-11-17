@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CookieVault } from '#components/demo/index.js'
+  import { CookieVault } from '#modules/demo/index.js'
   import type { CookieVaultSnapshot } from '#hooks/cookie-vault/index.js'
   import { storageVaultSchema, type StorageVaultMeta } from '../schema.js'
   import { STORAGE_VAULT_DELETE_MODAL } from '../modals.js'

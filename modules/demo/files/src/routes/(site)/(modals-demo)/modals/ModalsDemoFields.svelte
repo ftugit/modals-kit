@@ -6,9 +6,9 @@
    *
    * Второй живой пример `ui` (первый — `steps/StepsDemoFields.svelte`).
    */
-  import type { DemoUiProps } from '#components/demo/index.js'
-  import { Field, Select } from '#components/settings/index.js'
-  import { Input } from '#components/ui/index.js'
+  import type { DemoUiProps } from '#modules/demo/index.js'
+  import { Field, Select } from '#core/ui/settings/index.js'
+  import { Input } from '#core/ui/index.js'
   import { MODALS_SELECTS } from './demo-schema.ts'
 
   let { field }: DemoUiProps = $props()

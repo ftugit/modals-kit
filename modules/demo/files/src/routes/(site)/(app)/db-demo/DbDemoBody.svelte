@@ -17,7 +17,7 @@
    * (`redirectOnSuccess: 'inline'` → `locals.formResult`).
    */
   import type { PageData } from './$types'
-  import Alert from '#components/ui/alert/Alert.svelte'
+  import Alert from '#core/ui/alert/Alert.svelte'
   import type { Result } from '#lib/form/index.js'
   import { usePaginatorActions, usePaginatorState } from '#lib/paginate/svelte/index.js'
   import {

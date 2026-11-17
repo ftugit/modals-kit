@@ -5,20 +5,20 @@
   // универсальная DemoPanel: без скрипта — нативный GET, с JS — мелкая запись
   // адреса (не полная навигация). Схема полей — в demo-schema.ts.
   import { visibleAddress } from '#lib/address/sveltekit.js'
-  import { useHeadSeo } from '#components/shell/index.js'
-  import { PopupSteps, Steps, FormSteps, formSteps, stepLink, useSteps } from '#components/steps/index.js'
+  import { useHeadSeo } from '#core/ui/shell/index.js'
+  import { PopupSteps, Steps, FormSteps, formSteps, stepLink, useSteps } from '#core/ui/steps/index.js'
   import { asLink } from '#hooks/links/index.js'
-  import FieldInput from '#components/form/Field.svelte'
+  import FieldInput from '#core/ui/form/Field.svelte'
   import Form from '#lib/form/svelte/Form.svelte'
-  import Common from '#components/form/Common.svelte'
-  import { Button } from '#components/ui/index.js'
-  import { forms } from '#components/form/forms.config.js'
+  import Common from '#core/ui/form/Common.svelte'
+  import { Button } from '#core/ui/index.js'
+  import { forms } from '#core/ui/form/forms.config.js'
   import { bindComponentForm } from '#hooks/component-form/index.js'
   import { FSTEP_STEPS, fstepForm } from './fstep-form.ts'
   import { demoPanelSchema, type DemoMode } from './demo-schema.ts'
-  import { DemoPanel, demoParams } from '#components/demo/index.js'
+  import { DemoPanel, demoParams } from '#modules/demo/index.js'
   import StepsDemoFields from './StepsDemoFields.svelte'
-  import UserPickerSteps from '#content/user/ui/UserPickerSteps.svelte'
+  import UserPickerSteps from '#modules/user/accounts/svelte/UserPickerSteps.svelte'
 
   /* ── режим и опции демо: схему и адрес ведёт DemoPanel (demo-schema.ts),
      страница читает ПАРАМЕТРЫ и выбирает по ним активный хост шагов ── */

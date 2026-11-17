@@ -6,7 +6,7 @@ import { claimQuery, nextSearch } from '#lib/address/keys.js'
 import type { FieldSetItem } from '#lib/form/index.js'
 import { probeImageHeader } from '#lib/image/probe.js'
 import { localStore } from '#server/cache.server.js'
-import '#components/form/extend.js'
+import '#core/ui/form/extend.js'
 import {
   IMAGE_MAX_BYTES,
   collectionForm,

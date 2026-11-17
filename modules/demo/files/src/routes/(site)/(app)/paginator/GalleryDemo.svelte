@@ -7,7 +7,7 @@
     PaginatorSettings,
     Skeleton,
     type SettingsField,
-  } from '#components/paginator/index.js'
+  } from '#core/ui/paginator/index.js'
   import type { PaginatorState } from '#lib/paginate/index.js'
   import type { DemoItem } from '#content/demo-catalog/items/items.js'
   import {
