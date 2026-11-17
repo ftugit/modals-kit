@@ -16,6 +16,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const LOAD_RE =
   /export\s+const\s+(load|layout)\b\s*(?::[^=]+)?=\s*async\s*\(([^)]*)\)\s*=>\s*\{/
@@ -136,7 +137,7 @@ export function checkDir(root) {
 }
 
 if (process.argv[1] && process.argv[1].endsWith('load-url-guard.mjs')) {
-  const root = process.argv[2] ?? new URL('../src/routes', import.meta.url).pathname
+  const root = process.argv[2] ?? fileURLToPath(new URL('../src/routes', import.meta.url))
   const problems = checkDir(root)
   if (problems.length) {
     for (const p of problems) console.error(p)

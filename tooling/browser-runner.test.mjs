@@ -34,10 +34,11 @@ function fixture() {
   `)
   const suite = `
     import { appendFileSync } from 'node:fs';
+    import { basename } from 'node:path';
     const keys = ['MODALS_BASE', 'FORMS_BASE', 'DB_DEMO_BASE', 'FIELDS_BASE', 'A11Y_BASE', 'URL_CHECK_BASE', 'PAGINATE_BASE', 'LAYER_BACK_BASE'];
     const env = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
     env.MODALS_PORT = process.env.MODALS_PORT;
-    appendFileSync('trace.log', JSON.stringify({ command: 'suite', name: process.argv[1].split('/').pop(), env }) + '\\n');
+    appendFileSync('trace.log', JSON.stringify({ command: 'suite', name: basename(process.argv[1]), env }) + '\\n');
     if (process.env.STUB_SUITE_FAIL === '1') { console.error('FAIL intentional suite failure'); process.exit(7); }
   `
   for (const name of SUITES) writeFileSync(join(root, 'test/browser', `${name}.mjs`), suite)

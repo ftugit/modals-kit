@@ -2,7 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadBodies, checkSource, checkDir } from './load-url-guard.mjs';
+
+// `new URL(...).pathname` на Windows даёт `/D:/...` — `D:` становится частью пути
+// (`D:\D:\...`). Реальный путь берём через `fileURLToPath`.
+const ROUTES_ROOT = fileURLToPath(new URL('../src/routes', import.meta.url));
 
 test('ловит event.request.url в теле load', () => {
   const src = `export const load: PageServerLoad = async (event) => {
@@ -85,7 +90,7 @@ test('отлов не зависит от положения внутри тел
 // `event.request.url` в load» не запускался никогда. Ошибка того же класса,
 // что мёртвое правило: проверка есть, а нарушение пройдёт молча.
 test('в проекте нет чтения event.request.url в load', () => {
-  const problems = checkDir(new URL('../src/routes', import.meta.url).pathname)
+  const problems = checkDir(ROUTES_ROOT)
   assert.deepEqual(problems, [], problems.join('\n'))
 })
 
@@ -99,6 +104,6 @@ test('гейт не фиктивен: серверные load/layout в прое
       else if (/\.server\.ts$/.test(name) && /^\+(page|layout)/.test(name)) found.push(path)
     }
   }
-  walk(new URL('../src/routes', import.meta.url).pathname)
+  walk(ROUTES_ROOT)
   assert.ok(found.length > 0, 'не найдено ни одного +*.server.ts')
 })

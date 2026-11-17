@@ -68,6 +68,10 @@ test('mod: extractTarGzToMap распаковывает реальный git arc
     execFileSync('git', ['init', '-q'], { cwd: repoDir })
     execFileSync('git', ['config', 'user.name', 'test'], { cwd: repoDir })
     execFileSync('git', ['config', 'user.email', 'test@local'], { cwd: repoDir })
+    // Глобальный `core.autocrlf` не должен влиять на фикстуру: иначе `git archive`
+    // отдаёт `\r\n`, и тест падает на Windows, ничего не проверяя про продукт.
+    execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: repoDir })
+    execFileSync('git', ['config', 'core.eol', 'lf'], { cwd: repoDir })
 
     const longRel =
       'modules/demo/files/src/routes/(site)/(app)/upload-demo/components/deeply-nested/UploadForecastBannerComponent.svelte'

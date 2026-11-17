@@ -47,7 +47,7 @@
  *   KT_PARALLEL=1 node test/browser/run-all.mjs    # последовательно, как раньше
  *   node test/browser/run-all.mjs db-demo paginate # только перечисленные
  */
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { browserFailureLines } from '../../tooling/browser-output.mjs';
 import { runBrowserSchedule } from '../../tooling/browser-schedule.mjs';
@@ -126,8 +126,15 @@ async function startServer() {
 
 function stopServer() {
   if (!serverProc) return;
+  const { pid } = serverProc;
   try {
-    process.kill(-serverProc.pid, 'SIGTERM');
+    if (process.platform === 'win32') {
+      // В Windows нет группового сигнала: `process.kill(-pid)` там ничего не гасит,
+      // preview остаётся жить, держит свой stdout-пайп и не даёт оркестратору выйти.
+      execFileSync('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore' });
+    } else {
+      process.kill(-pid, 'SIGTERM');
+    }
   } catch {
     /* уже мёртв */
   }

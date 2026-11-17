@@ -238,16 +238,24 @@ export function checkImports(relPath, specs) {
  * @param {Array<{path: string, source: string}>} files пути — от корня библиотеки
  */
 export function measure(files) {
+  // Вес библиотеки — свойство исходника, а не настроек git: в Windows-чекауте
+  // (`core.autocrlf=true`) строки приходят с `\r\n`, и «вес» растёт на число
+  // строк. Меряем LF-вид — он одинаковый на всех платформах.
+  const lf = (source) => source.replace(/\r\n?/g, '\n')
+  // Порядок файлов задаёт содержимое gzip-потока. `readdirSync` отдаёт разный
+  // порядок в NTFS и ext4, поэтому сортируем сами: иначе бюджет «плывёт» от ОС.
+  const key = (path) => path.split(/[\\/]/).join('/')
+  const ordered = [...files].sort((a, b) => (key(a.path) < key(b.path) ? -1 : key(a.path) > key(b.path) ? 1 : 0))
   const parts = { core: [] }
   for (const z of ADAPTER_ZONES) parts[z] = []
-  for (const f of files) parts[zoneOf(f.path) ?? 'core'].push(f.source)
+  for (const f of ordered) parts[zoneOf(f.path) ?? 'core'].push(lf(f.source))
 
   // пустой набор весит ноль, а не 20 байт gzip-заголовка пустого потока
   const gz = (list) => (list.length ? gzipSync(Buffer.from(list.join('\n'), 'utf8')).length : 0)
   const raw = (list) => Buffer.byteLength(list.join('\n'), 'utf8')
 
-  const heaviest = [...files]
-    .map((f) => ({ path: f.path, raw: Buffer.byteLength(f.source, 'utf8') }))
+  const heaviest = ordered
+    .map((f) => ({ path: f.path, raw: Buffer.byteLength(lf(f.source), 'utf8') }))
     .sort((a, b) => b.raw - a.raw)
 
   const adapters = {}

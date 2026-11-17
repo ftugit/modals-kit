@@ -3,6 +3,10 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
+// Пути сравниваются с POSIX-списком ниже, а `join()` на Windows отдаёт `src\...`.
+// Один вид пути на всех ОС — иначе разрешённый файл выглядит нарушителем.
+const posix = (path) => path.split(/[\\/]/).join('/')
+
 // Списки сессий: массовый набор — `?/others` (серверный срез по фильтру),
 // одиночный отзыв карточки — `?/revoke`. Оба экшена живы; страж не даёт ни
 // удалить одиночный отзыв, ни вернуть карточку на массовый набор.
@@ -33,7 +37,7 @@ test('адрес ?/revoke в UI живёт только там, где экше�
       if (statSync(path).isDirectory()) { walk(path); continue }
       if (!/\.(ts|svelte)$/.test(name) || /\.test\./.test(name)) continue
       const src = readFileSync(path, 'utf8')
-      if (src.includes('?/revoke')) problems.push(path)
+      if (src.includes('?/revoke')) problems.push(posix(path))
     }
   }
   walk('src')

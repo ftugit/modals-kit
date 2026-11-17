@@ -134,6 +134,10 @@ test('импорты разбираются вместе с `export … from`', 
 
 /* ── боевой прогон по каталогу ────────────────────────────────────── */
 
+// `relative()` на Windows отдаёт `src\core\...`, а правила и проверки написаны
+// через `/`. Канонизируем в POSIX, иначе сравнение зон молча не находит файлов.
+const posix = (path) => path.split(/[\\/]/).join('/')
+
 function walk(dir, acc = []) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name)
@@ -148,7 +152,7 @@ test('в проекте нет нарушений границы «схема ж
   assert.ok(files.length > 50, 'нечего проверять — путь изменился?')
   const problems = []
   for (const file of files) {
-    const rel = relative('.', file)
+    const rel = posix(relative('.', file))
     const found = checkSource(rel, readFileSync(file, 'utf8'))
     if (found.length) problems.push(formatProblems(rel, found))
   }
@@ -156,7 +160,7 @@ test('в проекте нет нарушений границы «схема ж
 })
 
 test('граница не фиктивна: зоны, которые защищаются, существуют', () => {
-  const files = walk('src').map((file) => relative('.', file))
+  const files = walk('src').map((file) => posix(relative('.', file)))
   assert.ok(files.some((f) => f.startsWith('src/core/lib/paginate/filters/')), 'нет модуля фильтров')
   if (files.some((f) => f.startsWith('src/content/demo-catalog/'))) {
     assert.ok(files.includes('src/content/demo-catalog/shikimori/schema.server.ts'), 'нет зоны схемы')

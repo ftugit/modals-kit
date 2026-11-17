@@ -148,7 +148,7 @@ test('Node: registered form chunked limit returns 413 at the configured boundary
 })
 
 
-test('Node: SIGTERM closes an upgraded WebSocket cleanly instead of hanging indefinitely', { skip: !built }, async () => {
+test('Node: SIGTERM closes an upgraded WebSocket cleanly instead of hanging indefinitely', { skip: !built || (process.platform === 'win32' ? 'Windows: нет POSIX-сигналов, kill() завершает процесс принудительно' : false) }, async () => {
   const { child, port } = await start()
   let ws
   try {

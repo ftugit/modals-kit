@@ -39,13 +39,17 @@ test('actual Vite dev: HMR and upload upgrade coexist; rejecting one does not br
   // Create before Vite starts, so its watcher has enrolled the file before editing.
   await writeFile(path, 'export const value = 1; if (import.meta.hot) import.meta.hot.accept();\n')
   const env = { ...process.env, NODE_ENV: 'development' }
+  // Пайп, а не терминал: цвет выключаем явно, иначе Vite вставляет ANSI между
+  // `Local` и `:`, и ожидание `Local:` никогда не срабатывает.
+  env.FORCE_COLOR = '0'
+  env.NO_COLOR = '1'
   for (const key of ['DATABASE_URL','DATABASE_RESET','DATABASE_DIR','HYPERDRIVE_CONNECTION_STRING','MODULES','VERCEL']) delete env[key]
   const child = spawn(process.execPath, ['--no-liftoff','node_modules/vite/bin/vite.js','dev','--host','127.0.0.1','--port',String(port),'--strictPort'], { env, stdio: ['ignore','pipe','pipe'] })
   let output = ''; child.stdout.on('data', c => { output += c }); child.stderr.on('data', c => { output += c })
   t.after(async () => { if (child.exitCode === null) { const exited = new Promise(r => child.once('exit', r)); child.kill('SIGTERM'); await exited } })
   await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error(`Vite startup timeout: ${output.slice(-2000)}`)), 40_000)
-    child.stdout.on('data', c => { if (String(c).includes('Local:')) { clearTimeout(timeout); resolve() } })
+    child.stdout.on('data', c => { if (String(c).replace(/\x1b\[[0-9;]*m/g, '').includes('Local:')) { clearTimeout(timeout); resolve() } })
     child.once('exit', c => { clearTimeout(timeout); reject(new Error(`Vite exit ${c}: ${output.slice(-2000)}`)) })
   })
   // /@vite/client contains a per-server token on recent Vite. The token is not

@@ -1,11 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { canonSpecifier, createGuard, checkTemplate, checkSource, layerGuard, routeTree, RULES } from './layer-guard.mjs';
 import { collectSpecifiers } from './core-purity.mjs';
 
 const check = createGuard(RULES);
+
+// `new URL(...).pathname` даёт `/D:/...` на Windows: `D:` попадает внутрь пути
+// и превращается в `D:\D:\...`. Путь берём через `fileURLToPath`, а для отчётов —
+// через `relative`, чтобы сообщения не зависели от разделителя ОС.
+const SRC_ROOT = fileURLToPath(new URL('../src', import.meta.url));
+const posix = (path) => path.split(/[\\/]/).join('/');
+const srcRel = (file) => `src/${posix(relative(SRC_ROOT, file))}`;
 
 test('canonSpecifier приводит все 5 subpath-алиасов и относительные пути к src/...', () => {
   assert.equal(canonSpecifier('#lib/form/index.js', '/app/src/routes/+page.ts'), 'src/core/lib/form/index.js');
@@ -373,22 +381,22 @@ function walk(dir) {
 }
 
 test('исходники src: адресные и source-правила соблюдены во ВСЁМ дереве', () => {
-  const root = new URL('../src', import.meta.url).pathname;
+  const root = SRC_ROOT;
   const bad = [];
   for (const file of walk(root)) {
     if (/\.test\.ts$|\.spec\.ts$/.test(file)) continue;
     const msg = checkSource(RULES, readFileSync(file, 'utf8'), file);
-    if (msg) bad.push(`${file.replace(root + '/', 'src/')}: ${msg.split('\n')[0]}`);
+    if (msg) bad.push(`${srcRel(file)}: ${msg.split('\n')[0]}`);
   }
   assert.deepEqual(bad, [], 'нарушения source-правил:\n' + bad.join('\n'));
 });
 
 test('src/core/server: каждый модуль — *.server.ts (кроме явного trusted-origins.ts)', () => {
-  const root = new URL('../src/core/server', import.meta.url).pathname;
+  const root = join(SRC_ROOT, 'core', 'server');
   const allowed = new Set(['trusted-origins.ts']);
   const stray = walk(root)
     .filter((file) => /\.(ts|js|mts|mjs)$/.test(file) && !/\.test\.(ts|js|mts|mjs)$/.test(file))
-    .map((file) => file.replace(root + '/', 'src/core/server/'))
+    .map((file) => srcRel(file))
     .filter((rel) => !allowed.has(rel.slice('src/core/server/'.length)) && !/\.server\.(?:ts|js|mts|mjs)$/.test(rel));
   // Соглашение: серверный слой — это `*.server.ts`. Файл без суффикса клиент
   // может импортировать, не заметив, что тянет серверный синглтон (соединение с
@@ -397,19 +405,19 @@ test('src/core/server: каждый модуль — *.server.ts (кроме я�
 });
 
 test('исходники src: теговые правила (формы и поля) соблюдены во ВСЁМ дереве', () => {
-  const root = new URL('../src', import.meta.url).pathname;
+  const root = SRC_ROOT;
   const bad = [];
   for (const file of walk(root)) {
     if (/\.test\.ts$|\.spec\.ts$/.test(file)) continue;
     if (!/\.(svelte|html)$/.test(file)) continue;
     const msg = checkTemplate(RULES, readFileSync(file, 'utf8'), file);
-    if (msg) bad.push(`${file.replace(root + '/', 'src/')}: ${msg.split('\n')[0]}`);
+    if (msg) bad.push(`${srcRel(file)}: ${msg.split('\n')[0]}`);
   }
   assert.deepEqual(bad, [], 'нарушения теговых правил:\n' + bad.join('\n'));
 });
 
 test('исходники src: импортные правила и границы слоёв соблюдены во ВСЁМ дереве', () => {
-  const root = new URL('../src', import.meta.url).pathname;
+  const root = SRC_ROOT;
   const bad = [];
   for (const file of walk(root)) {
     if (/\.test\.ts$|\.spec\.ts$/.test(file)) continue;
@@ -418,7 +426,7 @@ test('исходники src: импортные правила и границ�
     const source = readFileSync(file, 'utf8').replace(/^[ \t]*import\s+type\b[^\n]*$/gm, '');
     for (const spec of collectSpecifiers(source)) {
       const msg = check(spec, file);
-      if (msg) bad.push(`${file.replace(root + '/', 'src/')} <- ${spec}: ${msg.split('\n')[0]}`);
+      if (msg) bad.push(`${srcRel(file)} <- ${spec}: ${msg.split('\n')[0]}`);
     }
   }
   assert.deepEqual(bad, [], 'нарушения импортных правил:\n' + bad.join('\n'));
