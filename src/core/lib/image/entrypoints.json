@@ -1,4 +1,0 @@
-{
-  "//": "`index.js` — конвейер; `photo.js` — JPEG/PNG/WebP без регистрации AVIF; `probe.js` — проба заголовка БЕЗ декодирования (её зовут сервер и клиент, которым конвейер не нужен); `node.js` — sharp/файловая система (только сервер).",
-  "entrypoints": ["index.js", "photo.js", "probe.js", "node.js"]
-}

@@ -1,4 +1,0 @@
-// Svelte 5 adapter entrypoint lib search — аналог `#core/lib/paginate/svelte/index.js`:
-// ядро остаётся чистым, всё реактивное и разметочное живёт здесь.
-export { useSearchCorrection, type SearchCorrectionAccessor } from './correction.svelte'
-export { useSearchStats, type SearchStatsAccessor } from './stats.svelte'

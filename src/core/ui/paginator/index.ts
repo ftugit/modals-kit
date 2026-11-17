@@ -1,5 +1,0 @@
-export { default as Paginator } from './Paginator.svelte'
-export * from './ui/index.js'
-export * from './filters/index.js'
-export * from './variants.js'
-export type * from './types.js'
