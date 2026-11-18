@@ -711,6 +711,13 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
 
 ## 9. Статус реализации
 
+> Раздел фиксирует состояние на момент ремонта и является историей. Решения про
+> stationary-receipt, общий `DriveOperationForm` и «`execute` не возвращает
+> redirect» **заменены** [`plan-drive-fixes.md`](./plan-drive-fixes.md) (`§0.1`,
+> `§5.2`, `§5.3`, `§6.3`, `§7.2`): по действующему контракту успех — закрытие
+> или переход, у каждой операции своя форма, а `execute` отдаёт `redirect`.
+> Строки ниже, помеченные как заменённые, контрактом не являются.
+
 Выполнено по этапам (снимки модуля — `drive-payload-snapshots`, этап 1 `a923d08`,
 этапы 2–3 `efb779f`):
 
@@ -763,7 +770,11 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
 - [x] Любая mutation button — link на dedicated operation route/modal.
 - [x] Ни одна mutation form не находится в browse/list row (SSR-тест это ловит).
 - [x] JS success stationary и structured; no-JS success PRG (`?notice=<код>`).
-- [x] `execute` не возвращает redirect и не превращает отказ в success.
+      **Заменено:** `plan-drive-fixes.md` §2.1 — успех это закрытие/переход, не
+      квитанция.
+- [x] `execute` не превращает отказ в success. **Заменено:** §2.1 плана fixes —
+      `execute` обязан вернуть `redirect: outcome.next`, а
+      `redirectOnSuccess` читает `result.redirect`.
 - [x] Все domain hidden controls реально присутствуют в SSR HTML (тесты форм).
 - [x] Upload зарегистрирован глобальным component-form registry и безопасен при
       overwrite/copy/quota failure (тесты `service/upload`, `query`).
@@ -782,7 +793,8 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
       copies нет (pre-commit module-guard).
 - [x] Legacy documents не утверждают superseded architecture.
 
-Не проверено (нужен браузер/JS): поведение модалок, stationary receipt после
-клиентского submit, фильтры в модалке/sidebar, экран доступов, upload прогресс и
-`?notice` после PRG. В этом окружении браузерный runner не запускается
-(`libnspr4.so`, нет root); вместо него прогнаны unit/SSR-тесты (36 drive).
+Не проверено (нужен браузер/JS): поведение модалок, фильтры в модалке/sidebar,
+экран доступов, upload прогресс и `?notice` после PRG. В этом окружении
+браузерный runner не запускается (`libnspr4.so`, нет root); вместо него
+прогнаны unit/SSR-тесты (36 drive). Проверка stationary-receipt снята: этого
+поведения больше нет в контракте (см. врезку выше).
