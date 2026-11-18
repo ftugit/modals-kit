@@ -24,6 +24,7 @@ import { resolveDriveAccess } from '#modules/drive/service/access.js'
 import { readDriveShares } from '#modules/drive/service/mutate.js'
 import { driveUsedBytes, loadDrivePage } from '#modules/drive/service/query.js'
 import { listDriveDavTokens } from '#modules/drive/service/tokens.js'
+import { driveFilterValues } from '#modules/drive/filters-form.js'
 import {
   DRIVE_KEYS,
   DRIVE_PAGE_DEFAULT,
@@ -39,6 +40,7 @@ import {
   type DriveListIdentity,
 } from '#modules/drive/source.js'
 import type {
+  DriveFiltersPageData,
   DriveListItem,
   DriveListRouteData,
   DriveNodePageData,
@@ -317,19 +319,32 @@ export async function loadDriveOperation(
   }
 
   if (op === 'filters') {
-    const filters = parseDriveFilters(event.url.searchParams)
+    const from = localPath(event.url.searchParams.get('from')) ?? '/drive'
+    const fromUrl = new URL(from, 'http://local.invalid')
+    const filters = parseDriveFilters(fromUrl.searchParams)
+    const values = driveFilterValues(
+      {
+        ord: filters.sort,
+        type: filters.type,
+        starred: filters.starred ? '1' : '',
+        from: filters.from ?? '',
+        to: filters.to ?? '',
+      },
+      filters.pageSize,
+    )
     return {
       ...base,
       fact: null,
+      returnTo: from,
       caps: { canRead: true, canWrite: true, canShare: true },
       filters: {
         search: filters.search ?? '',
-        sort: filters.sort,
-        type: filters.type,
-        starred: filters.starred,
-        pageSize: filters.pageSize,
-        from: filters.from ?? '',
-        to: filters.to ?? '',
+        sort: values.ord,
+        type: values.type,
+        starred: values.starred,
+        pageSize: values.size,
+        from: values.from_date,
+        to: values.to_date,
       },
     }
   }
@@ -431,4 +446,76 @@ async function targetFolders(
 export function drivePageSizeOf(event: RequestEvent): number {
   const size = Number(event.url.searchParams.get(DRIVE_KEYS.size))
   return (DRIVE_PAGE_SIZES as readonly number[]).includes(size) ? size : DRIVE_PAGE_DEFAULT
+}
+
+/** Доступы узла: страница-fallback модалки `drive.access`. */
+export async function loadDriveAccess(event: RequestEvent): Promise<DriveNodePageData> {
+  const nodeId = optionalUuid(event, 'node_id')
+  if (!nodeId) {
+    event.setHeaders({ 'cache-control': 'private, no-store' })
+    const gate = await actorOf(event)
+    return {
+      enabled: gate.enabled,
+      fact: 'auth.forbidden',
+      node: null,
+      caps: EMPTY_CAPS,
+      shares: [],
+      quota: EMPTY_QUOTA,
+      downloadHref: null,
+    }
+  }
+  const data = await loadDriveNode(event, nodeId)
+  if (data.fact) return data
+  if (!data.caps.canShare) return { ...data, fact: 'auth.forbidden', shares: [] }
+  return data
+}
+
+/** Фильтры списка: страница-fallback модалки `drive.filters` для no-JS. */
+export async function loadDriveFilters(event: RequestEvent): Promise<DriveFiltersPageData> {
+  event.setHeaders({ 'cache-control': 'private, no-store' })
+  const sp = event.url.searchParams
+  const from = localPath(sp.get('from')) ?? '/drive'
+  const fromUrl = new URL(from, 'http://local.invalid')
+  // Значения фильтров приходят из адреса списка; query самой страницы может
+  // уточнить их (например, после ручного GET), но `from` остаётся носителем.
+  const merged = new URLSearchParams(fromUrl.searchParams)
+  for (const [key, value] of sp.entries()) {
+    if (key !== 'from') merged.set(key, value)
+  }
+  const filters = parseDriveFilters(merged)
+  const values = driveFilterValues(
+    {
+      ord: filters.sort,
+      type: filters.type,
+      starred: filters.starred ? '1' : '',
+      from: filters.from ?? '',
+      to: filters.to ?? '',
+    },
+    filters.pageSize,
+  )
+
+  const resetUrl = new URL(from, 'http://local.invalid')
+  for (const key of [
+    DRIVE_KEYS.sort,
+    DRIVE_KEYS.type,
+    DRIVE_KEYS.starred,
+    DRIVE_KEYS.from,
+    DRIVE_KEYS.to,
+    DRIVE_KEYS.page,
+    DRIVE_KEYS.size,
+  ]) {
+    resetUrl.searchParams.delete(key)
+  }
+  const resetHref = resetUrl.search
+    ? `${resetUrl.pathname}${resetUrl.search}`
+    : resetUrl.pathname
+
+  const gate = await actorOf(event)
+  return {
+    enabled: gate.enabled,
+    fact: gate.actor ? null : (gate.fact ?? 'auth.forbidden'),
+    values,
+    backHref: from,
+    resetHref,
+  }
 }

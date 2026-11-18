@@ -6,6 +6,7 @@
  * это заново, поэтому расхождение имён ловится одним взглядом (и guard-тестом).
  */
 import { localPath } from '#core/lib/address/index.js'
+import { driveRootRoute } from './routes.js'
 
 export interface DriveOperationField {
   /** Имя поля в описании формы (`defineForm`). */
@@ -43,6 +44,8 @@ export interface DriveOperationSpec {
   readonly fields: readonly DriveOperationField[]
 }
 
+const DRIVE_ROOT = driveRootRoute.href()
+
 const hidden = (name: string): DriveOperationField => ({ name, visible: false })
 const shown = (name: string): DriveOperationField => ({ name, visible: true })
 
@@ -53,7 +56,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   mkdir: {
     id: 'mkdir',
     formId: 'drive-mkdir',
-    path: '/drive/mkdir',
+    path: `${DRIVE_ROOT}/mkdir`,
     modal: 'drive.mkdir',
     title: 'Новая папка',
     description: 'Папка создаётся в текущей папке списка.',
@@ -63,7 +66,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   upload: {
     id: 'upload',
     formId: 'drive-upload',
-    path: '/drive/upload',
+    path: `${DRIVE_ROOT}/upload`,
     modal: 'drive.upload',
     title: 'Загрузить файл',
     description: 'Файл загружается в текущую папку списка.',
@@ -73,7 +76,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   rename: {
     id: 'rename',
     formId: 'drive-rename',
-    path: '/drive/rename',
+    path: `${DRIVE_ROOT}/rename`,
     modal: 'drive.rename',
     title: 'Переименовать',
     description: 'Новое имя должно быть свободно в этой папке.',
@@ -83,7 +86,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   move: {
     id: 'move',
     formId: 'drive-move',
-    path: '/drive/move',
+    path: `${DRIVE_ROOT}/move`,
     modal: 'drive.move',
     title: 'Перенести',
     description: 'Перенос доступен только в живую папку своего диска.',
@@ -93,7 +96,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   copy: {
     id: 'copy',
     formId: 'drive-copy',
-    path: '/drive/copy',
+    path: `${DRIVE_ROOT}/copy`,
     modal: 'drive.copy',
     title: 'Скопировать',
     description: 'Копия занимает место в квоте, даже если байты общие.',
@@ -103,7 +106,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   star: {
     id: 'star',
     formId: 'drive-star',
-    path: '/drive/star',
+    path: `${DRIVE_ROOT}/star`,
     modal: 'drive.star',
     title: 'Важное',
     description: 'Звёздочка меняет только отметку, файл остаётся на месте.',
@@ -113,7 +116,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   'trash-action': {
     id: 'trash-action',
     formId: 'drive-trash',
-    path: '/drive/trash-action',
+    path: `${DRIVE_ROOT}/trash-action`,
     modal: 'drive.trash-action',
     title: 'В корзину',
     description: 'Узел и его поддерево можно вернуть из корзины.',
@@ -124,7 +127,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   restore: {
     id: 'restore',
     formId: 'drive-restore',
-    path: '/drive/restore',
+    path: `${DRIVE_ROOT}/restore`,
     modal: 'drive.restore',
     title: 'Восстановить',
     description: 'Узел вернётся в прежнюю папку, если она жива.',
@@ -134,7 +137,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   purge: {
     id: 'purge',
     formId: 'drive-purge',
-    path: '/drive/purge',
+    path: `${DRIVE_ROOT}/purge`,
     modal: 'drive.purge',
     title: 'Удалить навсегда',
     description: 'Байты удаляются, когда на них больше не ссылается ни один узел.',
@@ -145,7 +148,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   share: {
     id: 'share',
     formId: 'drive-share',
-    path: '/drive/share',
+    path: `${DRIVE_ROOT}/share`,
     modal: 'drive.share',
     title: 'Выдать доступ',
     description: 'Доступ наследуется всем поддеревом узла.',
@@ -155,7 +158,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   unshare: {
     id: 'unshare',
     formId: 'drive-unshare',
-    path: '/drive/unshare',
+    path: `${DRIVE_ROOT}/unshare`,
     modal: 'drive.unshare',
     title: 'Отозвать доступ',
     description: 'Строка доступа удаляется; наследование с папки выше остаётся.',
@@ -166,7 +169,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
   filters: {
     id: 'filters',
     formId: 'drive-filters',
-    path: '/drive/filters',
+    path: `${DRIVE_ROOT}/filters`,
     modal: 'drive.filters',
     title: 'Фильтры списка',
     description: 'Срез применяется к списку «Диска» целиком.',
@@ -175,7 +178,6 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
       hidden('from'),
       hidden('paginator'),
       hidden('page_param'),
-      shown('q'),
       shown('ord'),
       shown('type'),
       shown('size'),

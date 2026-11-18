@@ -11,6 +11,7 @@
   import { tryUseModals } from '#core/lib/modals/svelte/index.js'
   import { Button } from '#core/ui/index.js'
   import { driveOperationHref, type DriveOperationName, type DriveOperationParams } from '../operations.js'
+  import { driveAccessRoute } from '../routes.js'
 
   interface Props {
     node: DriveNodeView
@@ -34,6 +35,11 @@
     const params = { nodeId: node.id, returnTo, ...extra }
     return asModalLink ? asModalLink(`drive.${name}`, params) : asLink(driveOperationHref(name, params))
   }
+
+  const accessLink = () =>
+    asModalLink
+      ? asModalLink('drive.access', { nodeId: node.id, returnTo })
+      : asLink(driveAccessRoute.href({ node_id: node.id }))
 </script>
 
 <div class="flex flex-wrap items-center gap-1" data-testid="drive-node-links">
@@ -54,7 +60,7 @@
       <Button {...link('trash-action')} variant="ghost" {size}>В корзину</Button>
     {/if}
     {#if caps.canShare}
-      <Button {...link('share')} variant="ghost" {size}>Доступ</Button>
+      <Button {...accessLink()} variant="ghost" {size}>Доступы</Button>
     {/if}
   {/if}
 </div>

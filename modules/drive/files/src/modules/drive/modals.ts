@@ -2,6 +2,8 @@ import { registerModal } from '#core/lib/modals/index.js'
 import { lazy } from '#core/lib/modals/svelte/index.js'
 import { driveOperationHref, type DriveOperationName, type DriveOperationParams } from './operations.js'
 import {
+  driveAccessRoute,
+  driveFiltersRoute,
   driveFolderRoute,
   driveNodeRoute,
   drivePickerRoute,
@@ -36,6 +38,21 @@ registerModal({
   component: lazy(() => import('./ui/DriveTrashModal.svelte')),
   route: driveTrashRoute.href,
   size: { width: 960, height: 720 },
+})
+
+registerModal({
+  name: 'drive.access',
+  component: lazy(() => import('./ui/access/DriveAccessModal.svelte')),
+  route: (p?: { nodeId?: string | null }) =>
+    driveAccessRoute.href({ node_id: p?.nodeId ?? null }),
+  size: { width: 560, height: 560 },
+})
+
+registerModal({
+  name: 'drive.filters',
+  component: lazy(() => import('./ui/filters/DriveFiltersModal.svelte')),
+  route: driveFiltersRoute.href,
+  size: { width: 420, height: 620 },
 })
 
 /**

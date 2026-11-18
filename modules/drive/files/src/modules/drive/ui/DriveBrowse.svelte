@@ -6,15 +6,28 @@
    * зовут тот же маршрут через `preloadData`. Карточка строки остаётся
    * Drive-специфичной, оболочка `Listing` — общей.
    */
+  import { browser } from '$app/env'
+  import { onDestroy, untrack } from 'svelte'
   import { Listing } from '#core/ui/listing/index.js'
   import type { SidebarPlace } from '#core/ui/shell/index.js'
   import { asLink, useModalLink } from '#core/hooks/links/index.js'
   import { tryUseModals } from '#core/lib/modals/svelte/index.js'
+  import { visibleAddress } from '#core/lib/address/sveltekit.js'
+  import {
+    acquireScopedStore,
+    getClientStore,
+    getState,
+    releaseScopedStore,
+    setExtra,
+  } from '#core/lib/paginate/index.js'
+  import { useSlotPaginatorScope } from '#core/hooks/modal-paginator.svelte.js'
   import { Badge, Button } from '#core/ui/index.js'
   import { formatBytes, type DriveSort } from '#core/lib/drive/index.js'
   import { vault } from '#modules/user/base/svelte/vault.svelte.js'
   import type { DriveListItem, DriveListRouteData } from '../types.js'
   import {
+    DRIVE_EXTRA_DEFAULTS,
+    DRIVE_FILTER_KEYS,
     DRIVE_IDENTITY_KEY,
     DRIVE_NAME,
     DRIVE_PAGE_DEFAULT,
@@ -24,10 +37,18 @@
     parseDriveIds,
     type DriveListFilters,
   } from '../source.js'
-  import { driveFolderRoute, driveNodeRoute, drivePickerRoute, driveRootRoute, driveTrashRoute } from '../routes.js'
+  import {
+    driveFolderRoute,
+    driveFiltersRoute,
+    driveNodeRoute,
+    drivePickerRoute,
+    driveRootRoute,
+    driveTrashRoute,
+  } from '../routes.js'
+  import { driveFilterLabels, driveFilterText, driveFilterValues, type DriveFilterValues } from '../filters-form.js'
   import { driveMessage } from '../messages.js'
   import { driveOperationHref, type DriveOperationName, type DriveOperationParams } from '../operations.js'
-  import DriveFilters from './DriveFilters.svelte'
+  import DriveFilters from './filters/DriveFilters.svelte'
   import DriveNodeCard from './DriveNodeCard.svelte'
 
   // Регистрация пагинатора — в том же бандле, где рендерится `Listing`: иначе
@@ -58,6 +79,89 @@
   }
 
   let { initial, variant = 'card', scope = null, url = undefined, sidebar, onDone, picker = null }: Props = $props()
+
+  // Sidebar-фильтры живут в том же сторе, что и список: на странице это
+  // scoped/клиентский стор, в модалке — слот `useSlotPaginatorScope`.
+  const sidebarZone = untrack(() => sidebar)
+  const filterSlot = sidebarZone
+    ? useSlotPaginatorScope(DRIVE_NAME, untrack(() => (url === false ? { url: false } : undefined)))
+    : undefined
+  const filterScope = sidebarZone ? untrack(() => scope) : null
+  const ownedScope = Boolean(sidebarZone && filterScope && !filterSlot?.store && browser)
+  const filterStore = sidebarZone
+    ? (filterSlot?.store ??
+      (ownedScope && filterScope
+        ? acquireScopedStore(filterScope)
+        : browser
+          ? getClientStore()
+          : undefined))
+    : undefined
+  if (ownedScope && filterScope) onDestroy(() => releaseScopedStore(filterScope))
+
+  function valuesOf(data: DriveListRouteData): DriveFilterValues | null {
+    const snap = data.snapshot
+    if (!snap) return null
+    return driveFilterValues(
+      (snap.extra ?? {}) as Record<string, unknown>,
+      snap.pageSize || DRIVE_PAGE_DEFAULT,
+    )
+  }
+
+  let appliedValues = $state<DriveFilterValues | null>(valuesOf(untrack(() => initial)))
+  let appliedKey = $state('')
+
+  $effect(() => {
+    if (!filterStore) return
+    const sync = () => {
+      const state = getState<DriveListItem>(filterStore, DRIVE_NAME)
+      const next = driveFilterValues(
+        (state.extra ?? {}) as Record<string, unknown>,
+        state.pageSize || DRIVE_PAGE_DEFAULT,
+      )
+      appliedValues = next
+      appliedKey = [next.ord, next.type, next.starred, next.size, next.from_date, next.to_date].join('|')
+    }
+    sync()
+    const unsub = filterStore.subscribe?.(DRIVE_NAME, sync)
+    return () => unsub?.()
+  })
+
+  function applyFilters(patch: Record<string, string | undefined>, pageSize: number) {
+    if (!filterStore) return
+    void setExtra(filterStore, DRIVE_NAME, patch, { pageSize })
+  }
+
+  function resetFilters() {
+    if (!filterStore) return
+    void setExtra(
+      filterStore,
+      DRIVE_NAME,
+      {
+        ord: undefined,
+        type: undefined,
+        starred: undefined,
+        from: undefined,
+        to: undefined,
+      },
+      { pageSize: DRIVE_PAGE_DEFAULT },
+    )
+  }
+
+  const listFrom = $derived.by(() => {
+    const url = visibleAddress().url
+    return `${url.pathname}${url.search}`
+  })
+
+  const listingFilters = $derived({
+    modal: 'drive.filters',
+    path: driveFiltersRoute.href(),
+    keys: DRIVE_FILTER_KEYS,
+    defaults: DRIVE_EXTRA_DEFAULTS,
+    pageSize: DRIVE_PAGE_DEFAULT,
+    labels: driveFilterLabels(),
+    text: driveFilterText,
+    testId: 'drive-filters-open',
+  })
 
   const snapshot = $derived(initial.snapshot)
   const extra = $derived((snapshot?.extra ?? {}) as Record<string, unknown>)
@@ -132,19 +236,6 @@
     </nav>
   {/if}
 
-  {#if !initial.trashed && !picker && snapshot && initial.caps.canRead}
-    <DriveFilters
-      pathname={initial.pathname}
-      search={filters.search}
-      type={filters.type}
-      sort={filters.sort}
-      starred={filters.starred}
-      pageSize={filters.pageSize}
-      from={filters.from}
-      to={filters.to}
-    />
-  {/if}
-
   {#if initial.fact}
     <p class="rounded-lg border border-border p-4 text-sm text-muted-foreground">
       Список недоступен: {driveMessage(initial.fact)}
@@ -162,6 +253,7 @@
       {scope}
       {url}
       {sidebar}
+      filters={picker || initial.trashed ? undefined : listingFilters}
       actor={vault.principal}
       initial={{ snapshot, fact: null }}
       loadError="auth.expired"
@@ -172,6 +264,22 @@
         placeholder: () => 'Подстрока имени файла или папки…',
       }}
     >
+      {#snippet filtersForm()}
+        {#if appliedValues && !picker && !initial.trashed}
+          <div class="flex flex-col gap-3" data-testid="drive-filters-sidebar">
+            <h2 class="text-sm font-medium">Фильтры</h2>
+            {#key appliedKey}
+              <DriveFilters
+                initial={appliedValues}
+                from={listFrom}
+                onApply={applyFilters}
+                onReset={resetFilters}
+              />
+            {/key}
+          </div>
+        {/if}
+      {/snippet}
+
       {#snippet controls()}
         {#if initial.caps.canWrite && !initial.trashed && !picker}
           <Button {...opLink('mkdir', { parentId: initial.folder?.id ?? '' })} size="sm">

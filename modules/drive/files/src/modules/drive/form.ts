@@ -7,7 +7,9 @@
  */
 import { defineForm, field, v, type FormDescription } from '#core/lib/form/index.js'
 import { DRIVE_NAME_MAX } from '#core/lib/drive/index.js'
+import { driveFiltersForm } from './filters-form.js'
 import { DRIVE_MESSAGES } from './messages.js'
+import { driveRootRoute } from './routes.js'
 import type { DriveOperationName } from './operations.js'
 
 /** Пункт выбора папки: `null` — корень диска. */
@@ -38,68 +40,6 @@ const nameField = (label: string, value = '') =>
 const base = {
   revision: 1,
   messages: DRIVE_MESSAGES,
-}
-
-/** Фильтры списка: обычная GET-форма, поэтому без конверта и действий. */
-export function driveFiltersForm(filters: {
-  search: string | null
-  type: 'all' | 'file' | 'folder'
-  sort: string
-  starred: boolean
-  pageSize: number
-  from: string | null
-  to: string | null
-}) {
-  return defineForm({
-    ...base,
-    id: 'drive-filters',
-    fields: {
-      'drive.q': field.text({
-        label: 'Поиск по имени',
-        defaultValue: filters.search ?? '',
-        validate: [v.maxLength(DRIVE_NAME_MAX)],
-      }),
-      'drive.ord': field.select({
-        label: 'Сортировка',
-        options: [
-          { value: 'name', label: 'По имени' },
-          { value: 'updated', label: 'По изменению' },
-          { value: 'size', label: 'По размеру' },
-        ],
-        defaultValue: filters.sort,
-      }),
-      'drive.type': field.select({
-        label: 'Тип',
-        options: [
-          { value: 'all', label: 'Всё' },
-          { value: 'folder', label: 'Папки' },
-          { value: 'file', label: 'Файлы' },
-        ],
-        defaultValue: filters.type,
-      }),
-      'drive.starred': field.checkbox({
-        label: 'Только важные',
-        defaultValue: filters.starred,
-      }),
-      'drive.size': field.select({
-        label: 'На страницу',
-        options: [
-          { value: '30', label: '30' },
-          { value: '50', label: '50' },
-          { value: '100', label: '100' },
-        ],
-        defaultValue: String(filters.pageSize),
-      }),
-      'drive.from': field.date({
-        label: 'Изменён с',
-        defaultValue: filters.from ?? '',
-      }),
-      'drive.to': field.date({
-        label: 'Изменён по',
-        defaultValue: filters.to ?? '',
-      }),
-    },
-  })
 }
 
 export function driveDavIssueForm(returnTo: string) {
@@ -259,7 +199,7 @@ export function driveOperationDescription(
   values: DriveOperationValues = {},
 ): FormDescription {
   const parentId = values.parentId ?? null
-  const returnTo = values.returnTo ?? '/drive'
+  const returnTo = values.returnTo ?? driveRootRoute.href()
   const nodeId = values.nodeId ?? ''
   switch (op) {
     case 'mkdir':
@@ -289,15 +229,7 @@ export function driveOperationDescription(
     case 'dav-revoke':
       return driveDavRevokeForm(values.tokenId ?? '', returnTo)
     case 'filters':
-      return driveFiltersForm({
-        search: null,
-        type: 'all',
-        sort: 'name',
-        starred: false,
-        pageSize: 30,
-        from: null,
-        to: null,
-      })
+      return driveFiltersForm
   }
 }
 

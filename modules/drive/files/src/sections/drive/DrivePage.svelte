@@ -24,6 +24,6 @@
   {#if data.fact}
     <Acl status={data.fact} enabled={data.enabled} backHref="/" />
   {:else}
-    <DriveBrowse initial={data} />
+    <DriveBrowse initial={data} sidebar="middle" />
   {/if}
 </div>

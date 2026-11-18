@@ -1,6 +1,9 @@
 {
   "name": "drive",
   "version": "1.0.0",
-  "description": "Drive UI, routes and WebDAV mount",
-  "requires": ["user"]
+  "required": false,
+  "dependsOn": ["user"],
+  "entries": {
+    ".": "./index.ts"
+  }
 }

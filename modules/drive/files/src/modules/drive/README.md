@@ -20,8 +20,9 @@
 - **WebDAV** `/api/dav`: `createDriveDav` → `DavBackend` поверх сервисов,
   Class 1, `Depth: 1`.
 - **UI** `/drive`, `/drive/[folderId]`, `/drive/node/[id]`, `/drive/trash`,
-  `/drive/pick`; модалки `drive.browse`, `drive.node`, `drive.trash`,
-  `drive.picker`. Списки — один `<Listing>` на `DriveBrowse.svelte`
+  `/drive/access`, `/drive/filters`, `/drive/pick`; модалки `drive.browse`,
+  `drive.node`, `drive.trash`, `drive.access`, `drive.filters`, `drive.picker`.
+  Списки — один `<Listing>` на `DriveBrowse.svelte`
   (source/paginator/url-adapter), каждая строка — `DriveNodeCard` внутри
   `ListingRow`, действия — ссылки операций.
 - **Списки и фильтры**: страничный пагинатор `drive` (30/50/100, «Назад /
@@ -29,14 +30,17 @@
   `drive.starred`, `drive.size`, `drive.from`, `drive.to`, `drive.ids`.
   Разбор/сборка и снапшот — `source.ts`; даты режут `updated_at` в UTC.
   Смена фильтра начинает список с первой страницы, переход по крошкам и
-  папкам переносит активные фильтры (`driveFilterExtras`).
+  папкам переносит активные фильтры (`driveFilterExtras`). Фильтры — одна
+  component-form (`filters-form.ts` + `ui/filters/DriveFilters.svelte`) для
+  sidebar, модалки и `/drive/filters`: enhanced — `setExtra`, native — POST/PRG
+  через `listHref`; поиск остаётся отдельным `SearchBar`.
 - **Срез `drive.ids`** (пикер/множественный выбор): ключа нет — список без
   ограничения, `drive.ids=none` — явно пустой набор, иначе сжатый список
   UUID (`parseDriveIds`). Ограничение, ACL и `kind=folder` применяются
   сервером до totals и нарезки страницы.
 - **Операции — 14 штук, все ссылками**: `mkdir`, `upload`, `rename`, `move`,
   `copy`, `star`, `trash-action`, `restore`, `purge`, `share`, `unshare`,
-  `dav-issue`, `dav-revoke`. Матрица (id формы, адрес, модалка, заголовок,
+  `filters`, `dav-issue`, `dav-revoke`. Матрица (id формы, адрес, модалка, заголовок,
   поля) — `operations.ts`; разметка — один `DriveOperationForm.svelte` с
   вызывающими оболочками `ui/<op>/`; регистрации мутаций —
   `sections/drive/operations.form.server.ts`, dispatch — `operations.server.ts`.
@@ -53,8 +57,6 @@
 
 ## Чего ещё нет
 
-- Фильтры остаются GET-формой: состояние списка живёт в URL, компонентная форма
-  фильтров с модалкой не делалась (§4.3 плана закрыт по source/`ids`).
 - Шаг «выбранные» пикера (`drive.ids` уже поддержан сервером, но шага выбора в UI
   нет).
 

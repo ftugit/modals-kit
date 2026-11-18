@@ -27,6 +27,7 @@ import { uploadDriveFile } from '#modules/drive/service/upload.js'
 import { issueDriveDavToken, revokeDriveDavToken } from '#modules/drive/service/tokens.js'
 import type { DriveActor, DriveResult } from '#modules/drive/types.js'
 import type { DriveOperationName } from '#modules/drive/operations.js'
+import { driveRootRoute } from '#modules/drive/routes.js'
 import { auth } from '#modules/user/base/service/gateway.server.js'
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
@@ -42,7 +43,7 @@ export async function driveOperationActor(event: RequestEvent): Promise<DriveAct
 
 /** Куда вернуть POST: только локальный адрес, иначе корень диска. */
 export function driveReturnTo(event: RequestEvent): string {
-  return localPath(event.url.searchParams.get('return_to')) ?? '/drive'
+  return localPath(event.url.searchParams.get('return_to')) ?? driveRootRoute.href()
 }
 
 /** Успех операции: `step` для stationary-квитанции и `next` для PRG без JS. */

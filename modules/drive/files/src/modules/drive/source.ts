@@ -24,6 +24,7 @@ import {
   type PaginatorState,
 } from '#core/lib/paginate/index.js'
 import type { DriveListItem, DriveListRouteData } from './types.js'
+import { driveFolderRoute, driveRootRoute, driveTrashRoute } from './routes.js'
 
 /** Имя пагинатора списка. Одно на страницу, модалку и пикер. */
 export const DRIVE_NAME = 'drive-list'
@@ -57,9 +58,9 @@ export function parseDriveIdentity(raw: string | null | undefined): DriveListIde
 
 /** Личность → адрес списка (носитель страницы и цель `preloadData`). */
 export function driveIdentityPath(identity: DriveListIdentity): string {
-  if (identity.kind === 'trash') return '/drive/trash'
-  if (identity.kind === 'folder') return `/drive/${identity.id}`
-  return '/drive'
+  if (identity.kind === 'trash') return driveTrashRoute.href()
+  if (identity.kind === 'folder') return driveFolderRoute.href({ folderId: identity.id })
+  return driveRootRoute.href()
 }
 
 /** Значение `extra` для личности. */

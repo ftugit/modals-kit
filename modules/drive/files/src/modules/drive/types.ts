@@ -18,6 +18,7 @@ import type {
 } from '#core/lib/drive/index.js'
 import type { PaginatorState } from '#core/lib/paginate/index.js'
 import type { DriveDavTokenView } from './service/tokens.js'
+import type { DriveFilterValues } from './filters-form.js'
 
 /** Аккаунт, от имени которого работает сервис. */
 export interface DriveActor {
@@ -128,6 +129,18 @@ export interface DrivePickerData {
  */
 export interface DriveListItem extends DriveEntry {
   readonly id: string
+}
+
+/** Данные страницы-фильтров `/drive/filters` (fallback модалки `drive.filters`). */
+export interface DriveFiltersPageData {
+  readonly enabled: boolean
+  readonly fact: AuthErrorCode | null
+  /** Значения формы из адреса списка (`from`) и query страницы. */
+  readonly values: DriveFilterValues
+  /** Адрес списка как был — «К списку» и скрытое `from` формы. */
+  readonly backHref: string
+  /** Адрес списка без фильтров — «Сбросить» без JS. */
+  readonly resetHref: string
 }
 
 /**
