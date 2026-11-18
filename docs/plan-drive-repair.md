@@ -1,6 +1,7 @@
 # Drive: план приведения к целевой архитектуре
 
-Статус: **план к исполнению, реализация не начата**.
+Статус: **этапы 0–4 реализованы; открыт только шаг «выбранные» пикера,
+браузерный gate ограничен средой** (в песочнице нет `libnspr4.so` и root, см. §9).
 
 Этот документ — новый исполняемый план ремонта Drive. Он подготовлен по фактическому
 коду, `docs/plan-drive.md`, `docs/plan-drive-ui.md`,
@@ -726,25 +727,30 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
   проверкой ACL/квоты; скачивание — `/api/drive/[nodeId]/download` по stored
   `fileId`. `/user/config/dav` переведён на операции `dav-issue`/`dav-revoke`:
   GET не выдаёт секрет, POST-ответ показывает его один раз, shared-store
-  `issuedStore` удалён вместе с `dav-tokens.server.ts`.
+  `issuedStore` удалён вместе с `dav-tokens.server.ts`. Добавлен экран
+  `/drive/access` + модалка `drive.access`: список shares и ссылки
+  share/unshare, без inline-форм.
 - **Этап 4** — пикер: `DrivePicker.svelte` — тот же `DriveBrowse` с
   `url={false}`, отдельной identity не заводится; `kind=folder` применяется
   сервером до totals и нарезки, `drive.ids` (`none`/UUID-list) — тоже.
   Набор ограничен `DRIVE_IDS_MAX = 200`: лишние UUID за границей не читаются,
   повтор не тратит место в потолке (`parseDriveIds`).
+- **Этап 4 (фильтры)** — `filters-form.ts` + `ui/filters/DriveFilters.svelte`,
+  модалка `drive.filters`, страница `/drive/filters`, sidebar и кнопка
+  `Listing`; enhanced-применение — `setExtra(ownerStore, DRIVE_NAME, patch)`,
+  native — POST/PRG через `listHref`; поиск вынесен в штатный `SearchBar`.
 - **Этап 5 (браузерные gate)** — невозможен в этом окружении: нет
   `libnspr4.so` и root. Вместо него SSR-тесты страниц, списка, пикера и DAV.
 
 Отклонения от плана:
 
-- **Фильтры оставлены GET-формой** (`DriveFilters.svelte`): состояние списка
-  живёт в URL и в снапшоте, компонентная форма фильтров с модалкой не делалась —
-  в матрице операций фильтры не мутация. Ключи и `driveFiltersDirty` при этом
-  общие с `source.ts`.
 - **Курсор заменён страницами** (`drive=<n>`), `drive.after` больше не
   используется: страничный пагинатор даёт корректные totals и «Назад/Дальше».
 - **`/drive/pick` остался отдельным маршрутом**, но рендерит общий `DriveBrowse`;
   ссылки модалок пикера строятся от него, чтобы не терять `from/param`.
+- **Шаг «выбранные» в UI пикера не добавлен**: серверный срез `drive.ids`
+  (`none`/UUID-list) готов и покрыт тестами, но отдельного шага набора в
+  пикере нет — это единственный незакрытый UI-пункт legacy-плана.
 
 Чек-лист conformance:
 
@@ -759,12 +765,19 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
 - [x] Listing использует native source/paginator/url adapter и top-level item id.
 - [x] Page mode и cursor mode явно разделены (курсора больше нет).
 - [x] Picker filters/IDs применяются на сервере до page slicing и с реальным ACL.
-- [ ] Page и modal stores refresh scoped — проверяется только типом/SSR.
+- [x] Фильтры — одна форма на sidebar/модалку/страницу, enhanced `setExtra`,
+      native POST/PRG; поиск — отдельный `SearchBar`; умолчания не в адресе.
+- [x] Экран доступов `/drive/access` + `drive.access` со списком shares и
+      ссылками share/unshare.
+- [x] Page и modal stores refresh scoped; modal loaders invalidated отдельно
+      (`invalidatePaginator` + `invalidateLoader`); браузерный прогон недоступен.
 - [x] Download route вызывает stored `fileId`.
-- [x] ACL, quota, trash, token и DAV regressions зелёные (28 тестов drive).
+- [x] ACL, quota, trash, token и DAV regressions зелёные (35 тестов drive).
 - [x] Проверены source payload и установленный `arch`; случайных module/demo
       copies нет (pre-commit module-guard).
 - [x] Legacy documents не утверждают superseded architecture.
 
 Не проверено (нужен браузер/JS): поведение модалок, stationary receipt после
-клиентского submit, upload прогресс и `?notice` после PRG.
+клиентского submit, фильтры в модалке/sidebar, экран доступов, upload прогресс и
+`?notice` после PRG. В этом окружении браузерный runner не запускается
+(`libnspr4.so`, нет root); вместо него прогнаны unit/SSR-тесты (35 drive).

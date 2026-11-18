@@ -10,8 +10,10 @@
 список — один `Listing` с source/paginator (`drive`), каждая мутация —
 отдельная операция-ссылка со своим route/modal (`operations.ts`), загрузка —
 глобальный component-form, пикер идёт через `DriveBrowse` (`kind=folder`
-фильтрует сервер), срез `drive.ids` поддержан (`none`). Фильтры остаются
-GET-формой с состоянием в URL. Открыт только шаг «выбранные» в UI пикера.
+фильтрует сервер), срез `drive.ids` поддержан (`none`). Фильтры — общая
+component-form на sidebar/модалку/страницу с `setExtra` и POST/PRG fallback;
+экран доступов `/drive/access` + `drive.access` добавлен. Открыт только шаг
+«выбранные» в UI пикера.
 Этот документ — план интерфейса поверх `docs/plan-drive.md` (модель, сервисы, WebDAV).
 Коммитов не делаем до отдельной команды.
 
@@ -105,15 +107,15 @@ UI-состояние (не модель): текущая папка, набор
 | `src/modules/drive/ui/DriveBrowse.svelte` | обёртка над `Listing`: список узлов + крошки + загрузка |
 | `src/modules/drive/ui/DriveNodeCard.svelte` | тупая карточка узла (имя, тип, размер, дата, starred, trashed) |
 | `src/modules/drive/ui/DriveBreadcrumbs.svelte` | хлебные крошки папок |
-| `src/modules/drive/ui/DriveFiltersForm.svelte` | форма фильтров (тип, владелец, дата, starred, trashed) |
-| `src/modules/drive/ui/DriveAccessForm.svelte` | управление `drive_share` (пикер пользователей + роль) |
+| `src/modules/drive/filters-form.ts` + `ui/filters/DriveFilters.svelte` | общая форма фильтров (сортировка, тип, размер, даты, starred) |
+| `src/modules/drive/ui/access/DriveAccess.svelte` | список `drive_share` + ссылки share/unshare |
 | `src/modules/drive/ui/DriveTrash.svelte` | список корзины + восстановление/очистка |
 | `src/modules/drive/ui/DrivePicker.svelte` | пикер файлов (тот же `DriveBrowse`, внешний набор) |
 | `src/modules/drive/ui/DriveEntry.svelte` | точка входа на главной/в настройках |
 | `src/modules/drive/ui/DriveQuota.svelte` | квота пользователя (`Stat`/`Progress`) |
 | `src/modules/drive/ui/DriveNodeModal.svelte` | карточка узла в модалке |
-| `src/modules/drive/ui/DriveAccessModal.svelte` | модалка доступа |
-| `src/modules/drive/ui/DriveFiltersModal.svelte` | модалка фильтров |
+| `src/modules/drive/ui/access/DriveAccessModal.svelte` | модалка доступа |
+| `src/modules/drive/ui/filters/DriveFiltersModal.svelte` | модалка фильтров |
 | `src/modules/drive/ui/DrivePickerModal.svelte` | модалка пикера |
 
 Секция:
@@ -127,8 +129,8 @@ UI-состояние (не модель): текущая папка, набор
 
 - `DriveBrowse` — обёртка над `Listing` по образцу `SeedUsersList`: те же пропы `initial`, `scope`, `url`, `onAcl`, `rowAttrs`, `isSelected`, `picked`, `onPicked`.
 - `DriveNodeCard` — только рисунок; нажатие не зашивается внутрь (правило `docs/design/lists.md` §8). По умолчанию строка ведёт в `drive.node` (модалка/роут).
-- `DriveFiltersForm` — одна форма на sidebar, модалку и страницу `filters?from=`.
-- `DriveAccessForm` использует `UserPicker` (`user.picker`) для выбора пользователей и `Select` для роли.
+- `DriveFilters` — одна форма на sidebar, модалку и страницу `filters?from=`.
+- `DriveAccess` показывает выданные `drive_share`; выдача/отзыв — ссылки операций `drive.share`/`drive.unshare`.
 - `DrivePicker` — тот же `DriveBrowse` с `url={false}`, внешним набором `picked`/`onPicked`, шагом «выбранные» через срез `drive.ids`.
 - `DriveEntry` — по образцу `SeedUsersEntry`: виден по `vault.authorized`/праву, одна кнопка через `asModalLink('drive.browse')`.
 
@@ -142,9 +144,9 @@ UI-состояние (не модель): текущая папка, набор
 - `driveFolderRoute = kitRoute('/(site)/(app)/drive/[folderId=uuid]', { dynamic: true, id: '/drive/[folderId]' })` — папка.
 - `driveNodeRoute = kitRoute('/(site)/(app)/drive/node/[id=uuid]', { dynamic: true, id: '/drive/node/[id]' })` — карточка узла, страница-fallback модалки `drive.node`.
 - `driveTrashRoute = kitRoute('/drive/trash')`.
-- `driveFiltersRoute = kitRoute('/drive/filters', { owner: 'drive.filters', keys: ['from'], search: querySchema<{ from: string | null }, { from: string | null }>((raw) => ({ from: localPath(typeof raw.from === 'string' ? raw.from : null) })) })` — `from` локальный путь носителя; папка едет внутри `from`, отдельного `folder` нет.
+- `driveFiltersRoute = kitRoute('/drive/filters', { owner: 'drive.filters', search: querySchema<{ from: string | null }, { from: string | null }>((raw) => ({ from: localPath(typeof raw.from === 'string' ? raw.from : null) })) })` — `from` локальный путь носителя; папка едет внутри `from`, отдельного `folder` нет. Ключ `from` не бронируется в общем реестре: он уже принадлежит `/users/filters`; схема запроса при этом типизирована.
 - `drivePickRoute = kitRoute('/drive/pick')` — страница-fallback пикера.
-- Отдельного `driveAccessRoute` в v1 нет: доступ — только модалка `drive.access` над узлом/папкой.
+- `driveAccessRoute = kitRoute('/drive/access', { owner: 'drive.access', keys: ['node_id'], … })` — страница-fallback модалки `drive.access`; список shares и ссылки share/unshare.
 - У каждого адреса в `src/routes/(site)/(app)/drive/` — пара `+page.server.ts` (тонкий: зовёт `load` из `sections/drive`) и `+page.svelte` (тонкий: `Acl` + секция). Разметка — в `src/sections/drive`.
 
 Регистрация модалок (`src/modules/drive/modals.ts`):
@@ -245,7 +247,7 @@ UI-состояние (не модель): текущая папка, набор
 | 4e | Формы mkdir/rename/move/copy/trash/star, загрузка/скачивание/квота, корзина | no-JS сценарии |
 | 4f | `DriveAccessForm` + `user.picker` | тест наследования доступа |
 | 4g | `DrivePicker` + `/drive/pick` + `drive.ids` — сделано без шага `drive.ids`: move/copy используют `pick=move|copy&node=&target_id=&kind=folder`; файл как target отклоняется сервисом | тест памяти/утечки в URL |
-| 4h-фильтры | `DriveFilters` (GET `drive.q/ord/type/starred/size/from/to`) + `DrivePager` (`drive.after`), ключи/ссылки — `source.ts` | SSR-тест GET без конверта/курсора, тесты `source.ts`, `kind` и дат в срезе |
+| 4h-фильтры | `DriveFilters` (component-form `ord/type/starred/size/from_date/to_date`) + кнопка/модалка `Listing`, страница `/drive/filters`, ключи/ссылки — `source.ts` | тесты формы, `source.ts`, `kind`, дат и `drive.ids` |
 | 4h | WebDAV: `/api/dav`, `drive_dav_token`, `driveDavBackend` (этап 5); экран `/user/config/dav` (`DriveDavTokens`: выдача с одноразовым секретом, список, отзыв) и шаг `dav` в `config.ext.ts` | SSR-тест экрана, тест токенов, `curl -X PROPFIND` |
 | 4i | Class 2 и стражи: `drive_dav_lock`, литералы `/drive`, `test:size` | `tooling/*` зелёные |
 
