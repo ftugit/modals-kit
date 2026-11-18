@@ -13,11 +13,12 @@
 ## 1. В планах
 
 - **Drive: ремонт архитектуры и корректности — P1**
-  ([`docs/plan-drive-repair.md`](./plan-drive-repair.md)): план подготовлен, реализация
-  не начата. Отдельные route/modal для всех действий, native component forms,
-  Listing/filters/picker, безопасная запись bytes/quota/ACL, token/DAV regressions.
-  Каждый этап закрывается gate проверки; старые отметки «реализовано» не заменяют
-  проверку. Payload остаётся в каталоге модулей, не коммитится в `arch`.
+  ([`docs/plan-drive-repair.md`](./plan-drive-repair.md)): этапы 1–4 сделаны
+  (домен, Listing/source с `drive.ids`, 14 операций-ссылок, DAV-пароли через
+  POST-receipt, пикер на общем `DriveBrowse`); typecheck и 28 тестов drive
+  зелёные, guard-набор 230/0. Осталось: шаг «выбранные» в пикере, браузерные
+  gates (в этом окружении нет `libnspr4`/root) и scoped-refresh модалок —
+  см. §9 плана. Payload остаётся в каталоге модулей, не коммитится в `arch`.
 
 - **Фильтры: follow-up после placeholder и снятия группы — P0/P1/P2** ([`docs/plan-filter-followup.md`](./plan-filter-followup.md)):
   восемь пунктов, порядок 1→2→6→4→3→5→7→8. Уже проверено вручную: placeholder держит

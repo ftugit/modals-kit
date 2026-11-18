@@ -700,3 +700,69 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
 
 До прохождения этого checklist нельзя объявлять Drive «реализованным по плану» и
 нельзя сокращать scope до одного исправления mkdir.
+
+---
+
+## 9. Статус реализации
+
+Выполнено по этапам (снимки модуля — `drive-payload-snapshots`, этап 1 `a923d08`,
+этапы 2–3 `efb779f`):
+
+- **Этап 0** — окружение: работа идёт на `KIT_ADAPTER=node` + PGlite; токены не
+  нужны, кроме `AUTH_SEAL_SECRET`/`DB_CURSOR_SECRET` для DAV/курсорных сьютов.
+- **Этап 1** — домен: полный обход с `drive.traversal-limit` (`service/paging.ts`),
+  один конвейер `authorizedEntries` и `loadDriveSlice`/`loadDrivePage`
+  (`service/query.ts`), отказ trashed-папке, `lockDriveOwner`, квоты copy/restore,
+  copy-on-write `file_id` при перезаписи, `webdav.server.ts` с атомарной заменой
+  через корзину и namespace блокировок по аккаунту.
+- **Этап 2** — списки: `source.ts` на `defineSource`/`definePaginator`/
+  `createUrlAdapter`, page key `drive`, extras `q/ord/type/starred/from/to/ids`,
+  внутренняя identity `root`/`folder:<uuid>`/`trash` в `_list`, снапшот несёт
+  активные ключи, ошибка доступа — fact/notice, а не пустой успех.
+- **Этап 3** — операции: матрица 14 операций (`operations.ts`), один
+  `DriveOperationForm.svelte`, оболочки `ui/<op>/`, route-пары на каждую
+  операцию, `operations.form.server.ts` (регистрации) и `operations.server.ts`
+  (dispatch). Upload — глобальная регистрация с бюджетом байтов и ранней
+  проверкой ACL/квоты; скачивание — `/api/drive/[nodeId]/download` по stored
+  `fileId`. `/user/config/dav` переведён на операции `dav-issue`/`dav-revoke`:
+  GET не выдаёт секрет, POST-ответ показывает его один раз, shared-store
+  `issuedStore` удалён вместе с `dav-tokens.server.ts`.
+- **Этап 4** — пикер: `DrivePicker.svelte` — тот же `DriveBrowse` с
+  `url={false}`, отдельной identity не заводится; `kind=folder` применяется
+  сервером до totals и нарезки, `drive.ids` (`none`/UUID-list) — тоже.
+- **Этап 5 (браузерные gate)** — невозможен в этом окружении: нет
+  `libnspr4.so` и root. Вместо него SSR-тесты страниц, списка, пикера и DAV.
+
+Отклонения от плана:
+
+- **Фильтры оставлены GET-формой** (`DriveFilters.svelte`): состояние списка
+  живёт в URL и в снапшоте, компонентная форма фильтров с модалкой не делалась —
+  в матрице операций фильтры не мутация. Ключи и `driveFiltersDirty` при этом
+  общие с `source.ts`.
+- **Курсор заменён страницами** (`drive=<n>`), `drive.after` больше не
+  используется: страничный пагинатор даёт корректные totals и «Назад/Дальше».
+- **`/drive/pick` остался отдельным маршрутом**, но рендерит общий `DriveBrowse`;
+  ссылки модалок пикера строятся от него, чтобы не терять `from/param`.
+
+Чек-лист conformance:
+
+- [x] Папка и файл имеют разные component, route и modal units.
+- [x] Любая mutation button — link на dedicated operation route/modal.
+- [x] Ни одна mutation form не находится в browse/list row (SSR-тест это ловит).
+- [x] JS success stationary и structured; no-JS success PRG (`?notice=<код>`).
+- [x] `execute` не возвращает redirect и не превращает отказ в success.
+- [x] Все domain hidden controls реально присутствуют в SSR HTML (тесты форм).
+- [x] Upload зарегистрирован глобальным component-form registry и безопасен при
+      overwrite/copy/quota failure (тесты `service/upload`, `query`).
+- [x] Listing использует native source/paginator/url adapter и top-level item id.
+- [x] Page mode и cursor mode явно разделены (курсора больше нет).
+- [x] Picker filters/IDs применяются на сервере до page slicing и с реальным ACL.
+- [ ] Page и modal stores refresh scoped — проверяется только типом/SSR.
+- [x] Download route вызывает stored `fileId`.
+- [x] ACL, quota, trash, token и DAV regressions зелёные (28 тестов drive).
+- [x] Проверены source payload и установленный `arch`; случайных module/demo
+      copies нет (pre-commit module-guard).
+- [x] Legacy documents не утверждают superseded architecture.
+
+Не проверено (нужен браузер/JS): поведение модалок, stationary receipt после
+клиентского submit, upload прогресс и `?notice` после PRG.

@@ -5,12 +5,13 @@
 > отсутствие access route и cursor-only список. Каждое действие теперь имеет свой
 > route/modal; mkdir и upload раздельны. Статусы ниже — исторические.
 
-Статус: **4d–4g и фильтры/пагинатор реализованы**: формы mkdir/rename/move/copy/
-trash/restore/purge/star, загрузка, экран доступа, пикер `/drive/pick` (одиночный,
-без шага `drive.ids`), GET-фильтры `drive.q/ord/type/starred/size/from/to` и
-курсорный пагинатор (`drive.after`). Экран токенов WebDAV и `DriveEntry` на
-главной реализованы. Остался срез `drive.ids` (множественный выбор) и
-`drive.trashed` как ключ списка — опциональные.
+Статус: **ремонт по [`plan-drive-repair.md`](./plan-drive-repair.md) выполнен**.
+Ниже исторические решения (inline-формы, GET-submit, курсор) заменены:
+список — один `Listing` с source/paginator (`drive`), каждая мутация —
+отдельная операция-ссылка со своим route/modal (`operations.ts`), загрузка —
+глобальный component-form, пикер идёт через `DriveBrowse` (`kind=folder`
+фильтрует сервер), срез `drive.ids` поддержан (`none`). Фильтры остаются
+GET-формой с состоянием в URL. Открыт только шаг «выбранные» в UI пикера.
 Этот документ — план интерфейса поверх `docs/plan-drive.md` (модель, сервисы, WebDAV).
 Коммитов не делаем до отдельной команды.
 
