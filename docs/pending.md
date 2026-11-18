@@ -24,9 +24,11 @@
 - **Drive: поведение операций и доступов — P0**
   ([`docs/plan-drive-fixes.md`](./plan-drive-fixes.md)): старый план отменяет
   stationary receipt и общий `DriveOperationForm`; нужен одинаковый результат
-  JS/no-JS, реальный «Назад», сообщение upload без storage, полный список
-  папок для переноса с переходом в target и выбор получателей доступа
-  списком seed/profile с ids. Список находок открыт и будет дополняться.
+  JS/no-JS (включая корзину), реальный «Назад», transient toast вместо
+  квитанции и счётчиков, сообщение upload без storage, полный список папок
+  для переноса с переходом в target, выбор получателей доступа списком
+  seed/profile с ids и список «Важное» `/drive/starred`. Список находок
+  открыт и будет дополняться.
 
 - **Фильтры: follow-up после placeholder и снятия группы — P0/P1/P2** ([`docs/plan-filter-followup.md`](./plan-filter-followup.md)):
   восемь пунктов, порядок 1→2→6→4→3→5→7→8. Уже проверено вручную: placeholder держит
