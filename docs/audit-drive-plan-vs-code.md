@@ -1,5 +1,9 @@
 # Аудит: планы `plan-drive.md` / `plan-drive-ui.md` vs фактический код
 
+> **Аудит до ремонта.** Файл фиксирует состояние до [`plan-drive-repair.md`](./plan-drive-repair.md);
+> упомянутые `actions.server.ts`, inline-формы, курсор и GET-submit заменены на
+> операции-ссылки, `Listing` со страницами и POST-receipt. Статус — §9 плана ремонта.
+
 Дата: 17.11.2026. Объект: ветка `module-drive` (пакет `modules/drive/`), ядро `src/core/lib/drive` в `arch`.
 Источники: `docs/plan-drive.md`, `docs/plan-drive-ui.md`, код модуля `src/modules/drive`, `src/sections/drive`, `src/routes/.../drive`, `src/core/lib/drive`.
 
