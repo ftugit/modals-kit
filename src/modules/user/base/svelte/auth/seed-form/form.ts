@@ -34,7 +34,9 @@ export const seedForm = defineForm({
       label: 'Seed',
       help: 'Единственный ключ от аккаунта — храните в менеджере секретов',
       secret: true,
-      validate: [v.required(), v.pattern({ source: '[A-Za-z0-9_-]{43,44}' })],
+      // Дефис экранирован: браузер компилирует атрибут `pattern` с флагом `v`,
+      // где `-` в конце класса — синтаксическая ошибка и форма не отправляется.
+      validate: [v.required(), v.pattern({ source: '[A-Za-z0-9_\\-]{43,44}' })],
     }),
     public_seed: field.hidden({ label: 'Публичный ключ' }),
     challenge: field.hidden({ label: 'Challenge' }),
