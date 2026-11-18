@@ -43,6 +43,7 @@ test('адрес ?/revoke в UI живёт только там, где экше�
   walk('src')
   const allowed = new Set([
     'src/modules/user/sessions/svelte/SessionCard.svelte',
+    'src/modules/drive/ui/DriveDavTokens.svelte',
   ])
   problems = problems.filter((p) => !allowed.has(p))
   assert.deepEqual(problems, [])
