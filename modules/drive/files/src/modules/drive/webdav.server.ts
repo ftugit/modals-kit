@@ -37,6 +37,7 @@ import {
   moveDriveNode,
   purgeDriveNode,
   renameDriveNode,
+  restoreDriveNode,
   trashDriveNode,
   type DriveBytesPort,
 } from './service/mutate.js'
@@ -115,11 +116,30 @@ export function createDriveDavBackend(
     return folder
   }
 
-  const purgeExisting = async (path: string): Promise<void> => {
+  /**
+   * Замена назначения без потери данных при отказе: старое уходит в корзину
+   * (обратимо), и только успешная новая запись её окончательно убирает.
+   */
+  const replace = async <T>(
+    path: string,
+    write: () => Promise<T>,
+  ): Promise<{ readonly replaced: boolean; readonly value: T }> => {
     const existing = await nodeAtPath(db, actor, path)
-    if (!existing) return
-    await trashDriveNode(db, actor, { nodeId: existing.id })
-    await purgeDriveNode(db, actor, { nodeId: existing.id }, storage ?? undefined)
+    if (!existing) return { replaced: false, value: await write() }
+    const trashed = await trashDriveNode(db, actor, { nodeId: existing.id })
+    if (!trashed.ok) throw new Error(trashed.code)
+    let value: T
+    try {
+      value = await write()
+    } catch (error) {
+      // Возврат назначения: удалять его до успешной фиксации замены нельзя.
+      await restoreDriveNode(db, actor, { nodeId: existing.id }).catch(() => undefined)
+      throw error
+    }
+    await purgeDriveNode(db, actor, { nodeId: existing.id }, storage ?? undefined).catch(
+      () => undefined,
+    )
+    return { replaced: true, value }
   }
 
   return {
@@ -187,23 +207,25 @@ export function createDriveDavBackend(
       const folder = await folderOf(to)
       const name = segmentsOf(to).pop() ?? ''
       const destination = await nodeAtPath(db, actor, to)
+      if (destination && destination.id === source.id) throw new Error('drive.name-taken')
       if (destination && !options.overwrite) throw new Error('drive.name-taken')
-      if (destination) await purgeExisting(to)
-      if (!options.deep && source.kind === 'folder') {
-        const created = await createDriveFolder(db, actor, {
-          parentId: folder.node?.id ?? null,
-          name,
-        })
-        if (!created.ok) throw new Error(created.code)
-      } else {
-        const copied = await copyDriveNode(db, actor, {
-          nodeId: source.id,
-          targetId: folder.node?.id ?? null,
-          name,
-        })
-        if (!copied.ok) throw new Error(copied.code)
-      }
-      return destination ? 'replaced' : 'created'
+      const written = await replace(to, async () => {
+        if (!options.deep && source.kind === 'folder') {
+          const created = await createDriveFolder(db, actor, {
+            parentId: folder.node?.id ?? null,
+            name,
+          })
+          if (!created.ok) throw new Error(created.code)
+        } else {
+          const copied = await copyDriveNode(db, actor, {
+            nodeId: source.id,
+            targetId: folder.node?.id ?? null,
+            name,
+          })
+          if (!copied.ok) throw new Error(copied.code)
+        }
+      })
+      return written.replaced ? 'replaced' : 'created'
     },
     async move(from, to, options: DavMoveOptions): Promise<DavWriteOutcome> {
       const source = await nodeAtPath(db, actor, from)
@@ -211,20 +233,28 @@ export function createDriveDavBackend(
       const folder = await folderOf(to)
       const name = segmentsOf(to).pop() ?? ''
       const destination = await nodeAtPath(db, actor, to)
-      if (destination && !options.overwrite) throw new Error('drive.name-taken')
-      if (destination) await purgeExisting(to)
-      if (name !== source.name) {
+      if (destination && destination.id === source.id) {
+        // Перенос в тот же путь: имя меняется на месте.
+        if (name === source.name) return 'created'
         const renamed = await renameDriveNode(db, actor, { nodeId: source.id, name })
         if (!renamed.ok) throw new Error(renamed.code)
+        return 'created'
       }
-      if ((folder.node?.id ?? null) !== source.parentId) {
-        const moved = await moveDriveNode(db, actor, {
-          nodeId: source.id,
-          targetId: folder.node?.id ?? null,
-        })
-        if (!moved.ok) throw new Error(moved.code)
-      }
-      return destination ? 'replaced' : 'created'
+      if (destination && !options.overwrite) throw new Error('drive.name-taken')
+      const written = await replace(to, async () => {
+        if (name !== source.name) {
+          const renamed = await renameDriveNode(db, actor, { nodeId: source.id, name })
+          if (!renamed.ok) throw new Error(renamed.code)
+        }
+        if ((folder.node?.id ?? null) !== source.parentId) {
+          const moved = await moveDriveNode(db, actor, {
+            nodeId: source.id,
+            targetId: folder.node?.id ?? null,
+          })
+          if (!moved.ok) throw new Error(moved.code)
+        }
+      })
+      return written.replaced ? 'replaced' : 'created'
     },
   }
 }
@@ -239,13 +269,16 @@ function normalizeDriveLockTimeout(
   return Math.min(Math.floor(seconds), options.maxSeconds)
 }
 
-function toDavLock(row: Record<string, unknown>): DavLock {
+function toDavLock(row: Record<string, unknown>, namespace = ''): DavLock {
   const expiresRaw = row.expires_at
   const expiresAt =
     expiresRaw instanceof Date ? expiresRaw.getTime() : Date.parse(String(expiresRaw))
+  const rawPath = String(row.path ?? '')
+  const prefix = namespace ? `${namespace}\u0000` : ''
+  const path = prefix && rawPath.startsWith(prefix) ? rawPath.slice(prefix.length) : rawPath
   return {
     token: String(row.token),
-    path: String(row.path ?? ''),
+    path,
     scope: row.scope === 'shared' ? 'shared' : 'exclusive',
     depth: row.depth === '0' ? '0' : 'infinity',
     ...(row.owner != null && String(row.owner) !== '' ? { owner: String(row.owner) } : {}),
@@ -260,9 +293,16 @@ function toDavLock(row: Record<string, unknown>): DavLock {
  */
 export function createDriveDavLockStore(
   db: Database,
-  options: { readonly now?: () => number } = {},
+  options: { readonly now?: () => number; readonly namespace?: string } = {},
 ): DavLockStore {
   const now = options.now ?? Date.now
+  // Ключ блокировки содержит пространство аккаунта: одинаковый путь у двух
+  // владельцев — две разные блокировки, а не одна общая.
+  const namespace = options.namespace ?? ''
+  const prefix = namespace ? `${namespace}\u0000` : ''
+  const keyOf = (path: string): string => (prefix ? `${prefix}${path}` : path)
+  const own = (rows: Record<string, unknown>[]): Record<string, unknown>[] =>
+    prefix ? rows.filter((row) => String(row.path ?? '').startsWith(prefix)) : rows
   const prune = async (): Promise<void> => {
     await db.query({ text: 'DELETE FROM public.drive_dav_lock WHERE expires_at <= $1', values: [new Date(now())] })
   }
@@ -281,7 +321,7 @@ export function createDriveDavLockStore(
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         values: [
           token,
-          input.path,
+          keyOf(input.path),
           input.scope,
           input.depth,
           input.owner ?? null,
@@ -316,7 +356,7 @@ export function createDriveDavLockStore(
         values: [token, seconds, new Date(expiresAt)],
       })
       if (!result.rows[0]) return null
-      return toDavLock(result.rows[0] as Record<string, unknown>)
+      return toDavLock(result.rows[0] as Record<string, unknown>, namespace)
     },
     async release(token: string) {
       await prune()
@@ -335,7 +375,8 @@ export function createDriveDavLockStore(
       })
       const row = result.rows[0]
       if (!row) return null
-      const lock = toDavLock(row as Record<string, unknown>)
+      if (prefix && !String(row.path ?? '').startsWith(prefix)) return null
+      const lock = toDavLock(row as Record<string, unknown>, namespace)
       if (lock.expiresAt <= now()) return null
       return lock
     },
@@ -346,8 +387,8 @@ export function createDriveDavLockStore(
                FROM public.drive_dav_lock`,
       })
       const timestamp = now()
-      return (result.rows as Record<string, unknown>[])
-        .map(toDavLock)
+      return own(result.rows as Record<string, unknown>[])
+        .map((row) => toDavLock(row, namespace))
         .filter((lock) => lock.expiresAt > timestamp)
         .filter(
           (lock) =>
@@ -362,8 +403,8 @@ export function createDriveDavLockStore(
                FROM public.drive_dav_lock`,
       })
       const timestamp = now()
-      return (result.rows as Record<string, unknown>[])
-        .map(toDavLock)
+      return own(result.rows as Record<string, unknown>[])
+        .map((row) => toDavLock(row, namespace))
         .filter((lock) => lock.expiresAt > timestamp)
         .filter((lock) => isDavPathWithin(lock.path, path))
     },
@@ -384,7 +425,6 @@ export interface DriveDavOptions {
  * (Finder, Windows, rclone) не предложат ввести пароль.
  */
 export function createDriveDav(options: DriveDavOptions) {
-  const locks = createDriveDavLockStore(options.db)
   return {
     async handle(request: Request): Promise<Response> {
       const actor = await verifyDriveDavToken(
@@ -401,6 +441,9 @@ export function createDriveDav(options: DriveDavOptions) {
           },
         })
       }
+      // Блокировки — в пространстве аккаунта: путь `/Отчёты` у двух
+      // владельцев не должен делить один LOCK.
+      const locks = createDriveDavLockStore(options.db, { namespace: actor.id })
       const backend = createDriveDavBackend(options.db, actor, options.storage)
       try {
         return await createWebdavServer({

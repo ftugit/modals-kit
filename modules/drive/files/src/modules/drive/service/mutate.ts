@@ -9,7 +9,9 @@
  */
 import {
   checkDriveName,
+  checkQuota,
   collectSubtreeIds,
+  DEFAULT_DRIVE_QUOTA_BYTES,
   restorePlan,
   type DriveCapabilities,
   type DriveNodeView,
@@ -26,6 +28,7 @@ import {
   toDriveNodeView,
   DRIVE_SERVER,
 } from './access.js'
+import { readDriveRows } from './paging.js'
 import { driveFail, driveOk } from './result.js'
 import { driveUsedBytes } from './query.js'
 
@@ -34,20 +37,25 @@ export interface DriveBytesPort {
   del(path: string): Promise<boolean>
 }
 
+/**
+ * Все узлы владельца (живые и удалённые). Обход полный: тихое усечение
+ * ломало поддеревья и итоги квоты, поэтому потолок вынесен в `paging.ts`
+ * и превышение — явный отказ `drive.traversal-limit`.
+ */
 async function allOwnerNodes(db: Database, ownerId: string): Promise<DriveNodeView[]> {
-  const pageSize = db.limits.maxPageSize
-  const out: DriveNodeView[] = []
-  for (let page = 1; page <= 100; page++) {
-    const rows = await db.resource(driveNode).select(DRIVE_SERVER, {
-      filter: { field: 'owner_id', op: 'eq', value: ownerId },
-      page,
-      limit: pageSize,
-    })
-    const list = rows as unknown as Record<string, unknown>[]
-    for (const row of list) out.push(toDriveNodeView(row))
-    if (list.length < pageSize) break
-  }
-  return out
+  return readDriveRows(db, { field: 'owner_id', op: 'eq', value: ownerId })
+}
+
+/**
+ * Замок владельца на мутацию: имена, квота и вставки одного диска идут
+ * последовательно. Без него проверка «имя свободно» и вставка расходятся
+ * под конкуренцией.
+ */
+export async function lockDriveOwner(db: Database, ownerId: string): Promise<void> {
+  await db.query({
+    text: 'SELECT pg_advisory_xact_lock(hashtext($1))',
+    values: [`modals-kit:drive-owner:${ownerId}`],
+  })
 }
 
 interface FolderTarget {
@@ -67,6 +75,9 @@ export async function writableFolder(
   if (!access) return driveFail('drive.not-found')
   if (access.node.kind !== 'folder') return driveFail('drive.not-folder')
   if (!access.caps.canWrite) return driveFail('drive.forbidden')
+  // Папка назначения в корзине не принимает ни файлов, ни папок: иначе узел
+  // «оживает» внутри поддерева, которого в живом списке нет.
+  if (access.node.trashedAt !== null) return driveFail('drive.parent-trashed')
   return driveOk({ ownerId: access.node.ownerId, folder: access.node, caps: access.caps })
 }
 
@@ -76,18 +87,15 @@ export async function liveSiblings(
   ownerId: string,
   parentId: string | null,
 ): Promise<DriveNodeView[]> {
-  const rows = await db.resource(driveNode).select(DRIVE_SERVER, {
-    filter: {
-      and: [
-        { field: 'owner_id', op: 'eq', value: ownerId },
-        parentId
-          ? { field: 'parent_id', op: 'eq', value: parentId }
-          : { field: 'parent_id', op: 'isNull' },
-        { field: 'trashed_at', op: 'isNull' },
-      ],
-    },
+  return readDriveRows(db, {
+    and: [
+      { field: 'owner_id', op: 'eq', value: ownerId },
+      parentId
+        ? { field: 'parent_id', op: 'eq', value: parentId }
+        : { field: 'parent_id', op: 'isNull' },
+      { field: 'trashed_at', op: 'isNull' },
+    ],
   })
-  return (rows as unknown as Record<string, unknown>[]).map(toDriveNodeView)
 }
 
 const nameTaken = async (
@@ -148,6 +156,7 @@ export async function createDriveFolder(
     if (!target.ok) return driveFail(target.code)
     const problem = nameProblem(input.name)
     if (problem) return driveFail(problem)
+    await lockDriveOwner(tx, target.value.ownerId)
     if (await nameTaken(tx, target.value.ownerId, target.value.folder?.id ?? null, input.name))
       return driveFail('drive.name-taken')
     const node = await insertNode(tx, {
@@ -172,6 +181,7 @@ export async function renameDriveNode(
     if (!access.caps.canWrite) return driveFail('drive.forbidden')
     const problem = nameProblem(input.name)
     if (problem) return driveFail(problem)
+    await lockDriveOwner(tx, access.node.ownerId)
     if (await nameTaken(tx, access.node.ownerId, access.node.parentId, input.name, access.node.id))
       return driveFail('drive.name-taken')
     const row = await tx.resource(driveNode).update(DRIVE_SERVER, access.node.id, {
@@ -196,6 +206,7 @@ export async function moveDriveNode(
     if (!target.ok) return driveFail(target.code)
     if (target.value.ownerId !== node.ownerId) return driveFail('drive.move-foreign-owner')
 
+    await lockDriveOwner(tx, node.ownerId)
     const nodes = await allOwnerNodes(tx, node.ownerId)
     const subtree = collectSubtreeIds(nodes, node.id)
     if (target.value.folder) {
@@ -218,7 +229,7 @@ export async function moveDriveNode(
 export async function copyDriveNode(
   db: Database,
   actor: DriveActor,
-  input: { nodeId: string; targetId?: string | null; name?: string },
+  input: { nodeId: string; targetId?: string | null; name?: string; quotaLimit?: number },
 ): Promise<DriveResult<DriveNodeView>> {
   return db.transaction(async (tx) => {
     const access = await resolveDriveAccess(tx, actor, input.nodeId)
@@ -230,11 +241,20 @@ export async function copyDriveNode(
     const name = (input.name ?? source.name).trim()
     const problem = nameProblem(name)
     if (problem) return driveFail(problem)
+    await lockDriveOwner(tx, source.ownerId)
     if (await nameTaken(tx, source.ownerId, target.value.folder?.id ?? null, name))
       return driveFail('drive.name-taken')
 
     const nodes = await allOwnerNodes(tx, source.ownerId)
     const ids = collectSubtreeIds(nodes, source.id)
+    // Копия занимает место логически, хотя байты и общие: квота — это сумма
+    // размеров живых файлов, а не физический ledger хранилища.
+    const copyBytes = nodes
+      .filter((node) => ids.includes(node.id) && node.kind === 'file')
+      .reduce((sum, node) => sum + node.size, 0)
+    const used = await driveUsedBytes(tx, source.ownerId)
+    const limit = quotaLimitOf(input.quotaLimit)
+    if (checkQuota(used, copyBytes, limit)) return driveFail('drive.quota-over')
     const byId = new Map(nodes.map((node) => [node.id, node]))
     // Порядок обхода — от корня к детям: у копии уже есть родитель.
     const copies = new Map<string, DriveNodeView>()
@@ -307,8 +327,15 @@ export async function restoreDriveNode(
     if (await nameTaken(tx, node.ownerId, parentId, node.name, node.id))
       return driveFail('drive.name-taken')
 
+    await lockDriveOwner(tx, node.ownerId)
     const nodes = await allOwnerNodes(tx, node.ownerId)
     const ids = collectSubtreeIds(nodes, node.id)
+    // Возврат из корзины снова делает файлы живыми — место должно быть.
+    const restoreBytes = nodes
+      .filter((item) => ids.includes(item.id) && item.kind === 'file')
+      .reduce((sum, item) => sum + item.size, 0)
+    const used = await driveUsedBytes(tx, node.ownerId)
+    if (checkQuota(used, restoreBytes, quotaLimitOf(undefined))) return driveFail('drive.quota-over')
     let restored = node
     for (const id of ids) {
       const row = await tx.resource(driveNode).update(DRIVE_SERVER, id, {
@@ -375,6 +402,12 @@ export async function starDriveNode(
     })
     return driveOk(toDriveNodeView(row as unknown as Record<string, unknown>))
   })
+}
+
+function quotaLimitOf(value?: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, value)
+    : DEFAULT_DRIVE_QUOTA_BYTES
 }
 
 const toShareView = (row: Record<string, unknown>): DriveShareView => ({

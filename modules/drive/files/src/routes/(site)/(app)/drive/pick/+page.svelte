@@ -6,16 +6,10 @@
   let { data }: PageProps = $props()
 </script>
 
-<div class="mx-auto w-full max-w-3xl">
-  {#if data.browse.fact}
-    <Acl status={data.browse.fact} enabled={data.browse.enabled} backHref={data.from} />
+<div class="mx-auto flex w-full max-w-3xl flex-col">
+  {#if data.list.fact}
+    <Acl status={data.list.fact} enabled={data.list.enabled} backHref={data.from} />
   {:else}
-    <DrivePicker
-      initial={data.browse}
-      from={data.from}
-      param={data.param}
-      kind={data.kind}
-      folderId={data.folderId}
-    />
+    <DrivePicker initial={data} />
   {/if}
 </div>

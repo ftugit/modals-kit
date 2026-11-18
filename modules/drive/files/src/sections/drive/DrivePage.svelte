@@ -1,13 +1,13 @@
 <script lang="ts">
-  // Страница «Диска»: гейт входа и общий проводник.
+  // Страница «Диска»: гейт входа и общий проводник поверх нативного `Listing`.
   import { untrack } from 'svelte'
   import { useHeadSeo } from '#core/ui/shell/index.js'
   import Acl from '#modules/user/base/svelte/Acl.svelte'
   import { DriveBrowse } from '#modules/drive/index.js'
-  import type { DrivePageData } from '#modules/drive/types.js'
+  import type { DriveListRouteData } from '#modules/drive/types.js'
 
   interface Props {
-    data: DrivePageData
+    data: DriveListRouteData
     title?: string
   }
 
@@ -20,7 +20,7 @@
   })
 </script>
 
-<div class="mx-auto w-full max-w-3xl">
+<div class="mx-auto flex w-full max-w-3xl flex-col">
   {#if data.fact}
     <Acl status={data.fact} enabled={data.enabled} backHref="/" />
   {:else}

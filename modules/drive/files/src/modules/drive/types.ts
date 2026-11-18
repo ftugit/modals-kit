@@ -16,6 +16,7 @@ import type {
   DriveSort,
   DriveSortDirection,
 } from '#core/lib/drive/index.js'
+import type { PaginatorState } from '#core/lib/paginate/index.js'
 import type { DriveDavTokenView } from './service/tokens.js'
 
 /** Аккаунт, от имени которого работает сервис. */
@@ -99,14 +100,92 @@ export interface DriveDavTokensData {
   readonly notice: string | null
 }
 
+/** Данные страницы узла (`/drive/node/[id]`) и модалки `drive.node`. */
+export interface DriveNodePageData {
+  readonly enabled: boolean
+  readonly fact: AuthErrorCode | null
+  readonly node: DriveNodeView | null
+  readonly caps: DriveCapabilities
+  readonly shares: readonly DriveShareView[]
+  readonly quota: DriveQuotaView
+  /** Ссылка на GET-раздачу байтов; `null` — у узла нет байтов. */
+  readonly downloadHref: string | null
+}
+
 /** Данные пикера: срез папки плюс контракт адреса вызывающего экрана. */
 export interface DrivePickerData {
-  readonly browse: DrivePageData
+  readonly list: DriveListRouteData
   readonly from: string
   readonly param: string
   /** Что можно выбрать: любой узел или только папки (перенос/копия). */
   readonly kind: 'any' | 'folder'
   readonly folderId: string | null
+}
+
+/**
+ * Строка нативного `Listing`: `Listing` требует верхнеуровневый `id`, а чистый
+ * доменный `DriveEntry` его не имеет. Копия полей не заводится — расширение.
+ */
+export interface DriveListItem extends DriveEntry {
+  readonly id: string
+}
+
+/**
+ * Данные списка (`/drive`, `/drive/<папка>`, `/drive/trash`) — единственный
+ * источник показа: страница отдаёт снапшот, модалка и догрузка зовут тот же
+ * `load` через `preloadData`.
+ */
+export interface DriveListRouteData {
+  readonly snapshot: PaginatorState<DriveListItem> | null
+  readonly fact: AuthErrorCode | null
+  readonly enabled: boolean
+  /** Внутренняя личность списка: `root`, `folder:<uuid>`, `trash`. */
+  readonly identity: string
+  readonly pathname: string
+  readonly folder: DriveNodeView | null
+  readonly caps: DriveCapabilities
+  readonly quota: DriveQuotaView
+  readonly breadcrumbs: readonly DriveBreadcrumb[]
+  readonly trashed: boolean
+  readonly folders: readonly { id: string | null; label: string }[]
+  readonly notice: string | null
+  readonly pick: DrivePick | null
+}
+
+/** Операция «Диска»: одна единица — форма, маршрут и модалка. */
+export interface DriveOperationData {
+  readonly enabled: boolean
+  readonly fact: AuthErrorCode | null
+  readonly returnTo: string
+  /** Явный адрес POST формы — выделенный route операции. */
+  readonly action: string
+  readonly parentId: string | null
+  readonly parent: DriveNodeView | null
+  readonly node: DriveNodeView | null
+  readonly caps: DriveCapabilities
+  readonly folders: readonly { id: string | null; label: string }[]
+  readonly shares: readonly DriveShareView[]
+  readonly tokens: readonly DriveDavTokenView[]
+  readonly values: {
+    readonly name: string
+    readonly targetId: string | null
+    readonly starred: boolean
+    readonly uid: string
+    readonly role: string
+    readonly tokenId: string
+    readonly label: string
+  }
+  readonly quota: DriveQuotaView
+  /** Текущий срез списка для формы фильтров (адрес `from` уже разобран). */
+  readonly filters: {
+    readonly search: string
+    readonly sort: string
+    readonly type: string
+    readonly starred: boolean
+    readonly pageSize: number
+    readonly from: string
+    readonly to: string
+  }
 }
 
 export interface DriveRouteData {

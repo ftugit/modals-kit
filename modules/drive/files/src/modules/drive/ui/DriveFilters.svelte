@@ -29,6 +29,8 @@
   const init = untrack(() => ({ pathname, search, type, sort, starred, pageSize, from, to }))
   const dirty = untrack(() => driveFiltersDirty(init))
   const form = bind(forms, driveFiltersForm(init), {
+    // URL-режим: GET-форма не несёт конверт `__form_*` и не перехватывается JS.
+    url: true,
     action: init.pathname,
     instance: 'drive:filters',
     intercept: false,

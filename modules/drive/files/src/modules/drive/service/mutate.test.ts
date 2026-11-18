@@ -205,6 +205,8 @@ test('загрузка: квота по логическому размеру и
     expect(first.ok && first.value.hash).toBe('hash-3')
     if (!first.ok) return
 
+    // Ранняя проверка квоты отсекает загрузку до записи байтов: чистить нечего.
+    const putsBefore = storage.puts.length
     expect(
       await uploadDriveFile(
         db,
@@ -213,7 +215,8 @@ test('загрузка: квота по логическому размеру и
         { storage, quotaLimit: 5 },
       ),
     ).toMatchObject({ ok: false, code: 'drive.quota-over' })
-    expect(storage.dels).toHaveLength(1)
+    expect(storage.puts).toHaveLength(putsBefore)
+    expect(storage.dels).toHaveLength(0)
 
     // Перезапись освобождает старый размер: 3 → 4 при пределе 5 проходит.
     const again = await uploadDriveFile(

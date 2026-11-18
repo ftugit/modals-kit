@@ -2,41 +2,45 @@
   /**
    * Строка узла «Диска»: имя, вид, размер, дата, звёздочка и корзина.
    *
-   * Нажатие не зашито внутрь: `ListingRow`-ссылка рисуется носителем,
-   * вложенный интерактив в `<a>` запрещён (`docs/design/lists.md` §8).
+   * Карточка только показывает узел и передаёт действия ссылками
+   * (`DriveNodeLinks`). Внутри `<a>` вложенного интерактива нет
+   * (`docs/design/lists.md` §8): ссылка — сама строка, кнопки — рядом.
    */
   import { formatBytes, type DriveEntry } from '#core/lib/drive/index.js'
   import { Badge } from '#core/ui/index.js'
   import { driveFolderRoute, driveNodeRoute, driveRootRoute } from '../routes.js'
-  import DriveNodeActions from './DriveNodeActions.svelte'
-  import type { DriveFolderOption } from '../form.js'
-  import type { DrivePick } from '../types.js'
+  import DriveNodeLinks from './DriveNodeLinks.svelte'
 
   interface Props {
     entry: DriveEntry
     /** `row` — список, `detail` — карточка узла. */
     variant?: 'row' | 'detail'
-    folders?: readonly DriveFolderOption[]
     trashed?: boolean
-    /** Адрес страницы, на которую вернётся POST действия. */
+    /** Адрес страницы, на которую вернётся операция. */
     returnTo?: string
-    pick?: DrivePick | null
-    folderId?: string | null
+    /** GET-ссылка на байты файла. */
+    downloadHref?: string | null
+    /** Строка только показывает узел: без действий (пикер). */
+    readonly?: boolean
+    /** Карточка уже внутри ссылки `ListingRow`: вложенную ссылку не рисуем. */
+    nested?: boolean
   }
 
   let {
     entry,
     variant = 'row',
-    folders = [],
     trashed = false,
     returnTo = driveRootRoute.href(),
-    pick = null,
-    folderId = null,
+    downloadHref = null,
+    readonly = false,
+    nested = false,
   }: Props = $props()
 
   const node = $derived(entry.node)
   const href = $derived(
-    node.kind === 'folder' ? driveFolderRoute.href({ folderId: node.id }) : driveNodeRoute.href({ id: node.id }),
+    node.kind === 'folder'
+      ? driveFolderRoute.href({ folderId: node.id })
+      : driveNodeRoute.href({ id: node.id }),
   )
   const size = $derived(node.kind === 'folder' ? 'Папка' : formatBytes(node.size))
   const updated = $derived(
@@ -67,26 +71,26 @@
       <dt class="text-muted-foreground">Создан</dt>
       <dd>{new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(node.createdAt)}</dd>
     </dl>
+    {#if !readonly}
+      <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} />
+    {/if}
   </div>
 {:else}
   <div
     class="flex flex-wrap items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted/50"
     data-testid="drive-row"
   >
-    <a {href} class="flex min-w-0 flex-1 items-center gap-3 no-underline">
-      {@render body()}
-    </a>
-    <DriveNodeActions
-      nodeId={node.id}
-      name={node.name}
-      starred={node.starred}
-      canWrite={entry.caps.canWrite}
-      canShare={entry.caps.canShare}
-      {trashed}
-      {folders}
-      {returnTo}
-      {pick}
-      {folderId}
-    />
+    {#if nested}
+      <span class="flex min-w-0 flex-1 items-center gap-3">
+        {@render body()}
+      </span>
+    {:else}
+      <a {href} class="flex min-w-0 flex-1 items-center gap-3 no-underline">
+        {@render body()}
+      </a>
+    {/if}
+    {#if !readonly}
+      <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} compact />
+    {/if}
   </div>
 {/if}

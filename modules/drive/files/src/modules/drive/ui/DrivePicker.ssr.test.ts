@@ -1,74 +1,121 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { render } from 'svelte/server'
-import type { DriveEntry } from '#core/lib/drive/index.js'
-import type { DrivePageData } from '../types.js'
+import type { DriveCapabilities } from '#core/lib/drive/index.js'
+import type { PaginatorState } from '#core/lib/paginate/index.js'
+import type { DriveListItem, DriveListRouteData, DrivePickerData } from '../types.js'
+import { DRIVE_NAME, driveSource, ensureDrivePaginator } from '../source.js'
 import DrivePicker from './DrivePicker.svelte'
 
-const entry = (id: string, name: string, kind: 'file' | 'folder'): DriveEntry => ({
-  node: {
-    id,
-    ownerId: '22222222-2222-4222-8222-222222222222',
-    parentId: null,
-    kind,
-    name,
-    fileId: kind === 'file' ? `drive/${id}` : null,
-    size: kind === 'file' ? 10 : 0,
-    contentType: null,
-    hash: null,
-    starred: false,
-    trashedAt: null,
-    trashedFrom: null,
-    createdAt: new Date('2026-01-01T10:00:00Z'),
-    updatedAt: new Date('2026-01-02T10:00:00Z'),
-  },
-  caps: { canRead: true, canWrite: true, canShare: true },
+vi.mock('$app/state', () => ({
+  page: { url: new URL('http://localhost/drive/pick'), state: {}, data: {} },
+  navigating: { to: null, from: null, type: null },
+}))
+vi.mock('$app/navigation', () => ({ preloadData: async () => ({ type: 'error' }) }))
+vi.mock('#core/hooks/links/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#core/hooks/links/index.js')>()
+  return {
+    ...actual,
+    useModalLink: () => () => ({ href: '/probe/filters', 'data-modal-link': '' }),
+  }
 })
 
-const page: DrivePageData = {
-  enabled: true,
-  fact: null,
-  folder: null,
-  caps: { canRead: true, canWrite: true, canShare: true },
-  items: [
-    entry('11111111-1111-4111-8111-111111111111', 'Документы', 'folder'),
-    entry('33333333-3333-4333-8333-333333333333', 'отчёт.pdf', 'file'),
-  ],
-  breadcrumbs: [],
-  quota: { used: 10, limit: 100, remaining: 90 },
-  trashed: false,
-  node: null,
-  folders: [],
-  shares: [],
-  notice: null,
-  pick: null,
-  sort: 'name',
-  search: null,
-  type: 'all',
+beforeAll(() => ensureDrivePaginator())
+
+const OWNER = '22222222-2222-4222-8222-222222222222'
+const FILE = '11111111-1111-4111-8111-111111111111'
+const FOLDER = '33333333-3333-4333-8333-333333333333'
+const CAPS: DriveCapabilities = { canRead: true, canWrite: true, canShare: true }
+
+const node = (id: string, kind: 'file' | 'folder', name: string) => ({
+  id,
+  ownerId: OWNER,
+  parentId: null,
+  kind,
+  name,
+  fileId: kind === 'file' ? `drive/${OWNER}/${id}` : null,
+  size: kind === 'file' ? 1024 : 0,
+  contentType: kind === 'file' ? 'text/plain' : null,
+  hash: null,
   starred: false,
-  pageSize: 30,
-  from: null,
-  to: null,
-  nextCursor: null,
-  total: 2,
-  paged: false,
+  trashedAt: null,
+  trashedFrom: null,
+  createdAt: new Date('2026-01-01T10:00:00Z'),
+  updatedAt: new Date('2026-01-02T10:00:00Z'),
+})
+
+const entry = (id: string, kind: 'file' | 'folder', name: string): DriveListItem => ({
+  id,
+  node: node(id, kind, name),
+  caps: CAPS,
+})
+
+function list(items: DriveListItem[]): DriveListRouteData {
+  const snapshot: PaginatorState<DriveListItem> = {
+    name: DRIVE_NAME,
+    page: 1,
+    pageSize: 30,
+    totalItems: items.length,
+    totalPages: 1,
+    extra: { _list: 'root' },
+    loadedPages: [1],
+    pages: { 1: items },
+    status: 'idle',
+    error: null,
+    errorCode: null,
+    pending: null,
+    hasNext: false,
+    hasPrev: false,
+    reqId: 0,
+    capabilities: driveSource.capabilitiesFor({}),
+  }
+  return {
+    snapshot,
+    fact: null,
+    enabled: true,
+    identity: 'root',
+    pathname: '/drive',
+    folder: null,
+    caps: CAPS,
+    quota: { used: 1024, limit: 1024 ** 3, remaining: 1024 ** 3 - 1024 },
+    breadcrumbs: [],
+    trashed: false,
+    folders: [],
+    notice: null,
+    pick: null,
+  }
 }
 
+const picker = (kind: 'any' | 'folder', items: DriveListItem[]): DrivePickerData => ({
+  list: list(items),
+  from: '/drive',
+  param: kind === 'folder' ? 'target_id' : 'id',
+  kind,
+  folderId: null,
+})
+
 describe('DrivePicker SSR', () => {
-  it('режим папок скрывает файлы и подписывает выбор папки', () => {
+  it('режим папок показывает только папки и подписывает выбор', () => {
+    // Фильтр `kind=folder` применяет сервер: в срез файлы уже не попадают.
     const { body } = render(DrivePicker, {
-      props: { initial: page, from: '/drive', param: 'target_id', kind: 'folder' },
+      props: { initial: picker('folder', [entry(FOLDER, 'folder', 'Документы')]) },
     })
     expect(body).toContain('Документы')
     expect(body).not.toContain('отчёт.pdf')
-    expect(body).toContain('Выбрать папку')
+    expect(body).toContain('Выбрать')
     expect(body).toContain('Выбрать корень диска')
   })
 
   it('обычный режим показывает и файлы', () => {
     const { body } = render(DrivePicker, {
-      props: { initial: page, from: '/drive', param: 'id', kind: 'any' },
+      props: {
+        initial: picker('any', [
+          entry(FOLDER, 'folder', 'Документы'),
+          entry(FILE, 'file', 'отчёт.pdf'),
+        ]),
+      },
     })
+    expect(body).toContain('Документы')
     expect(body).toContain('отчёт.pdf')
-    expect(body).toContain('Выбрать из диска')
+    expect(body).toContain('Выбрать')
   })
 })

@@ -1,10 +1,25 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render } from 'svelte/server'
-import type { DriveDavTokensData } from '../types.js'
+import type { DriveOperationData } from '../types.js'
 import DriveDavTokens from './DriveDavTokens.svelte'
 
-const data = (patch: Partial<DriveDavTokensData> = {}): DriveDavTokensData => ({
+// `asLink` читает адрес приложения; без хоста модалок этого контекста нет.
+vi.mock('$app/state', () => ({
+  page: { url: new URL('http://localhost/user/config/dav'), state: {}, data: {} },
+  navigating: { to: null, from: null, type: null },
+}))
+
+const data = (patch: Partial<DriveOperationData> = {}): DriveOperationData => ({
   enabled: true,
+  fact: null,
+  returnTo: '/user/config/dav',
+  action: '/user/config/dav/issue',
+  parentId: null,
+  parent: null,
+  node: null,
+  caps: { canRead: true, canWrite: true, canShare: true },
+  folders: [],
+  shares: [],
   tokens: [
     {
       id: '11111111-1111-4111-8111-111111111111',
@@ -23,48 +38,37 @@ const data = (patch: Partial<DriveDavTokensData> = {}): DriveDavTokensData => ({
       revokedAt: new Date('2025-12-02T10:00:00Z'),
     },
   ],
-  issued: null,
-  fact: null,
-  notice: null,
+  values: { name: '', targetId: null, starred: false, uid: '', role: 'viewer', tokenId: '', label: '' },
+  quota: { used: 0, limit: 0, remaining: 0 },
+  filters: { search: '', sort: 'name', type: 'all', starred: false, pageSize: 30, from: '', to: '' },
   ...patch,
 })
 
 describe('DriveDavTokens SSR', () => {
-  it('показывает список, префиксы и отзыв только у активного пароля', () => {
-    const { body } = render(DriveDavTokens, {
-      props: { initial: data(), actionBase: '/user/config/dav', returnTo: '/user/config' },
-    })
+  it('список, префиксы и отзыв только у активного пароля — ссылками', () => {
+    const { body } = render(DriveDavTokens, { props: { initial: data() } })
     expect(body).toContain('Ноутбук')
     expect(body).toContain('dv1_abcdef0123456789_…')
     expect(body).toContain('Старый диск')
     expect(body).toContain('отозван')
     expect(body.match(/Отозвать/g)).toHaveLength(1)
-    expect(body).toContain('?/revoke')
-    // Скрытые поля обязаны быть в DOM: без JS сервер иначе отвергнет форму.
-    expect(body).toContain('name="return_to"')
-    expect(body).toContain('name="token_id"')
+    // Операции живут на своих маршрутах, а не на `?/revoke` этой страницы.
+    expect(body).toContain('/user/config/dav/revoke')
+    expect(body).toContain('/user/config/dav/issue')
+    expect(body).not.toContain('?/revoke')
     expect(body).toContain('11111111-1111-4111-8111-111111111111')
   })
 
-  it('секрет показывается один раз и копируется', () => {
-    const { body } = render(DriveDavTokens, {
-      props: {
-        initial: data({ issued: 'dv1_abcdef0123456789_secretsecretsecretsecretsecret' }),
-        actionBase: '/user/config/dav',
-        returnTo: '/user/config',
-      },
-    })
-    expect(body).toContain('Пароль создан')
-    expect(body).toContain('повторно пароль не покажется')
-    expect(body).toContain('dv1_abcdef0123456789_secretsecretsecretsecretsecret')
+  it('GET не выдаёт и не показывает секрет', () => {
+    const { body } = render(DriveDavTokens, { props: { initial: data() } })
+    expect(body).toContain('Создать пароль')
+    expect(body).not.toContain('Пароль создан')
+    expect(body).not.toContain('dv1_abcdef0123456789_secret')
   })
 
-  it('без ключа подписи выдача выключена, список остаётся', () => {
-    const { body } = render(DriveDavTokens, {
-      props: { initial: data({ enabled: false }), actionBase: '/user/config/dav', returnTo: '/user/config' },
-    })
-    expect(body).toContain('drive-dav-disabled')
-    expect(body).not.toContain('Создать пароль')
-    expect(body).toContain('Ноутбук')
+  it('пустой список — подсказка, выдача всё равно доступна', () => {
+    const { body } = render(DriveDavTokens, { props: { initial: data({ tokens: [] }) } })
+    expect(body).toContain('Паролей ещё нет')
+    expect(body).toContain('Создать пароль')
   })
 })

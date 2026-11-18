@@ -45,6 +45,7 @@ export const DRIVE_MESSAGES: Record<string, string> = {
   'drive.storage-unavailable': 'Хранилище файлов недоступно — попробуйте позже',
   'drive.storage-readonly': 'Хранилище файлов не принимает записи',
   'drive.upload-empty': 'Файл пустой — загружать нечего',
+  'drive.upload-too-large': 'Файл больше допустимых 64 МБ',
   'drive.dav-label-invalid': 'Название пароля: от 1 до 80 символов',
   'drive.dav-disabled': 'Пароли WebDAV выключены: на сервере нет ключа подписи',
   'drive.dav-parent-missing': 'Папка назначения не найдена (409 Conflict)',
@@ -55,6 +56,10 @@ export const DRIVE_MESSAGES: Record<string, string> = {
   // Квота.
   'drive.quota-over': 'Не хватает места: файл больше остатка квоты',
   'drive.quota-invalid': 'Размер квоты или файла некорректен',
+
+  // Обход и конкурентные записи.
+  'drive.traversal-limit': 'Диск слишком велик для этой операции — обход остановлен',
+  'drive.conflict': 'Элемент изменился параллельно — повторите операцию',
 }
 
 /** Строка словаря по коду; неизвестный код показывается как есть. */

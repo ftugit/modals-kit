@@ -3,16 +3,16 @@
   import { invalidateAll } from '$app/navigation'
   import { useLoader, useModals } from '#core/lib/modals/svelte/index.js'
   import Acl from '#modules/user/base/svelte/Acl.svelte'
-  import type { DrivePageData } from '../types.js'
+  import type { DriveListRouteData } from '../types.js'
   import DriveBrowse from './DriveBrowse.svelte'
 
   const m = useModals()
-  const ldr = useLoader<DrivePageData>()
+  const ldr = useLoader<DriveListRouteData>()
   const data = $derived(ldr.data)
 </script>
 
 {#if data?.fact}
-  <Acl status={data.fact} backHref="/" variant="plain" />
+  <Acl status={data.fact} enabled={data.enabled} backHref="/" variant="plain" />
 {:else if data}
   <DriveBrowse
     initial={data}

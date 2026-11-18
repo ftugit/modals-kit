@@ -12,16 +12,10 @@
   const data = $derived(ldr.data)
 </script>
 
-{#if data?.browse.fact}
-  <Acl status={data.browse.fact} backHref={data.from} variant="plain" />
+{#if data?.list.fact}
+  <Acl status={data.list.fact} enabled={data.list.enabled} backHref={data.from} variant="plain" />
 {:else if data}
-  <DrivePicker
-    initial={data.browse}
-    from={data.from}
-    param={data.param}
-    kind={data.kind}
-    folderId={data.folderId}
-  />
+  <DrivePicker initial={data} />
   <div class="flex justify-end p-2">
     <Button
       type="button"

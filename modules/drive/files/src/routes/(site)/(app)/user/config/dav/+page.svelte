@@ -9,7 +9,7 @@
 
 <div class="mx-auto w-full max-w-2xl">
   {#if data.fact}
-    <Acl status={data.fact} backHref="/user/config" />
+    <Acl status={data.fact} enabled={data.enabled} backHref="/user/config" />
   {:else}
     <Surface
       title="Пароли WebDAV"
@@ -18,7 +18,7 @@
         end: back,
       }}
     >
-      <DriveDavTokens initial={data} actionBase="/user/config/dav" returnTo="/user/config/dav" />
+      <DriveDavTokens initial={data} returnTo="/user/config/dav" />
     </Surface>
   {/if}
 </div>

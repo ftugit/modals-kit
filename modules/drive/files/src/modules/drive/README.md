@@ -21,34 +21,50 @@
   Class 1, `Depth: 1`.
 - **UI** `/drive`, `/drive/[folderId]`, `/drive/node/[id]`, `/drive/trash`,
   `/drive/pick`; модалки `drive.browse`, `drive.node`, `drive.trash`,
-  `drive.picker`.
-- **Фильтры и пагинатор**: GET-форма `drive.q`/`drive.ord`/`drive.type`/
-  `drive.starred`/`drive.size`/`drive.from`/`drive.to` и курсор `drive.after`
-  («Дальше»/«В начало»). Ключи, разбор и сборка ссылок — `source.ts`; даты
-  режут `updated_at` в UTC (начало `from` — конец `to`). Форма не несёт курсор,
-  поэтому смена фильтра начинает список заново. Экшены возвращаются в тот же
-  отфильтрованный список.
-- **Формы 4d–4g**: создание папки, загрузка, звезда, переименование, перенос,
-  копия, корзина/восстановление/очистка, выдача и отзыв доступа, одиночный
-  пикер (`?from=&param=&kind=&folder=`). Перенос и копия открывают пикер
-  ссылкой «Выбрать папку…» с `kind=folder` (файлы не показываются) и принимают
-  возврат `?pick=move|copy&node=<id>&target_id=<id|пусто>`; пустой `target_id` —
-  корень. Файл в `target_id` отклоняет сервис (`drive.not-folder`) — это
-  закреплено тестом экшена.
-  Экшены — `sections/drive/actions.server.ts`, доменный отказ (и успех)
-  возвращает на ту же страницу, отказ — с `?notice=<код>`.
+  `drive.picker`. Списки — один `<Listing>` на `DriveBrowse.svelte`
+  (source/paginator/url-adapter), каждая строка — `DriveNodeCard` внутри
+  `ListingRow`, действия — ссылки операций.
+- **Списки и фильтры**: страничный пагинатор `drive` (30/50/100, «Назад /
+  Дальше» вместо курсора), ключи `drive.q`, `drive.ord`, `drive.type`,
+  `drive.starred`, `drive.size`, `drive.from`, `drive.to`, `drive.ids`.
+  Разбор/сборка и снапшот — `source.ts`; даты режут `updated_at` в UTC.
+  Смена фильтра начинает список с первой страницы, переход по крошкам и
+  папкам переносит активные фильтры (`driveFilterExtras`).
+- **Срез `drive.ids`** (пикер/множественный выбор): ключа нет — список без
+  ограничения, `drive.ids=none` — явно пустой набор, иначе сжатый список
+  UUID (`parseDriveIds`). Ограничение, ACL и `kind=folder` применяются
+  сервером до totals и нарезки страницы.
+- **Операции — 14 штук, все ссылками**: `mkdir`, `upload`, `rename`, `move`,
+  `copy`, `star`, `trash-action`, `restore`, `purge`, `share`, `unshare`,
+  `dav-issue`, `dav-revoke`. Матрица (id формы, адрес, модалка, заголовок,
+  поля) — `operations.ts`; разметка — один `DriveOperationForm.svelte` с
+  вызывающими оболочками `ui/<op>/`; регистрации мутаций —
+  `sections/drive/operations.form.server.ts`, dispatch — `operations.server.ts`.
+  У операции свой route-носитель (`/drive/mkdir`, `/drive/node/[id]/rename`,
+  `/user/config/dav/issue`, …), поэтому без JS работает обычный POST
+  (PRG с `?notice=<код>`), а с JS — форма без перезагрузки и stationary
+  receipt. В строке списка mutation-форм нет.
+- **Выбор папки** для переноса/копии: пикер `?from=&param=&kind=&folder=`
+  через тот же `DriveBrowse` (файлы в `kind=folder` не приходят с сервера), 
+  пустой `target_id` — корень. Файл в `target_id` отклоняет сервис
+  (`drive.not-folder`).
+- **Скачивание** — `/api/drive/[nodeId]/download`: GET, `serveDriveFile` сам
+  ставит `content-disposition`, `nosniff` и CSP.
 
 ## Чего ещё нет
 
-Шаг «выбранные» пикера (`drive.ids`) — единственный незавершённый срез:
-множественный выбор узлов через `drive.ids` и шаг «выбранные».
+- Фильтры остаются GET-формой: состояние списка живёт в URL, компонентная форма
+  фильтров с модалкой не делалась (§4.3 плана закрыт по source/`ids`).
+- Шаг «выбранные» пикера (`drive.ids` уже поддержан сервером, но шага выбора в UI
+  нет).
+
 Экран токенов WebDAV, `DriveEntry` на главной и Class 2 с общим стором
 блокировок (`drive_dav_lock`) реализованы; `LOCK`/`UNLOCK` включены.
 
 ## Проверки
 
 ```bash
-vitest run src/core/lib/drive src/modules/drive src/sections/drive/actions.server.test.ts
+vitest run src/core/lib/drive src/modules/drive src/sections/drive
 node tooling/core-purity.mjs
 node tooling/public-api.mjs
 KIT_ADAPTER=node npx svelte-check --tsconfig ./tsconfig.json

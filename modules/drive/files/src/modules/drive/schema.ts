@@ -65,9 +65,11 @@ export const driveNode: Resource = defineResource({
       orderable: true, filters: ['eq', 'icontains', 'startsWith'],
     }),
     // Логический путь байтов (`drive/<owner>/<node>`); у папки всегда пусто.
+    // Меняется только сервером: перезапись копии, делящей байты с соседом,
+    // пишется в новый путь (copy-on-write), не трогая чужой объект.
     file_id: field(s.text({ min: 1, max: 512 }), {
-      read: () => true, create: [...SERVER_WRITE], nullable: true, immutable: true,
-      filters: ['eq', 'isNull', 'isNotNull'],
+      read: () => true, create: [...SERVER_WRITE], update: [...SERVER_WRITE],
+      nullable: true, filters: ['eq', 'isNull', 'isNotNull'],
     }),
     // bigint в модели — строка цифр; сервис приводит к числу в проекции.
     size: f.bigint({

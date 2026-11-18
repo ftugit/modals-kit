@@ -5,9 +5,10 @@
  * обычные формы с `?/<action>`, с JS — те же поля под `bind`. Скрытые `node_id`
  * и `return_to` проверяются на сервере: адрес возврата берётся только локальный.
  */
-import { defineForm, field, v } from '#core/lib/form/index.js'
+import { defineForm, field, v, type FormDescription } from '#core/lib/form/index.js'
 import { DRIVE_NAME_MAX } from '#core/lib/drive/index.js'
 import { DRIVE_MESSAGES } from './messages.js'
+import type { DriveOperationName } from './operations.js'
 
 /** Пункт выбора папки: `null` — корень диска. */
 export interface DriveFolderOption {
@@ -226,6 +227,95 @@ export function driveTrashForm(nodeId: string, returnTo: string) {
   return defineForm({
     ...base,
     id: 'drive-trash',
+    fields: {
+      node_id: idField(nodeId),
+      return_to: returnField(returnTo),
+    },
+  })
+}
+
+/**
+ * Описание формы операции по строке матрицы (`operations.ts`).
+ *
+ * Одно и то же описание строят страница и модалка: клиент — с реальными
+ * значениями из `load`, регистрация — с пустыми (ревизия и набор полей те же,
+ * поэтому серверный разбор совпадает).
+ */
+export interface DriveOperationValues {
+  readonly parentId?: string | null
+  readonly returnTo?: string
+  readonly nodeId?: string
+  readonly name?: string
+  readonly starred?: boolean
+  readonly folders?: readonly DriveFolderOption[]
+  readonly targetId?: string | null
+  readonly uid?: string
+  readonly role?: string
+  readonly tokenId?: string
+}
+
+export function driveOperationDescription(
+  op: DriveOperationName,
+  values: DriveOperationValues = {},
+): FormDescription {
+  const parentId = values.parentId ?? null
+  const returnTo = values.returnTo ?? '/drive'
+  const nodeId = values.nodeId ?? ''
+  switch (op) {
+    case 'mkdir':
+      return driveMkdirForm(parentId, returnTo)
+    case 'upload':
+      return driveUploadForm(parentId, returnTo)
+    case 'rename':
+      return driveRenameForm(nodeId, values.name ?? '', returnTo)
+    case 'move':
+      return driveMoveForm(nodeId, values.folders ?? [], returnTo, values.targetId ?? null)
+    case 'copy':
+      return driveCopyForm(nodeId, values.folders ?? [], returnTo, values.targetId ?? null)
+    case 'star':
+      return driveStarForm(nodeId, values.starred ?? false, returnTo)
+    case 'trash-action':
+      return driveTrashForm(nodeId, returnTo)
+    case 'restore':
+      return driveRestoreForm(nodeId, returnTo)
+    case 'purge':
+      return drivePurgeForm(nodeId, returnTo)
+    case 'share':
+      return driveShareForm(nodeId, returnTo)
+    case 'unshare':
+      return driveUnshareForm(nodeId, values.uid ?? '', returnTo)
+    case 'dav-issue':
+      return driveDavIssueForm(returnTo)
+    case 'dav-revoke':
+      return driveDavRevokeForm(values.tokenId ?? '', returnTo)
+    case 'filters':
+      return driveFiltersForm({
+        search: null,
+        type: 'all',
+        sort: 'name',
+        starred: false,
+        pageSize: 30,
+        from: null,
+        to: null,
+      })
+  }
+}
+
+export function driveRestoreForm(nodeId: string, returnTo: string) {
+  return defineForm({
+    ...base,
+    id: 'drive-restore',
+    fields: {
+      node_id: idField(nodeId),
+      return_to: returnField(returnTo),
+    },
+  })
+}
+
+export function drivePurgeForm(nodeId: string, returnTo: string) {
+  return defineForm({
+    ...base,
+    id: 'drive-purge',
     fields: {
       node_id: idField(nodeId),
       return_to: returnField(returnTo),
