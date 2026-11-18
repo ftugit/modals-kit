@@ -144,7 +144,7 @@ UI-состояние (не модель): текущая папка, набор
 - `driveFolderRoute = kitRoute('/(site)/(app)/drive/[folderId=uuid]', { dynamic: true, id: '/drive/[folderId]' })` — папка.
 - `driveNodeRoute = kitRoute('/(site)/(app)/drive/node/[id=uuid]', { dynamic: true, id: '/drive/node/[id]' })` — карточка узла, страница-fallback модалки `drive.node`.
 - `driveTrashRoute = kitRoute('/drive/trash')`.
-- `driveFiltersRoute = kitRoute('/drive/filters', { owner: 'drive.filters', search: querySchema<{ from: string | null }, { from: string | null }>((raw) => ({ from: localPath(typeof raw.from === 'string' ? raw.from : null) })) })` — `from` локальный путь носителя; папка едет внутри `from`, отдельного `folder` нет. Ключ `from` не бронируется в общем реестре: он уже принадлежит `/users/filters`; схема запроса при этом типизирована.
+- `driveFiltersRoute = kitRoute('/drive/filters', { owner: 'drive.filters', search: querySchema<{ from: string | null }, { from: string | null }>((raw) => ({ from: localPath(typeof raw.from === 'string' ? raw.from : null) })) })` — `from` локальный путь носителя; папка едет внутри `from`, отдельного `folder` нет. Ключ `from` общий с `/users/filters`, поэтому владелец в реестре один (`user.filters`), а не два: иначе вторая бронь падает.
 - `drivePickRoute = kitRoute('/drive/pick')` — страница-fallback пикера.
 - `driveAccessRoute = kitRoute('/drive/access', { owner: 'drive.access', keys: ['node_id'], … })` — страница-fallback модалки `drive.access`; список shares и ссылки share/unshare.
 - У каждого адреса в `src/routes/(site)/(app)/drive/` — пара `+page.server.ts` (тонкий: зовёт `load` из `sections/drive`) и `+page.svelte` (тонкий: `Acl` + секция). Разметка — в `src/sections/drive`.

@@ -16,7 +16,7 @@
   ([`docs/plan-drive-repair.md`](./plan-drive-repair.md)): этапы 0–4 и 6 сделаны
   (домен, Listing/source с `drive.ids`, 14 операций-ссылок, DAV-пароли через
   POST-receipt, пикер на общем `DriveBrowse`, component-form фильтров с
-  модалкой/страницей, экран `/drive/access`); typecheck и 35 тестов drive
+  модалкой/страницей, экран `/drive/access`); typecheck и 36 тестов drive
   зелёные. Осталось: шаг «выбранные» в пикере и браузерные gates (в этом
   окружении нет `libnspr4`/root) — см. §9 плана. Payload остаётся в каталоге
   модулей, не коммитится в `arch`.

@@ -772,7 +772,7 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
 - [x] Page и modal stores refresh scoped; modal loaders invalidated отдельно
       (`invalidatePaginator` + `invalidateLoader`); браузерный прогон недоступен.
 - [x] Download route вызывает stored `fileId`.
-- [x] ACL, quota, trash, token и DAV regressions зелёные (35 тестов drive).
+- [x] ACL, quota, trash, token и DAV regressions зелёные (36 тестов drive).
 - [x] Проверены source payload и установленный `arch`; случайных module/demo
       copies нет (pre-commit module-guard).
 - [x] Legacy documents не утверждают superseded architecture.
@@ -780,4 +780,4 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
 Не проверено (нужен браузер/JS): поведение модалок, stationary receipt после
 клиентского submit, фильтры в модалке/sidebar, экран доступов, upload прогресс и
 `?notice` после PRG. В этом окружении браузерный runner не запускается
-(`libnspr4.so`, нет root); вместо него прогнаны unit/SSR-тесты (35 drive).
+(`libnspr4.so`, нет root); вместо него прогнаны unit/SSR-тесты (36 drive).
