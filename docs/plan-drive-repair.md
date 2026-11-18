@@ -730,6 +730,8 @@ suite. На Windows отдельно проверить case-collision (`Steps.s
 - **Этап 4** — пикер: `DrivePicker.svelte` — тот же `DriveBrowse` с
   `url={false}`, отдельной identity не заводится; `kind=folder` применяется
   сервером до totals и нарезки, `drive.ids` (`none`/UUID-list) — тоже.
+  Набор ограничен `DRIVE_IDS_MAX = 200`: лишние UUID за границей не читаются,
+  повтор не тратит место в потолке (`parseDriveIds`).
 - **Этап 5 (браузерные gate)** — невозможен в этом окружении: нет
   `libnspr4.so` и root. Вместо него SSR-тесты страниц, списка, пикера и DAV.
 
