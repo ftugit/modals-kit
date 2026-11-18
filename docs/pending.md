@@ -12,6 +12,13 @@
 
 ## 1. В планах
 
+- **Drive: ремонт архитектуры и корректности — P1**
+  ([`docs/plan-drive-repair.md`](./plan-drive-repair.md)): план подготовлен, реализация
+  не начата. Отдельные route/modal для всех действий, native component forms,
+  Listing/filters/picker, безопасная запись bytes/quota/ACL, token/DAV regressions.
+  Каждый этап закрывается gate проверки; старые отметки «реализовано» не заменяют
+  проверку. Payload остаётся в каталоге модулей, не коммитится в `arch`.
+
 - **Фильтры: follow-up после placeholder и снятия группы — P0/P1/P2** ([`docs/plan-filter-followup.md`](./plan-filter-followup.md)):
   восемь пунктов, порядок 1→2→6→4→3→5→7→8. Уже проверено вручную: placeholder держит
   высоту, × снимает группу. В плане: регрессионный тест группы, multi-value в popup,

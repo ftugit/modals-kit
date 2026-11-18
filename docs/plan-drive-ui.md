@@ -1,5 +1,10 @@
 # Диск (`drive`): UI, проводник и пикер файлов
 
+> Исполняемый план ремонта: [plan-drive-repair.md](./plan-drive-repair.md).
+> Он заменяет прежние решения про inline forms/intent gateway, GET-submit фильтров,
+> отсутствие access route и cursor-only список. Каждое действие теперь имеет свой
+> route/modal; mkdir и upload раздельны. Статусы ниже — исторические.
+
 Статус: **4d–4g и фильтры/пагинатор реализованы**: формы mkdir/rename/move/copy/
 trash/restore/purge/star, загрузка, экран доступа, пикер `/drive/pick` (одиночный,
 без шага `drive.ids`), GET-фильтры `drive.q/ord/type/starred/size/from/to` и
