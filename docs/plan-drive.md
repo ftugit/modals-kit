@@ -4,9 +4,10 @@
 > При расхождении целевая архитектура и проверки заданы там; прежние статусы ниже
 > исторические и не подтверждают исправность форм, ACL и перезаписи файлов.
 
-Статус: **этапы 0–3, 5 и 6 реализованы** (включая фильтры/пагинатор,
-экран токенов WebDAV, Class 2 со стором блокировок `drive_dav_lock` и гарды);
-UI 4c–4g и `DriveEntry` на главной реализованы, ремонт проведён по
+Статус: **этапы 0–6 реализованы**, кроме шага «выбранные» в UI пикера
+(включая фильтры/пагинатор, экран токенов WebDAV, Class 2 со стором блокировок
+`drive_dav_lock` и гарды); UI 4c–4h и `DriveEntry` на главной реализованы,
+ремонт проведён по
 [`plan-drive-repair.md`](./plan-drive-repair.md): списки на `Listing` со
 страничным пагинатором (`drive`), все мутации — отдельные операции-ссылки,
 срез `drive.ids` поддержан сервером (`none` — пустой набор), DAV-пароли
@@ -275,7 +276,7 @@ text_pattern_ops)` для поиска по префиксу.
 | **1. Ядро «Диска»** | `src/core/lib/drive/*` (§4.3) + unit-тесты имён, путей, циклов, квоты, курсора | `vitest run src/core/lib/drive` — зелёный; `core-purity` не видит `node:*`/`#core/lib/db` |
 | **2. Модель и права (сделано)** | `drive_node`, `drive_share`, `DRIVE_ACL`, `checks.ts`, `service/access.ts`; миграция через `schemaSpec` | тест среза: закрытая папка не протекает в список; цикл и дубль имени отклоняются |
 | **3. Мутации и байты (сделано)** | листинг с курсором, `mkdir/rename/move/copy/trash/restore/star`, загрузка `hash: true`, квота, `purge` | тест «загрузил два одинаковых файла → `deduplicated` на втором, квота считает два»; «удалил один → байты живы, удалил второй → `del` вызван» |
-| **4. UI (4c–4g сделано)** | `drive.browse`/`drive.node`/`drive.trash`/`drive.picker`, `/drive`, `/drive/[folderId]`, `/drive/node/[id]`, `/drive/trash`, `/drive/pick`; формы mkdir/rename/move/copy/trash/restore/purge/star, загрузка, доступ, одиночный пикер | SSR-тест прав (читатель/редактор) — есть; фильтры/пагинатор и браузерный тест — следующие |
+| **4. UI (4c–4h сделано)** | `drive.browse`/`drive.node`/`drive.trash`/`drive.picker`, `/drive`, `/drive/[folderId]`, `/drive/node/[id]`, `/drive/trash`, `/drive/pick`, `/drive/filters`, `/drive/access`; формы mkdir/rename/move/copy/trash/restore/purge/star, загрузка, доступ, одиночный пикер, фильтры | SSR-тест прав (читатель/редактор) и тесты фильтров/пикера — есть; браузерный тест недоступен в песочнице (`libnspr4.so`, нет root) |
 | **5. WebDAV (сделано)** | `/api/dav/[...path]`, `drive_dav_token`, `driveDavBackend`, Class 1 | unit с `Request` на реальном бэкенде: `PROPFIND` не отдаёт чужие узлы, `PUT` пишет через сервис, `Range` = `storage.serve`; ручная проверка `curl -X PROPFIND` |
 | **6. Class 2 и стражи** | `drive_dav_lock` (общий стор), включение `LOCK/UNLOCK`; гарды: путь-литералы в разделе, мёртвые экшены, `test:size` | `LOCK` на двух инстансах: второй получает `423`; линт/гарды зелёные |
 

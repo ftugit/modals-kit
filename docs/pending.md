@@ -13,7 +13,7 @@
 ## 1. В планах
 
 - **Drive: ремонт архитектуры и корректности — P1**
-  ([`docs/plan-drive-repair.md`](./plan-drive-repair.md)): этапы 1–4 сделаны
+  ([`docs/plan-drive-repair.md`](./plan-drive-repair.md)): этапы 0–4 и 6 сделаны
   (домен, Listing/source с `drive.ids`, 14 операций-ссылок, DAV-пароли через
   POST-receipt, пикер на общем `DriveBrowse`, component-form фильтров с
   модалкой/страницей, экран `/drive/access`); typecheck и 35 тестов drive
