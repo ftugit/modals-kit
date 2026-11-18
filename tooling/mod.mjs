@@ -308,6 +308,13 @@ function walkLocalDirToMap(baseDir) {
   return out
 }
 
+/** Извлекает SHA коммита модулей из заголовка Content-Disposition архива GitHub. */
+export function parseModuleCommitFromResponse(res) {
+  const cd = typeof res?.headers?.get === 'function' ? res.headers.get('content-disposition') : ''
+  const match = String(cd ?? '').match(/g([0-9a-f]{7,40})\.tar\.gz/i)
+  return match ? match[1] : null
+}
+
 async function fetchBufferWithAuth(url, token, fetchImpl) {
   const headers = {
     'User-Agent': 'modals-kit-mod-installer',
@@ -334,7 +341,9 @@ export async function loadSourceMap(rootDir, env, fetchImpl = globalThis.fetch) 
       if (!res.ok) {
         throw new Error(`[mod] Не удалось скачать архив модулей (${res.status}) с ${source}`)
       }
-      return extractTarGzToMap(Buffer.from(await res.arrayBuffer()))
+      const sourceMap = extractTarGzToMap(Buffer.from(await res.arrayBuffer()))
+      sourceMap.commitSha = parseModuleCommitFromResponse(res)
+      return sourceMap
     }
     const resolved = resolve(rootDir, source)
     if (!existsSync(resolved)) {
@@ -364,7 +373,9 @@ export async function loadSourceMap(rootDir, env, fetchImpl = globalThis.fetch) 
     const res = await fetchBufferWithAuth(url, token, fetchImpl)
     lastStatus = res.status
     if (res.ok) {
-      return extractTarGzToMap(Buffer.from(await res.arrayBuffer()))
+      const sourceMap = extractTarGzToMap(Buffer.from(await res.arrayBuffer()))
+      sourceMap.commitSha = parseModuleCommitFromResponse(res)
+      return sourceMap
     }
     if (res.status === 401 || res.status === 403) break
   }
@@ -642,7 +653,13 @@ export async function runModCli(argv, { rootDir = process.cwd(), env = process.e
 
     const missing = desired.filter((name) => !isModuleIntactOnDisk(rootDir, state.modules[name]))
     if (missing.length > 0) {
+      const repo = resolveRepoSlug(rootDir, resolvedEnv)
+      const ref = (resolvedEnv.MODULES_REF ?? '').trim() || DEFAULT_REF
+      log(`[mod] Загрузка модулей: ${repo}@${ref}`)
       const sourceMap = await loadSourceMap(rootDir, resolvedEnv, fetchImpl)
+      if (sourceMap.commitSha) {
+        log(`[mod] Коммит модулей: ${sourceMap.commitSha}`)
+      }
       const catalog = readCatalogFromMap(sourceMap)
       for (const name of missing) {
         const count = installModuleFromCatalog(rootDir, catalog, name, state, { force: true })
