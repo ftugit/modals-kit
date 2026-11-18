@@ -21,6 +21,13 @@
   окружении нет `libnspr4`/root) — см. §9 плана. Payload остаётся в каталоге
   модулей, не коммитится в `arch`.
 
+- **Drive: поведение операций и доступов — P0**
+  ([`docs/plan-drive-fixes.md`](./plan-drive-fixes.md)): старый план отменяет
+  stationary receipt и общий `DriveOperationForm`; нужен одинаковый результат
+  JS/no-JS, реальный «Назад», сообщение upload без storage, полный список
+  папок для переноса с переходом в target и выбор получателей доступа
+  списком seed/profile с ids. Список находок открыт и будет дополняться.
+
 - **Фильтры: follow-up после placeholder и снятия группы — P0/P1/P2** ([`docs/plan-filter-followup.md`](./plan-filter-followup.md)):
   восемь пунктов, порядок 1→2→6→4→3→5→7→8. Уже проверено вручную: placeholder держит
   высоту, × снимает группу. В плане: регрессионный тест группы, multi-value в popup,

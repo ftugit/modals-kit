@@ -3,6 +3,11 @@
 Статус: **этапы 0–4 и 6 реализованы; открыт только шаг «выбранные» пикера,
 браузерный gate ограничен средой** (в песочнице нет `libnspr4.so` и root, см. §9).
 
+> Поведение операций пересмотрено в [`plan-drive-fixes.md`](./plan-drive-fixes.md):
+> §0.1 (stationary receipt), §5.2, §5.3, §6.3 и §7.2 действуют только до его
+> этапа 1. Общий `DriveOperationForm` и одинаковый для JS/no-JS результат этим
+> планом отменяются.
+
 Этот документ — новый исполняемый план ремонта Drive. Он подготовлен по фактическому
 коду, `docs/plan-drive.md`, `docs/plan-drive-ui.md`,
 `docs/audit-drive-review.md`, `docs/audit-drive-plan-vs-code.md`,

@@ -5,7 +5,9 @@
 > отсутствие access route и cursor-only список. Каждое действие теперь имеет свой
 > route/modal; mkdir и upload раздельны. Статусы ниже — исторические.
 
-Статус: **ремонт по [`plan-drive-repair.md`](./plan-drive-repair.md) выполнен**.
+Статус: **ремонт по [`plan-drive-repair.md`](./plan-drive-repair.md) выполнен**;
+поведение операций пересматривается в [`plan-drive-fixes.md`](./plan-drive-fixes.md)
+(один результат JS/no-JS, отдельные формы, возврат/закрытие вместо receipt).
 Ниже исторические решения (inline-формы, GET-submit, курсор) заменены:
 список — один `Listing` с source/paginator (`drive`), каждая мутация —
 отдельная операция-ссылка со своим route/modal (`operations.ts`), загрузка —
