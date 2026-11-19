@@ -14,29 +14,23 @@
 
 - **Drive: ремонт архитектуры и корректности — P1**
   ([`docs/plan-drive-repair.md`](./plan-drive-repair.md)): этапы 0–4 и 6 сделаны
-  (домен, Listing/source с `drive.ids`, 14 операций-ссылок, DAV-пароли через
+  (домен, Listing/source с `drive.ids`, операции-ссылки, DAV-пароли через
   POST-receipt, пикер на общем `DriveBrowse`, component-form фильтров с
-  модалкой/страницей, экран `/drive/access`); typecheck и 36 тестов drive
-  зелёные. Осталось: браузерные gates (в этом окружении нет `libnspr4`/root) —
-  см. §9 плана. Шаг «выбранные» в пикере перешёл в
-  [`docs/plan-drive-fixes.md`](./plan-drive-fixes.md), этап 7 (канал
-  `sharedData` + кнопка «Выбрать»), и здесь отдельно не закрывается. Payload
-  остаётся в каталоге модулей, не коммитится в `arch`.
+  модалкой/страницей, экран `/drive/access`); typecheck и 63 теста drive
+  зелёные. Остался только браузерный gate (в этом окружении нет
+  `libnspr4`/root). Payload остаётся в каталоге модулей, не коммитится в `arch`.
 
 - **Drive: поведение операций и доступов — P0**
-  ([`docs/plan-drive-fixes.md`](./plan-drive-fixes.md)): план закрыт по решениям,
-  ни один из этапов 0–11 не начат. Отменяет stationary-receipt и общий
-  `DriveOperationForm` (ремонт §0.1/§5.2/§5.3/§6.3/§7.2): один успех для JS и
-  no-JS — закрытие или переход, у каждой операции своя форма и своё правило
-  успеха; «Назад» — реальный шаг истории; общий transient notice вместо
-  квитанции и счётчиков; доменные коды storage вместо 500; move/copy выбирают
-  цель через `drive.picker` и ведут в target; share — набор `subjects` через
-  `user.picker`, batch атомарен, имена в `/drive/access`; «Важное» — маршрут
-  `/drive/starred`; явный `scope` (папка/диск); вход «Подключить по WebDAV».
-  Дефект фильтров/поиска (п. 12) чинится только после красной регрессии
-  (этап 5). Открытых вопросов «как делать» нет; браузерный gate по-прежнему
-  недоступен в этой среде (`libnspr4`/root). Payload остаётся в каталоге
-  модулей, не коммитится в `arch`.
+  ([`docs/plan-drive-fixes.md`](./plan-drive-fixes.md)): этапы 0–11 выполнены.
+  Убран общий `DriveOperationForm` и stationary-receipt: у каждой операции
+  своя форма (`forms/`) и правило успеха; JS закрывает модалку или ведёт на
+  `next`, no-JS получает PRG с `?notice=drive.notice-done`; «Назад» — история
+  с href-fallback; transient notice вместо квитанции; storage-отказы доменные;
+  move/copy — target через `drive.picker`; share — `subjects` + `user.picker`,
+  batch атомарен, имена в `/drive/access`; «Важное» — `/drive/starred`;
+  `scope=folder|global`; WebDAV-вход и endpoint. Открыт только браузерный gate
+  (`libnspr4`/root недоступны). Payload остаётся в каталоге модулей, не
+  коммитится в `arch`.
 
 - **Фильтры: follow-up после placeholder и снятия группы — P0/P1/P2** ([`docs/plan-filter-followup.md`](./plan-filter-followup.md)):
   восемь пунктов, порядок 1→2→6→4→3→5→7→8. Уже проверено вручную: placeholder держит

@@ -34,7 +34,7 @@
     'flex min-w-0 items-center gap-1.5 whitespace-nowrap'
 </script>
 
-<div class={cn('flex w-full flex-nowrap items-center gap-x-2 overflow-x-auto', cls)}>
+<div class={cn('flex w-full flex-wrap items-center gap-x-2 gap-y-1 overflow-x-auto', cls)}>
   {#if leading}
     <div class={zone} data-surface-zone="leading">
       {@render leading()}
@@ -42,7 +42,7 @@
   {/if}
 
   {#if center}
-    <div class={cn(zone, 'flex-1')} data-surface-zone="center">
+    <div class={cn(zone, 'min-w-24 flex-1')} data-surface-zone="center">
       {@render center()}
     </div>
   {/if}

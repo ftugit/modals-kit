@@ -9,6 +9,7 @@
   import { appErrors } from '#core/hooks/app-errors.svelte.js'
   import Error500 from '#core/ui/errors/Error500.svelte'
   import { LoaderBar } from '#core/ui/loader/index.js'
+  import { NoticeHost } from '#core/ui/notice/index.js'
   import { setPageContext, PageHead } from '#core/ui/shell/index.js'
   import 'virtual:uno.css'
   import '../app.css'
@@ -31,6 +32,7 @@
 </svelte:head>
 
 <LoaderBar />
+<NoticeHost />
 
 {#if appErrors.critical}
   <!-- фатал заменяет всё целиком: ориентир main — здесь -->

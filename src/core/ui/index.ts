@@ -61,5 +61,8 @@ export { default as Separator, separatorVariants, type SeparatorVariants } from 
 export { default as Stat, statVariants, type StatVariants } from './stat/Stat.svelte'
 export { default as ButtonGroup } from './button/ButtonGroup.svelte'
 
+export { NoticeHost } from './notice/index.js'
+export { notify, dismissNotice, noticeQueue, type Notice, type NoticeTone } from './notice/index.js'
+
 export { cn, variants } from '#core/ui/utils.js'
 export type { VariantProps } from '#core/ui/utils.js'
