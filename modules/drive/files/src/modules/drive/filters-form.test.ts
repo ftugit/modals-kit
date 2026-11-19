@@ -5,7 +5,7 @@ import {
   driveFilterValues,
   driveFiltersForm,
 } from './filters-form.js'
-import { DRIVE_FILTER_KEYS } from './source.js'
+import { DRIVE_FILTER_KEYS, driveListHref, type DriveListFilters } from './source.js'
 import { driveFiltersRoute } from './routes.js'
 
 describe('drive filters form', () => {
@@ -19,7 +19,7 @@ describe('drive filters form', () => {
       size: 50,
       ord: 'updated',
       type: 'folder',
-      starred: true,
+      scope: 'global',
       from_date: '2026-01-01',
       to_date: '2026-01-31',
     })
@@ -29,7 +29,7 @@ describe('drive filters form', () => {
       patch: {
         ord: 'updated',
         type: 'folder',
-        starred: '1',
+        scope: 'global',
         from: '2026-01-01',
         to: '2026-01-31',
       },
@@ -55,13 +55,13 @@ describe('drive filters form', () => {
   it('значения формы читаются из extra и pageSize', () => {
     expect(
       driveFilterValues(
-        { ord: 'size', type: 'file', starred: '1', from: '2026-03-01', to: '' },
+        { ord: 'size', type: 'file', scope: 'global', from: '2026-03-01', to: '' },
         100,
       ),
     ).toEqual({
       ord: 'size',
       type: 'file',
-      starred: true,
+      scope: 'global',
       size: 100,
       from_date: '2026-03-01',
       to_date: '',
@@ -74,12 +74,34 @@ describe('drive filters form', () => {
     )
   })
 
+  it('применённые фильтры попадают в адрес списка, страница — первая', () => {
+    const applied = applyDriveFilters({
+      size: 50,
+      ord: 'updated',
+      type: 'file',
+      scope: 'global',
+    })
+    if (!applied.ok) throw new Error('ожидался успех')
+    const filters: DriveListFilters = {
+      search: null,
+      sort: 'updated',
+      type: 'file',
+      scope: 'global',
+      pageSize: applied.pageSize,
+      from: null,
+      to: null,
+    }
+    expect(driveListHref('/drive', filters, 1)).toBe(
+      '/drive?drive.size=50&drive.ord=updated&drive.type=file&drive.scope=global',
+    )
+    expect(applied.patch).toEqual({ ord: 'updated', type: 'file', scope: 'global' })
+  })
+
   it('ключи фильтров — extra, а не адресные', () => {
-    expect(DRIVE_FILTER_KEYS).toEqual(['ord', 'type', 'starred', 'from', 'to'])
+    expect(DRIVE_FILTER_KEYS).toEqual(['ord', 'type', 'scope', 'from', 'to'])
     expect(driveFilterText('type', 'folder')).toBe('Папки')
-    expect(driveFilterText('starred', '1')).toBe('')
     expect(Object.keys(driveFiltersForm.byName)).toEqual(
-      expect.arrayContaining(['ord', 'type', 'size', 'from_date', 'to_date', 'starred']),
+      expect.arrayContaining(['ord', 'type', 'scope', 'size', 'from_date', 'to_date']),
     )
   })
 })

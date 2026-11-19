@@ -27,7 +27,12 @@
         Применить — вернуться к списку с этим срезом.
         <a class="underline" href={data.backHref}>К списку без изменений</a>
       </p>
-      <DriveFilters initial={data.values} from={data.backHref} resetHref={data.resetHref} />
+      <DriveFilters
+        initial={data.values}
+        from={data.backHref}
+        resetHref={data.resetHref}
+        scopeLocked={data.scopeLocked}
+      />
     </div>
   {/if}
 </div>

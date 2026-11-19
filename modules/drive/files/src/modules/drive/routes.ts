@@ -27,7 +27,33 @@ export const driveAccessRoute = kitRoute('/(site)/(app)/drive/access', {
 
 /** Корзина. */
 export const driveTrashRoute = kitRoute('/drive/trash')
+
+/** «Важное» — отдельный список, а не скрытый фильтр. */
+export const driveStarredRoute = kitRoute('/drive/starred')
+
 export const drivePickerRoute = kitRoute('/drive/pick')
+
+const PICKER_PARAM = /^[A-Za-z0-9_-]{1,64}$/
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export interface DrivePickerParams {
+  readonly from?: string | null
+  readonly param?: string | null
+  readonly kind?: 'any' | 'folder'
+  readonly folder?: string | null
+}
+
+/** Адрес пикера: `from` проверяется `localPath`, `folder` — UUID. */
+export function drivePickerHref(p: DrivePickerParams = {}): string {
+  const query = new URLSearchParams()
+  const from = localPath(p.from ?? null)
+  if (from) query.set('from', from)
+  if (p.param && PICKER_PARAM.test(p.param)) query.set('param', p.param)
+  if (p.kind === 'folder') query.set('kind', 'folder')
+  if (p.folder && UUID.test(p.folder)) query.set('folder', p.folder)
+  const text = query.toString()
+  return text ? `${drivePickerRoute.href()}?${text}` : drivePickerRoute.href()
+}
 
 /**
  * Фильтры списка: страница-fallback модалки `drive.filters` для no-JS.

@@ -2,11 +2,10 @@
 // Скачивание не является mutation-формой: доступ проверяет `serveDriveFile`,
 // путь берётся из сохранённого `fileId` узла (копии могут делить байты).
 import type { RequestHandler } from './$types'
-import { resolveAppStorage } from '#core/server/app-storage.server.js'
 import { db } from '#core/server/db.server.js'
 import { serveDriveFile } from '#modules/drive/service/download.js'
 import { driveMessage } from '#modules/drive/messages.js'
-import { driveOperationActor } from '#sections/drive/operations.server.js'
+import { driveOperationActor, driveStorageGate } from '#sections/drive/operations.server.js'
 
 const errorResponse = (code: string, status: number): Response =>
   new Response(driveMessage(code), {
@@ -17,7 +16,7 @@ const errorResponse = (code: string, status: number): Response =>
 const serve: RequestHandler = async (event) => {
   const actor = await driveOperationActor(event)
   if (!actor) return errorResponse('drive.forbidden', 403)
-  const { storage } = await resolveAppStorage()
+  const { storage } = await driveStorageGate()
   const result = await serveDriveFile(db, actor, event.params.nodeId, event.request, {
     storage: storage ? { serve: (path, request) => storage.serve(path, request) } : null,
   })

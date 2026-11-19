@@ -160,6 +160,7 @@ export async function driveSharesFor(
         id: String(row.id),
         nodeId: String(row.node_id),
         uid: String(row.uid),
+        label: String(row.uid),
         role: row.role === 'editor' ? 'editor' : 'viewer',
         createdAt: dateOf(row.created_at),
       })
@@ -223,6 +224,7 @@ export async function listDriveShares(db: Database, nodeId: string): Promise<Dri
     id: String(row.id),
     nodeId: String(row.node_id),
     uid: String(row.uid),
+    label: String(row.uid),
     role: row.role === 'editor' ? 'editor' : 'viewer',
     createdAt: dateOf(row.created_at),
   }))

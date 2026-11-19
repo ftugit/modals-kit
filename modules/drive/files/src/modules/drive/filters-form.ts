@@ -21,7 +21,7 @@ export const DRIVE_FILTER_MESSAGES = FILTER_MESSAGES
 export interface DriveFilterValues {
   ord: string
   type: string
-  starred: boolean
+  scope: 'folder' | 'global'
   size: number
   from_date: string
   to_date: string
@@ -34,6 +34,7 @@ export type DriveFilterApply =
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const ORDERS = ['name', 'updated', 'size'] as const
 const TYPES = ['all', 'file', 'folder'] as const
+const SCOPES = ['folder', 'global'] as const
 
 const clean = (value: unknown): string => {
   if (typeof value === 'string') return value.trim()
@@ -71,6 +72,14 @@ export const driveFiltersForm = defineForm({
       ],
       defaultValue: DRIVE_EXTRA_DEFAULTS.type,
     }),
+    scope: field.select({
+      label: 'Область',
+      options: [
+        { value: 'folder', label: 'Текущая папка' },
+        { value: 'global', label: 'Весь диск' },
+      ],
+      defaultValue: DRIVE_EXTRA_DEFAULTS.scope,
+    }),
     size: field.select({
       label: 'На страницу',
       options: DRIVE_PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) })),
@@ -79,7 +88,6 @@ export const driveFiltersForm = defineForm({
     }),
     from_date: field.date({ label: 'Изменён с' }),
     to_date: field.date({ label: 'Изменён по' }),
-    starred: field.checkbox({ label: 'Только важные', defaultValue: false }),
   },
 })
 
@@ -92,7 +100,6 @@ export function driveFilterLabels(): Record<string, string> {
 }
 
 export function driveFilterText(key: string, value: string): string {
-  if (key === 'starred') return ''
   const name = key === 'from' ? 'from_date' : key === 'to' ? 'to_date' : key
   return textFromDescriptor(driveFiltersForm.byName[name], value)
 }
@@ -105,13 +112,14 @@ export function driveFilterValues(
   const text = (key: string) => (typeof extra[key] === 'string' ? String(extra[key]) : '')
   const ord = text('ord')
   const type = text('type')
+  const scope = text('scope')
   const size = (DRIVE_PAGE_SIZES as readonly number[]).includes(pageSize)
     ? pageSize
     : DRIVE_PAGE_DEFAULT
   return {
     ord: (ORDERS as readonly string[]).includes(ord) ? ord : DRIVE_EXTRA_DEFAULTS.ord,
     type: (TYPES as readonly string[]).includes(type) ? type : DRIVE_EXTRA_DEFAULTS.type,
-    starred: text('starred') === '1',
+    scope: (SCOPES as readonly string[]).includes(scope) ? (scope as 'folder' | 'global') : 'folder',
     size,
     from_date: text('from'),
     to_date: text('to'),
@@ -151,6 +159,16 @@ export function applyDriveFilters(values: Record<string, unknown>): DriveFilterA
     }
   }
 
+  const scope = clean(values.scope) || DRIVE_EXTRA_DEFAULTS.scope
+  if (!(SCOPES as readonly string[]).includes(scope)) {
+    return {
+      ok: false,
+      path: 'scope',
+      code: FILTER_ERROR.value,
+      message: DRIVE_FILTER_MESSAGES[FILTER_ERROR.value],
+    }
+  }
+
   const from = clean(values.from_date)
   const to = clean(values.to_date)
   if (!validDate(from) || !validDate(to) || (from && to && from > to)) {
@@ -168,7 +186,7 @@ export function applyDriveFilters(values: Record<string, unknown>): DriveFilterA
     patch: {
       ord: ord === DRIVE_EXTRA_DEFAULTS.ord ? undefined : ord,
       type: type === DRIVE_EXTRA_DEFAULTS.type ? undefined : type,
-      starred: values.starred === true ? '1' : undefined,
+      scope: scope === DRIVE_EXTRA_DEFAULTS.scope ? undefined : scope,
       from: from || undefined,
       to: to || undefined,
     },

@@ -31,6 +31,8 @@ export interface DriveShareView {
   readonly id: string
   readonly nodeId: string
   readonly uid: string
+  /** Имя получателя; при отсутствии права/строки совпадает с `uid`. */
+  readonly label: string
   readonly role: DriveShareRole
   readonly createdAt: Date
 }
@@ -38,7 +40,7 @@ export interface DriveShareView {
 /** Результат сервиса: данные или код доменного отказа. */
 export type DriveResult<T> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly code: string }
+  | { readonly ok: false; readonly code: string; readonly params?: Record<string, unknown> }
 
 /** Узел и его эффективные права; `role` — роль из `drive_share`, если она есть. */
 export interface DriveAccess {
@@ -60,8 +62,6 @@ export interface DrivePageData {
   readonly trashed: boolean
   /** Узел для карточки `drive.node`; в листинге `null`. */
   readonly node: DriveNodeView | null
-  /** Куда можно перенести/скопировать: корень, предки и папки текущего среза. */
-  readonly folders: readonly { id: string | null; label: string }[]
   /** Выданные доступы — только тому, кто вправе делиться. */
   readonly shares: readonly DriveShareView[]
   /** Код прошлого действия из `?notice=`: показывается над списком. */
@@ -141,6 +141,8 @@ export interface DriveFiltersPageData {
   readonly backHref: string
   /** Адрес списка без фильтров — «Сбросить» без JS. */
   readonly resetHref: string
+  /** В корзине глобальная область недоступна. */
+  readonly scopeLocked: boolean
 }
 
 /**
@@ -160,7 +162,6 @@ export interface DriveListRouteData {
   readonly quota: DriveQuotaView
   readonly breadcrumbs: readonly DriveBreadcrumb[]
   readonly trashed: boolean
-  readonly folders: readonly { id: string | null; label: string }[]
   readonly notice: string | null
   readonly pick: DrivePick | null
 }
@@ -176,29 +177,26 @@ export interface DriveOperationData {
   readonly parent: DriveNodeView | null
   readonly node: DriveNodeView | null
   readonly caps: DriveCapabilities
-  readonly folders: readonly { id: string | null; label: string }[]
   readonly shares: readonly DriveShareView[]
+  /** Варианты получателей для `subjects`; пусто без права чтения аккаунтов. */
+  readonly subjectOptions: readonly { readonly value: string; readonly label: string }[]
   readonly tokens: readonly DriveDavTokenView[]
+  /** upload: почему хранилище не готово; `null` — писать можно. */
+  readonly storageError: 'drive.storage-unavailable' | 'drive.storage-readonly' | null
+  /** WebDAV включён серверным ключом подписи. */
+  readonly davEnabled: boolean
   readonly values: {
     readonly name: string
     readonly targetId: string | null
+    readonly targetLabel: string
     readonly starred: boolean
+    readonly subjects: readonly string[]
     readonly uid: string
     readonly role: string
     readonly tokenId: string
     readonly label: string
   }
   readonly quota: DriveQuotaView
-  /** Текущий срез списка для формы фильтров (адрес `from` уже разобран). */
-  readonly filters: {
-    readonly search: string
-    readonly sort: string
-    readonly type: string
-    readonly starred: boolean
-    readonly pageSize: number
-    readonly from: string
-    readonly to: string
-  }
 }
 
 export interface DriveRouteData {

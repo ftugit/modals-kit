@@ -6,7 +6,7 @@ import {
   driveFiltersRoute,
   driveFolderRoute,
   driveNodeRoute,
-  drivePickerRoute,
+  drivePickerHref,
   driveRootRoute,
   driveTrashRoute,
 } from './routes.js'
@@ -29,7 +29,7 @@ registerModal({
 registerModal({
   name: 'drive.picker',
   component: lazy(() => import('./ui/DrivePickerModal.svelte')),
-  route: drivePickerRoute.href,
+  route: (p?: import('./routes.js').DrivePickerParams) => drivePickerHref(p ?? {}),
   size: { width: 900, height: 720 },
 })
 

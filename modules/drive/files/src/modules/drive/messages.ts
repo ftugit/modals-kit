@@ -52,6 +52,7 @@ export const DRIVE_MESSAGES: Record<string, string> = {
   'drive.dav-restore-failed': 'Не удалось выполнить операцию WebDAV',
   'drive.share-missing': 'Доступ не найден',
   'drive.share-exists': 'Доступ этому аккаунту уже выдан',
+  'drive.share-target-missing': 'Получатель {uid} не найден',
 
   // Квота.
   'drive.quota-over': 'Не хватает места: файл больше остатка квоты',
@@ -60,6 +61,7 @@ export const DRIVE_MESSAGES: Record<string, string> = {
   // Обход и конкурентные записи.
   'drive.traversal-limit': 'Диск слишком велик для этой операции — обход остановлен',
   'drive.conflict': 'Элемент изменился параллельно — повторите операцию',
+  'drive.notice-done': 'Операция выполнена',
 }
 
 /** Строка словаря по коду; неизвестный код показывается как есть. */

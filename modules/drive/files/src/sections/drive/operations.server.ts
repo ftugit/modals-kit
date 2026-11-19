@@ -2,13 +2,14 @@
  * Исполнение операций «Диска» (`plan-drive-repair.md` §5.2).
  *
  * Одна точка правды для POST: берёт актора из запроса, разрешает порты
- * (БД, хранилище, ключ подписи) и вызывает доменный сервис. Ни redirect из
- * `execute`, ни превращения отказа в успех здесь нет: успех — `step: 'done'`
- * в результате, отказ — код домена.
+ * (БД, хранилище, ключ подписи) и вызывает доменный сервис. Redirect из
+ * `execute` нет: успех возвращает чистый `next`, который читает
+ * `redirectOnSuccess` (no-JS) или клиентский hook (JS).
  */
 import type { RequestEvent } from '@sveltejs/kit'
 import { AUTH_SEAL_SECRET } from '$app/env/private'
 import { localPath } from '#core/lib/address/index.js'
+import type { Storage } from '#core/lib/storage/index.js'
 import { resolveAppStorage } from '#core/server/app-storage.server.js'
 import { db } from '#core/server/db.server.js'
 import {
@@ -18,7 +19,7 @@ import {
   purgeDriveNode,
   renameDriveNode,
   restoreDriveNode,
-  shareDriveNode,
+  shareDriveNodeMany,
   starDriveNode,
   trashDriveNode,
   unshareDriveNode,
@@ -27,7 +28,7 @@ import { uploadDriveFile } from '#modules/drive/service/upload.js'
 import { issueDriveDavToken, revokeDriveDavToken } from '#modules/drive/service/tokens.js'
 import type { DriveActor, DriveResult } from '#modules/drive/types.js'
 import type { DriveOperationName } from '#modules/drive/operations.js'
-import { driveRootRoute } from '#modules/drive/routes.js'
+import { driveAccessRoute, driveFolderRoute, driveRootRoute } from '#modules/drive/routes.js'
 import { auth } from '#modules/user/base/service/gateway.server.js'
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
@@ -46,18 +47,19 @@ export function driveReturnTo(event: RequestEvent): string {
   return localPath(event.url.searchParams.get('return_to')) ?? driveRootRoute.href()
 }
 
-/** Успех операции: `step` для stationary-квитанции и `next` для PRG без JS. */
+/** Успех операции: `next` — проверенный адрес перехода, без `step`-квитанции. */
 export interface DriveOperationDone {
   readonly ok: true
   readonly data: Record<string, unknown>
   readonly next: string
 }
 
-/** Отказ операции: код домена плюс поле формы, к которому он относится. */
+/** Отказ операции: код домена, поле формы и подстановки текста. */
 export interface DriveOperationFailure {
   readonly ok: false
   readonly code: string
   readonly field: string
+  readonly params?: Record<string, unknown>
 }
 
 export type DriveOperationOutcome = DriveOperationDone | DriveOperationFailure
@@ -67,6 +69,7 @@ export function driveOperationField(code: string): string {
   if (code.startsWith('drive.name-')) return 'name'
   if (code.startsWith('drive.dav-label')) return 'label'
   if (code.startsWith('drive.share-role')) return 'role'
+  if (code.startsWith('drive.share-target-missing')) return 'subjects'
   if (code.startsWith('drive.dav-')) return 'label'
   if (code.includes('target') || code.includes('parent') || code.includes('move-')) return 'target_id'
   if (code.includes('uid')) return 'uid'
@@ -76,8 +79,42 @@ export function driveOperationField(code: string): string {
 }
 
 function done(result: DriveResult<unknown>, next: string, data: Record<string, unknown> = {}): DriveOperationOutcome {
-  if (!result.ok) return { ok: false, code: result.code, field: driveOperationField(result.code) }
-  return { ok: true, data: { step: 'done', ...data }, next }
+  if (!result.ok) {
+    return {
+      ok: false,
+      code: result.code,
+      field: driveOperationField(result.code),
+      ...(result.params ? { params: result.params } : {}),
+    }
+  }
+  return { ok: true, data, next }
+}
+
+/** Хранилище для upload/purge: отсутствие — доменный код, не исключение. */
+export type DriveStorageGate =
+  | { storage: Storage; code: null }
+  | { storage: Storage | null; code: 'drive.storage-unavailable' | 'drive.storage-readonly' }
+
+export async function driveStorageGate(): Promise<DriveStorageGate> {
+  try {
+    const { storage, writable } = await resolveAppStorage()
+    if (!storage) return { storage: null, code: 'drive.storage-unavailable' }
+    if (!writable) return { storage, code: 'drive.storage-readonly' }
+    return { storage, code: null }
+  } catch {
+    return { storage: null, code: 'drive.storage-unavailable' }
+  }
+}
+
+function folderHref(targetId: string | null): string {
+  return targetId ? driveFolderRoute.href({ folderId: targetId }) : driveRootRoute.href()
+}
+
+function subjectsOf(values: Record<string, unknown>): string[] {
+  const raw = values.subjects
+  if (Array.isArray(raw)) return raw.filter((item): item is string => typeof item === 'string')
+  if (typeof raw === 'string') return raw.split(',')
+  return []
 }
 
 /**
@@ -91,8 +128,9 @@ export async function runDriveOperation(
 ): Promise<DriveOperationOutcome> {
   const actor = await driveOperationActor(event)
   if (!actor) return { ok: false, code: 'auth.forbidden', field: 'name' }
-  const next = localPath(text(values.return_to)) ?? driveReturnTo(event)
+  const back = localPath(text(values.return_to)) ?? driveReturnTo(event)
   const nodeId = text(values.node_id)
+  const targetId = text(values.target_id) || null
 
   switch (op) {
     case 'mkdir':
@@ -101,7 +139,7 @@ export async function runDriveOperation(
           parentId: text(values.parent_id) || null,
           name: text(values.name),
         }),
-        next,
+        back,
       )
 
     case 'upload': {
@@ -109,7 +147,8 @@ export async function runDriveOperation(
       if (!(file instanceof File) || file.size <= 0) {
         return { ok: false, code: 'drive.upload-empty', field: 'file' }
       }
-      const { storage } = await resolveAppStorage()
+      const gate = await driveStorageGate()
+      if (gate.code) return { ok: false, code: gate.code, field: 'file' }
       const result = await uploadDriveFile(
         db,
         actor,
@@ -121,73 +160,82 @@ export async function runDriveOperation(
           contentType: file.type || null,
           overwrite: true,
         },
-        { storage: storage ? { put: (input) => storage.put(input), del: (path) => storage.del(path) } : null },
+        { storage: { put: (input) => gate.storage.put(input), del: (path) => gate.storage.del(path) } },
       )
       event.setHeaders({ 'cache-control': 'private, no-store' })
-      return done(result, next, result.ok ? { name: result.value.name } : {})
+      return done(result, back)
     }
 
     case 'rename':
       return done(
         await renameDriveNode(db, actor, { nodeId, name: text(values.name) }),
-        next,
+        back,
       )
 
     case 'move':
       return done(
-        await moveDriveNode(db, actor, { nodeId, targetId: text(values.target_id) || null }),
-        next,
+        await moveDriveNode(db, actor, { nodeId, targetId }),
+        folderHref(targetId),
       )
 
     case 'copy':
       return done(
         await copyDriveNode(db, actor, {
           nodeId,
-          targetId: text(values.target_id) || null,
+          targetId,
           name: text(values.name) || undefined,
         }),
-        next,
+        folderHref(targetId),
       )
 
     case 'star':
       return done(
         await starDriveNode(db, actor, { nodeId, starred: text(values.starred) === '1' }),
-        next,
+        back,
       )
 
     case 'trash-action': {
       const result = await trashDriveNode(db, actor, { nodeId })
-      return done(result, next, result.ok ? { count: result.value.length } : {})
+      return done(result, back)
     }
 
     case 'restore':
-      return done(await restoreDriveNode(db, actor, { nodeId }), next)
+      return done(await restoreDriveNode(db, actor, { nodeId }), back)
 
     case 'purge': {
-      const { storage } = await resolveAppStorage()
+      const gate = await driveStorageGate()
       const result = await purgeDriveNode(
         db,
         actor,
         { nodeId },
-        storage ? { del: (path) => storage.del(path) } : null,
+        gate.code === null ? { del: (path) => gate.storage.del(path) } : null,
       )
-      return done(result, next, result.ok ? { deleted: result.value.deleted, freed: result.value.freed } : {})
+      return done(result, back)
     }
 
-    case 'share':
-      return done(
-        await shareDriveNode(db, actor, {
-          nodeId,
-          uid: text(values.uid),
-          role: text(values.role),
-        }),
-        next,
-      )
+    case 'share': {
+      const supplied = subjectsOf(values)
+      const uids = supplied.length > 0 ? supplied : [text(values.uid)]
+      const result = await shareDriveNodeMany(db, actor, {
+        nodeId,
+        uids,
+        role: text(values.role),
+      })
+      if (!result.ok) {
+        return {
+          ok: false,
+          code: result.code,
+          field: supplied.length > 0 ? 'subjects' : 'uid',
+          ...(result.params ? { params: result.params } : {}),
+        }
+      }
+      return done(result, driveAccessRoute.href({ node_id: nodeId }))
+    }
 
     case 'unshare':
       return done(
         await unshareDriveNode(db, actor, { nodeId, uid: text(values.uid) }),
-        next,
+        back,
       )
 
     case 'dav-issue': {
@@ -197,18 +245,13 @@ export async function runDriveOperation(
       })
       // Секрет живёт только в этом POST-ответе: ни URL, ни снапшот его не несут.
       event.setHeaders({ 'cache-control': 'private, no-store' })
-      return done(result, next, result.ok ? { token: result.value.token, label: result.value.label } : {})
+      return done(result, back, result.ok ? { token: result.value.token, label: result.value.label } : {})
     }
 
     case 'dav-revoke':
       return done(
         await revokeDriveDavToken(db, actor, text(values.token_id)),
-        next,
+        back,
       )
-
-    case 'filters':
-      // Обрабатывается отдельной регистрацией (`filters.form.server.ts`):
-      // адрес списка собирает адаптер пагинатора, а не доменный сервис.
-      return { ok: false, code: 'drive.forbidden', field: 'from' }
   }
 }

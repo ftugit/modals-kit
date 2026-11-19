@@ -125,6 +125,15 @@ test('доступ по ссылке: viewer читает поддерево, ed
     expect(view.value.slice.items[0]?.caps).toEqual({ canRead: true, canWrite: false, canShare: false })
     expect(view.value.slice.breadcrumbs.map((crumb) => crumb.name)).toEqual(['Общее'])
 
+    // `global` на чужой папке не расширяется до всего диска владельца.
+    const globalGuest = await loadDriveSlice(db, actor(guest), {
+      folderId: sharedFolder,
+      scope: 'global',
+    })
+    expect(globalGuest.ok).toBe(true)
+    if (globalGuest.ok)
+      expect(globalGuest.value.slice.items.map((entry) => entry.node.id)).toEqual([child])
+
     // Чужой «Личное» рядом не виден даже через доступ к папке владельца.
     const root = await loadDriveSlice(db, actor(guest))
     expect(root.ok).toBe(true)
@@ -212,11 +221,25 @@ test('срез: крошки, сортировка, курсор, поиск, з
     expect(second.value.slice.items.map((entry) => entry.node.name)).toEqual(['гамма.txt'])
     expect(second.value.slice.cursor).toBeNull()
 
-    const search = await loadDriveSlice(db, actor(me), { search: 'ЕТА' })
+    const search = await loadDriveSlice(db, actor(me), { search: 'ЕТА', scope: 'global' })
     expect(search.ok).toBe(true)
     if (search.ok) expect(search.value.slice.items.map((item) => item.node.name)).toEqual(['бета.txt'])
 
-    const stars = await loadDriveSlice(db, actor(me), { starred: true })
+    // `scope=folder` не выходит из текущей папки даже для поиска и типа.
+    const localSearch = await loadDriveSlice(db, actor(me), { folderId: root, search: 'ЕТА' })
+    expect(localSearch.ok).toBe(true)
+    if (localSearch.ok) expect(localSearch.value.slice.items).toHaveLength(0)
+    const globalFiles = await loadDriveSlice(db, actor(me), { kind: 'file', scope: 'global' })
+    expect(globalFiles.ok).toBe(true)
+    if (globalFiles.ok)
+      expect(globalFiles.value.slice.items.map((item) => item.node.name)).toEqual([
+        'альфа.txt',
+        'бета.txt',
+        'важное',
+        'гамма.txt',
+      ])
+
+    const stars = await loadDriveSlice(db, actor(me), { starred: true, scope: 'global' })
     expect(stars.ok).toBe(true)
     if (stars.ok) expect(stars.value.slice.items.map((item) => item.node.id)).toEqual([starred])
 
@@ -243,6 +266,9 @@ test('срез: крошки, сортировка, курсор, поиск, з
     expect(trashView.ok).toBe(true)
     if (!trashView.ok) return
     expect(trashView.value.slice.items.map((entry) => entry.node.id)).toEqual([nested])
+    const trashGlobal = await loadDriveSlice(db, actor(me), { trashed: true, scope: 'global' })
+    expect(trashGlobal.ok).toBe(true)
+    if (trashGlobal.ok) expect(trashGlobal.value.slice.items.map((entry) => entry.node.id)).toEqual([nested])
     expect(await driveUsedBytes(db, me)).toBe(7)
   })
 })

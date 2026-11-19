@@ -6,7 +6,8 @@
  * сервис; здесь только гейт входа и форма ответа. Ответ всегда
  * `private, no-store`: имена файлов — личные данные.
  */
-import type { RequestEvent } from '@sveltejs/kit'
+import { redirect, type RequestEvent } from '@sveltejs/kit'
+import { AUTH_SEAL_SECRET } from '$app/env/private'
 import { localPath } from '#core/lib/address/index.js'
 import {
   DEFAULT_DRIVE_QUOTA_BYTES,
@@ -25,6 +26,8 @@ import { readDriveShares } from '#modules/drive/service/mutate.js'
 import { driveUsedBytes, loadDrivePage } from '#modules/drive/service/query.js'
 import { listDriveDavTokens } from '#modules/drive/service/tokens.js'
 import { driveFilterValues } from '#modules/drive/filters-form.js'
+import { driveStarredRoute } from '#modules/drive/routes.js'
+import { driveStorageGate } from './operations.server.js'
 import {
   DRIVE_KEYS,
   DRIVE_PAGE_DEFAULT,
@@ -81,27 +84,44 @@ function shownNotice(event: RequestEvent): string | null {
   return driveMessage(value) === value ? null : value
 }
 
-function foldersOf(
-  folder: DriveNodeView | null,
-  items: readonly DriveEntry[],
-  crumbs: readonly { id: string; name: string }[],
-): { id: string | null; label: string }[] {
-  const out: { id: string | null; label: string }[] = []
-  if (!folder || crumbs.length === 0) out.push({ id: null, label: 'Корень диска' })
-  crumbs.slice(0, -1).forEach((crumb, index) => {
-    out.push({
-      id: crumb.id,
-      label: crumbs
-        .slice(0, index + 1)
-        .map((item) => item.name)
-        .join(' / '),
-    })
+/** Имена получателей доступа: без права/строки остаётся uid, экран не падает. */
+async function driveUserLabels(
+  event: RequestEvent,
+  uids: readonly string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (uids.length === 0) return out
+  const result = await auth(event).listSeedUsers({
+    ids: [...uids],
+    nickname: true,
+    page: 1,
+    pageSize: Math.min(100, uids.length),
   })
-  for (const entry of items) {
-    if (entry.node.kind === 'folder') out.push({ id: entry.node.id, label: `↳ ${entry.node.name}` })
-  }
+  if (!result.ok) return out
+  for (const user of result.value.items) out.set(user.id, user.nickname ?? user.id)
   return out
 }
+
+/** Опции `subjects` — только уже выбранные получатели (план §2.7), без списка всех аккаунтов. */
+async function driveSubjectOptions(
+  event: RequestEvent,
+  uids: readonly string[],
+): Promise<{ value: string; label: string }[]> {
+  if (uids.length === 0) return []
+  const labels = await driveUserLabels(event, uids)
+  return uids.map((uid) => ({ value: uid, label: labels.get(uid) ?? uid }))
+}
+
+async function withShareLabels(
+  event: RequestEvent,
+  shares: readonly DriveShareView[],
+): Promise<DriveShareView[]> {
+  if (shares.length === 0) return []
+  const labels = await driveUserLabels(event, shares.map((share) => share.uid))
+  return shares.map((share) => ({ ...share, label: labels.get(share.uid) ?? share.uid }))
+}
+
+const davEnabled = (): boolean => (AUTH_SEAL_SECRET ?? '').length >= 32
 
 function emptyList(
   identity: DriveListIdentity,
@@ -118,7 +138,6 @@ function emptyList(
     quota: EMPTY_QUOTA,
     breadcrumbs: [],
     trashed: identity.kind === 'trash',
-    folders: [],
     notice: null,
     pick: null,
     ...patch,
@@ -136,6 +155,12 @@ export async function loadDriveList(
   const gate = await actorOf(event)
   if (!gate.actor) return emptyList(identity, { enabled: gate.enabled, fact: gate.fact })
 
+  // Старые ссылки `?drive.starred=1` — отдельный список, а не скрытый фильтр.
+  if (identity.kind !== 'starred') {
+    const old = event.url.searchParams.get(DRIVE_KEYS.starred)
+    if (old === '1' || old === 'true') redirect(307, driveStarredRoute.href())
+  }
+
   const filters = parseDriveFilters(event.url.searchParams)
   const ids = parseDriveIds(event.url.searchParams.get(DRIVE_KEYS.ids))
   const range = driveDateRange(filters)
@@ -149,7 +174,8 @@ export async function loadDriveList(
     direction: filters.sort === 'name' ? 'asc' : 'desc',
     search: filters.search,
     kind: filters.type === 'all' ? overrides.kind : filters.type,
-    starred: filters.starred,
+    scope: identity.kind === 'starred' ? 'global' : filters.scope,
+    starred: identity.kind === 'starred',
     from: range.from,
     to: range.to,
     ids: ids ?? undefined,
@@ -157,9 +183,7 @@ export async function loadDriveList(
     pageSize: filters.pageSize,
   })
   if (!result.ok) {
-    const fact: AuthErrorCode =
-      result.code === 'drive.not-found' ? 'auth.forbidden' : 'auth.forbidden'
-    return emptyList(identity, { fact, notice: shownNotice(event) })
+    return emptyList(identity, { fact: 'auth.forbidden', notice: shownNotice(event) })
   }
 
   const data = result.value
@@ -185,7 +209,6 @@ export async function loadDriveList(
     quota: data.quota,
     breadcrumbs: data.breadcrumbs,
     trashed: data.trashed,
-    folders: foldersOf(data.folder, data.items, data.breadcrumbs),
     notice: shownNotice(event),
     pick: pickOf(event),
   }
@@ -223,7 +246,7 @@ export async function loadDriveNode(event: RequestEvent, nodeId: string): Promis
   const access = await resolveDriveAccess(db, gate.actor, nodeId)
   if (!access) return denied('auth.forbidden')
   const read = access.caps.canShare ? await readDriveShares(db, gate.actor, nodeId) : null
-  const shares: readonly DriveShareView[] = read?.ok ? read.value.shares : []
+  const shares: readonly DriveShareView[] = read?.ok ? await withShareLabels(event, read.value.shares) : []
   const used = await driveUsedBytes(db, access.node.ownerId)
   return {
     enabled: true,
@@ -279,7 +302,7 @@ export async function loadDriveOperation(
   event.setHeaders({ 'cache-control': 'private, no-store' })
   const returnTo = localPath(event.url.searchParams.get('return_to')) ?? '/drive'
   const gate = await actorOf(event)
-  const denied = (fact: AuthErrorCode): DriveOperationData => ({
+  const blank = (fact: AuthErrorCode): DriveOperationData => ({
     enabled: gate.enabled,
     fact,
     returnTo,
@@ -288,26 +311,29 @@ export async function loadDriveOperation(
     parent: null,
     node: null,
     caps: EMPTY_CAPS,
-    folders: [],
     shares: [],
+    subjectOptions: [],
     tokens: [],
+    storageError: null,
+    davEnabled: davEnabled(),
     values: {
       name: '',
       targetId: null,
+      targetLabel: 'Корень диска',
       starred: false,
+      subjects: [],
       uid: '',
       role: 'viewer',
       tokenId: textParam(event, 'token_id'),
       label: '',
     },
     quota: EMPTY_QUOTA,
-    filters: { search: '', sort: 'name', type: 'all', starred: false, pageSize: DRIVE_PAGE_DEFAULT, from: '', to: '' },
   })
-  if (!gate.actor) return denied(gate.fact ?? 'auth.forbidden')
+  if (!gate.actor) return blank(gate.fact ?? 'auth.forbidden')
 
   const nodeId = optionalUuid(event, 'node_id')
   const parentId = optionalUuid(event, 'parent_id')
-  const base = denied('auth.forbidden')
+  const base = blank('auth.forbidden')
 
   if (op === 'dav-issue' || op === 'dav-revoke') {
     const tokens = await listDriveDavTokens(db, gate.actor)
@@ -318,42 +344,13 @@ export async function loadDriveOperation(
     }
   }
 
-  if (op === 'filters') {
-    const from = localPath(event.url.searchParams.get('from')) ?? '/drive'
-    const fromUrl = new URL(from, 'http://local.invalid')
-    const filters = parseDriveFilters(fromUrl.searchParams)
-    const values = driveFilterValues(
-      {
-        ord: filters.sort,
-        type: filters.type,
-        starred: filters.starred ? '1' : '',
-        from: filters.from ?? '',
-        to: filters.to ?? '',
-      },
-      filters.pageSize,
-    )
-    return {
-      ...base,
-      fact: null,
-      returnTo: from,
-      caps: { canRead: true, canWrite: true, canShare: true },
-      filters: {
-        search: filters.search ?? '',
-        sort: values.ord,
-        type: values.type,
-        starred: values.starred,
-        pageSize: values.size,
-        from: values.from_date,
-        to: values.to_date,
-      },
-    }
-  }
-
   if (op === 'mkdir' || op === 'upload') {
+    const storageError = op === 'upload' ? (await driveStorageGate()).code : null
     if (!parentId) {
       const used = await driveUsedBytes(db, gate.actor.id)
       return {
         ...base,
+        storageError,
         fact: null,
         caps: { canRead: true, canWrite: true, canShare: true },
         quota: driveQuota(used, DEFAULT_DRIVE_QUOTA_BYTES),
@@ -366,11 +363,11 @@ export async function loadDriveOperation(
     const used = await driveUsedBytes(db, access.node.ownerId)
     return {
       ...base,
+      storageError,
       fact: null,
       parentId: access.node.id,
       parent: access.node,
       caps: access.caps,
-      folders: [{ id: access.node.id, label: access.node.name }],
       quota: driveQuota(used, DEFAULT_DRIVE_QUOTA_BYTES),
     }
   }
@@ -392,54 +389,38 @@ export async function loadDriveOperation(
   if (!needsWrite && !canShare) return base
 
   const shareRead = canShare ? await readDriveShares(db, gate.actor, nodeId) : null
-  const folders = op === 'move' || op === 'copy' ? await targetFolders(gate.actor, node) : []
   const used = await driveUsedBytes(db, node.ownerId)
+  const shares = shareRead?.ok ? await withShareLabels(event, shareRead.value.shares) : []
+  const targetId = optionalUuid(event, 'target_id') ?? node.parentId
+  const target = targetId ? await resolveDriveAccess(db, gate.actor, targetId) : null
+  const sharing = op === 'share'
+  const selectedSubjects = sharing
+    ? textParam(event, 'subjects')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : []
 
   return {
     ...base,
     fact: null,
     node,
     caps: access.caps,
-    folders,
-    shares: shareRead?.ok ? shareRead.value.shares : [],
+    shares,
+    subjectOptions: sharing ? await driveSubjectOptions(event, selectedSubjects) : [],
     quota: driveQuota(used, DEFAULT_DRIVE_QUOTA_BYTES),
     values: {
       name: node.name,
-      targetId: node.parentId,
+      targetId,
+      targetLabel: target?.node.name ?? 'Корень диска',
       starred: node.starred,
+      subjects: selectedSubjects,
       uid: textParam(event, 'uid'),
       role: 'viewer',
       tokenId: textParam(event, 'token_id'),
       label: '',
     },
   }
-}
-
-/** Куда можно перенести/скопировать: свои корень/предки/папки среза. */
-async function targetFolders(
-  actor: Actor,
-  node: DriveNodeView,
-): Promise<{ id: string | null; label: string }[]> {
-  const out: { id: string | null; label: string }[] = []
-  if (node.ownerId === actor.id) out.push({ id: null, label: 'Корень диска' })
-  let current = node.parentId
-  const chain: DriveNodeView[] = []
-  while (current) {
-    const parent = await resolveDriveAccess(db, actor, current)
-    if (!parent || parent.node.kind !== 'folder') break
-    chain.unshift(parent.node)
-    current = parent.node.parentId
-  }
-  chain.forEach((folder, index) => {
-    out.push({
-      id: folder.id,
-      label: chain
-        .slice(0, index + 1)
-        .map((item) => item.name)
-        .join(' / '),
-    })
-  })
-  return out
 }
 
 /** Размер порции из адреса (для страницы фильтров). */
@@ -487,8 +468,8 @@ export async function loadDriveFilters(event: RequestEvent): Promise<DriveFilter
     {
       ord: filters.sort,
       type: filters.type,
-      starred: filters.starred ? '1' : '',
-      from: filters.from ?? '',
+              scope: filters.scope,
+        from: filters.from ?? '',
       to: filters.to ?? '',
     },
     filters.pageSize,
@@ -498,7 +479,7 @@ export async function loadDriveFilters(event: RequestEvent): Promise<DriveFilter
   for (const key of [
     DRIVE_KEYS.sort,
     DRIVE_KEYS.type,
-    DRIVE_KEYS.starred,
+    DRIVE_KEYS.scope,
     DRIVE_KEYS.from,
     DRIVE_KEYS.to,
     DRIVE_KEYS.page,
@@ -517,5 +498,6 @@ export async function loadDriveFilters(event: RequestEvent): Promise<DriveFilter
     values,
     backHref: from,
     resetHref,
+    scopeLocked: fromUrl.pathname === '/drive/trash',
   }
 }

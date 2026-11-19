@@ -64,6 +64,8 @@ export interface DriveSliceArgs {
   search?: string | null
   starred?: boolean
   trashed?: boolean
+  /** Область живого диска: текущая папка или весь свой диск. */
+  scope?: 'folder' | 'global'
   /** Только файлы или только папки; пусто — все узлы. */
   kind?: 'file' | 'folder'
   /** Границы изменения, миллисекунды; `null` — без границы. */
@@ -205,6 +207,7 @@ async function authorizedEntries(
   const search = typeof args.search === 'string' ? args.search.trim().slice(0, DRIVE_NAME_MAX) : ''
   const trashed = args.trashed === true
   const starred = args.starred === true
+  const scope = args.scope === 'global' ? 'global' : 'folder'
   const folderId = args.folderId?.trim() || null
   const selected = driveSelectedIds(args.ids)
 
@@ -256,16 +259,17 @@ async function authorizedEntries(
     // Выбранные узлы читаются по id в пределах своего диска: папка-источник
     // может быть любой, ACL каждого узла проверяется ниже отдельно.
     and.push({ field: 'id', op: 'in', value: selected })
-  } else if (!search && !starred && !trashed) {
-    // Поиск и звёздочка — по всему своему диску; обычный листинг — дети папки.
-    // На чужой (доступной по ссылке) папке искать глубже её детей не даём.
-    and.push(
-      folder
-        ? { field: 'parent_id', op: 'eq', value: folder.id }
-        : { field: 'parent_id', op: 'isNull' },
-    )
-  } else if (search && folder && ownerId !== actor.id) {
-    and.push({ field: 'parent_id', op: 'eq', value: folder.id })
+  } else if (!trashed) {
+    // `global` не добавляет `parent_id` только на своём живом диске. Чужая
+    // папка по ссылке остаётся своим поддеревом, корзина — плоской.
+    const global = scope === 'global' && ownerId === actor.id
+    if (!global) {
+      and.push(
+        folder
+          ? { field: 'parent_id', op: 'eq', value: folder.id }
+          : { field: 'parent_id', op: 'isNull' },
+      )
+    }
   }
 
   let nodes: DriveNodeView[]

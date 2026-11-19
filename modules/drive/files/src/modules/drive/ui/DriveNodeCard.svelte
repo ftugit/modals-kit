@@ -20,10 +20,8 @@
     returnTo?: string
     /** GET-ссылка на байты файла. */
     downloadHref?: string | null
-    /** Строка только показывает узел: без действий (пикер). */
-    readonly?: boolean
-    /** Карточка уже внутри ссылки `ListingRow`: вложенную ссылку не рисуем. */
-    nested?: boolean
+    /** В глобальном списке папка открывает карточку, а не навигацию. */
+    folderAsCard?: boolean
   }
 
   let {
@@ -32,13 +30,12 @@
     trashed = false,
     returnTo = driveRootRoute.href(),
     downloadHref = null,
-    readonly = false,
-    nested = false,
+    folderAsCard = false,
   }: Props = $props()
 
   const node = $derived(entry.node)
   const href = $derived(
-    node.kind === 'folder'
+    node.kind === 'folder' && !folderAsCard
       ? driveFolderRoute.href({ folderId: node.id })
       : driveNodeRoute.href({ id: node.id }),
   )
@@ -71,26 +68,16 @@
       <dt class="text-muted-foreground">Создан</dt>
       <dd>{new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(node.createdAt)}</dd>
     </dl>
-    {#if !readonly}
-      <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} />
-    {/if}
+    <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} />
   </div>
 {:else}
   <div
     class="flex flex-wrap items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted/50"
     data-testid="drive-row"
   >
-    {#if nested}
-      <span class="flex min-w-0 flex-1 items-center gap-3">
-        {@render body()}
-      </span>
-    {:else}
-      <a {href} class="flex min-w-0 flex-1 items-center gap-3 no-underline">
-        {@render body()}
-      </a>
-    {/if}
-    {#if !readonly}
-      <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} compact />
-    {/if}
+    <a {href} class="flex min-w-0 flex-1 basis-56 items-center gap-3 no-underline">
+      {@render body()}
+    </a>
+    <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} compact />
   </div>
 {/if}

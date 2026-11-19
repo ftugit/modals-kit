@@ -12,7 +12,7 @@
   import { useLoader, useModals } from '#core/lib/modals/svelte/index.js'
   import { Surface } from '#core/ui/index.js'
   import Acl from '#modules/user/base/svelte/Acl.svelte'
-  import type { DriveOperationData } from '../../types.js'
+  import type { DriveFiltersPageData } from '../../types.js'
   import {
     DRIVE_NAME,
     DRIVE_PAGE_DEFAULT,
@@ -22,7 +22,7 @@
   import DriveFilters from './DriveFilters.svelte'
 
   const m = useModals()
-  const ldr = useLoader<DriveOperationData>()
+  const ldr = useLoader<DriveFiltersPageData>()
   const store = useOwnerPaginatorStore(DRIVE_NAME)
   const pagState = () => getState(store, DRIVE_NAME)
 
@@ -32,7 +32,7 @@
       pagState().pageSize || DRIVE_PAGE_DEFAULT,
     ),
   )
-  const from = $derived(ldr.data?.returnTo ?? driveRootRoute.href())
+  const from = $derived(ldr.data?.backHref ?? driveRootRoute.href())
 
   async function apply(patch: Record<string, string | undefined>, pageSize: number) {
     await setExtra(store, DRIVE_NAME, patch, { pageSize })
@@ -46,7 +46,7 @@
       {
         ord: undefined,
         type: undefined,
-        starred: undefined,
+        scope: undefined,
         from: undefined,
         to: undefined,
       },
@@ -67,6 +67,12 @@
     title="Фильтры списка"
     description="Параметры выборки и сортировки файлов и папок."
   >
-    <DriveFilters {initial} {from} onApply={apply} onReset={reset} />
+    <DriveFilters
+      {initial}
+      {from}
+      scopeLocked={ldr.data?.scopeLocked ?? false}
+      onApply={apply}
+      onReset={reset}
+    />
   </Surface>
 {/if}

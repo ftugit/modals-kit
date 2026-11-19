@@ -23,6 +23,7 @@ import {
   renameDriveNode,
   restoreDriveNode,
   shareDriveNode,
+  shareDriveNodeMany,
   starDriveNode,
   trashDriveNode,
 } from './mutate.js'
@@ -231,6 +232,46 @@ test('загрузка: квота по логическому размеру и
 
     const view = await loadDriveSlice(db, me)
     expect(view.ok && view.value.slice.quota.used).toBe(4)
+  })
+})
+
+test('доступ: набор получателей пишется одной транзакцией, плохой uid откатывает всё', async () => {
+  await withDb(async (db) => {
+    const owner = actor(await account(db))
+    const first = await account(db)
+    const second = await account(db)
+    const folder = await createDriveFolder(db, owner, { name: 'Набор' })
+    if (!folder.ok) return
+
+    const granted = await shareDriveNodeMany(db, owner, {
+      nodeId: folder.value.id,
+      uids: [first, second],
+      role: 'viewer',
+    })
+    expect(granted.ok).toBe(true)
+    if (granted.ok) expect(granted.value.map((share) => share.uid).sort()).toEqual([first, second].sort())
+    expect(
+      await db.resource(driveShare).count(DRIVE_SERVER, {
+        filter: { field: 'node_id', op: 'eq', value: folder.value.id },
+      }),
+    ).toBe(2)
+
+    const missing = await shareDriveNodeMany(db, owner, {
+      nodeId: folder.value.id,
+      uids: [first, '33333333-3333-4333-8333-333333333333'],
+      role: 'editor',
+    })
+    expect(missing).toMatchObject({
+      ok: false,
+      code: 'drive.share-target-missing',
+      params: { uid: '33333333-3333-4333-8333-333333333333' },
+    })
+    // Первый получатель не перезаписан: обе строки остались viewer.
+    const rows = (await db.resource(driveShare).select(DRIVE_SERVER, {
+      filter: { field: 'node_id', op: 'eq', value: folder.value.id },
+    })) as unknown as Record<string, unknown>[]
+    expect(rows).toHaveLength(2)
+    expect(rows.every((row) => row.role === 'viewer')).toBe(true)
   })
 })
 

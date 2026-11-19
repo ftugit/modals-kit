@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DRIVE_IDS_MAX,
   DRIVE_IDS_NONE,
+  DRIVE_NOTICE_DONE,
   DRIVE_PAGE_DEFAULT,
   driveDateRange,
   driveFilterExtras,
@@ -9,11 +10,13 @@ import {
   driveIdentityExtra,
   driveIdentityPath,
   driveListHref,
+  driveNoticeHref,
   driveSnapshot,
   parseDriveFilters,
   parseDriveIdentity,
   parseDriveIds,
 } from './source.js'
+import { drivePickerHref } from './routes.js'
 
 const params = (query: string) => new URLSearchParams(query)
 
@@ -23,7 +26,7 @@ describe('фильтры списка «Диска»', () => {
       search: null,
       sort: 'name',
       type: 'all',
-      starred: false,
+      scope: 'folder',
       pageSize: DRIVE_PAGE_DEFAULT,
       from: null,
       to: null,
@@ -33,14 +36,14 @@ describe('фильтры списка «Диска»', () => {
   it('читает активные фильтры и отбрасывает мусор', () => {
     const filters = parseDriveFilters(
       params(
-        'drive.q=%20отчёт%20&drive.ord=size&drive.type=folder&drive.starred=1&drive.size=100&drive.from=2026-01-01&drive.to=2026-02-01',
+        'drive.q=%20отчёт%20&drive.ord=size&drive.type=folder&drive.scope=global&drive.size=100&drive.from=2026-01-01&drive.to=2026-02-01',
       ),
     )
     expect(filters).toEqual({
       search: 'отчёт',
       sort: 'size',
       type: 'folder',
-      starred: true,
+      scope: 'global',
       pageSize: 100,
       from: '2026-01-01',
       to: '2026-02-01',
@@ -49,7 +52,7 @@ describe('фильтры списка «Диска»', () => {
       parseDriveFilters(
         params('drive.ord=bad&drive.type=bad&drive.size=33&drive.from=01.01.2026&drive.to=nope'),
       ),
-    ).toMatchObject({ sort: 'name', type: 'all', pageSize: 30, from: null, to: null })
+    ).toMatchObject({ sort: 'name', type: 'all', scope: 'folder', pageSize: 30, from: null, to: null })
   })
 
   it('умолчания в адрес не пишутся, страница — ключ пагинатора', () => {
@@ -57,6 +60,7 @@ describe('фильтры списка «Диска»', () => {
     expect(driveFilterExtras(filters)).toEqual({ q: 'а' })
     expect(driveListHref('/drive', filters)).toBe('/drive?drive.q=%D0%B0')
     expect(driveListHref('/drive', filters, 2)).toBe('/drive?drive=2&drive.q=%D0%B0')
+    expect(driveFilterExtras({ ...filters, scope: 'global' })).toEqual({ q: 'а', scope: 'global' })
     expect(driveFiltersDirty(filters)).toBe(true)
     expect(driveFiltersDirty(parseDriveFilters(params('')))).toBe(false)
   })
@@ -103,10 +107,39 @@ describe('срез выбранных id и личность списка', () =
   it('личность списка переживает снапшот и восстанавливает адрес', () => {
     expect(parseDriveIdentity('folder:' + one)).toEqual({ kind: 'folder', id: one })
     expect(parseDriveIdentity('trash')).toEqual({ kind: 'trash' })
+    expect(parseDriveIdentity('starred')).toEqual({ kind: 'starred' })
     expect(parseDriveIdentity('что-то')).toEqual({ kind: 'root' })
     expect(driveIdentityPath({ kind: 'folder', id: one })).toBe(`/drive/${one}`)
     expect(driveIdentityPath({ kind: 'trash' })).toBe('/drive/trash')
+    expect(driveIdentityPath({ kind: 'starred' })).toBe('/drive/starred')
+    expect(driveIdentityExtra({ kind: 'starred' })).toBe('starred')
     expect(driveIdentityExtra({ kind: 'root' })).toBe('root')
+  })
+
+  it('notice — только код словаря, остальные ключи сохраняются', () => {
+    expect(driveNoticeHref('/drive/trash?drive=2')).toBe(
+      `/drive/trash?drive=2&notice=${encodeURIComponent(DRIVE_NOTICE_DONE)}`,
+    )
+    expect(driveNoticeHref('/drive?notice=old')).toBe(
+      `/drive?notice=${encodeURIComponent(DRIVE_NOTICE_DONE)}`,
+    )
+  })
+
+  it('адрес пикера проверяет from, param, kind и folder', () => {
+    const id = '11111111-1111-4111-8111-111111111111'
+    expect(
+      drivePickerHref({
+        from: '/drive/move?node_id=' + id,
+        param: 'target_id',
+        kind: 'folder',
+        folder: id,
+      }),
+    ).toBe(
+      `/drive/pick?from=${encodeURIComponent('/drive/move?node_id=' + id)}&param=target_id&kind=folder&folder=${id}`,
+    )
+    expect(drivePickerHref({ from: 'https://evil.example/', param: 'bad param', kind: 'any' })).toBe(
+      '/drive/pick',
+    )
   })
 
   it('снапшот несёт личность и активные ключи, страница — одна', () => {

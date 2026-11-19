@@ -12,9 +12,11 @@
 
   interface Props {
     initial: DrivePickerData
+    onPick?: ((id: string | null, label: string) => void) | null
+    onCancel?: (() => void) | null
   }
 
-  let { initial }: Props = $props()
+  let { initial, onPick = null, onCancel = null }: Props = $props()
 
   const picker = $derived({
     from: initial.from,
@@ -25,5 +27,5 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
-  <DriveBrowse initial={initial.list} variant="plain" url={false} {picker} />
+  <DriveBrowse initial={initial.list} variant="plain" url={false} {picker} {onPick} {onCancel} />
 </div>

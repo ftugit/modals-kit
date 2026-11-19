@@ -10,6 +10,7 @@
   import { tryUseModals } from '#core/lib/modals/svelte/index.js'
   import { Badge, Button } from '#core/ui/index.js'
   import { driveOperationHref, type DriveOperationName, type DriveOperationParams } from '../operations.js'
+  import { driveMessage } from '../messages.js'
   import type { DriveOperationData } from '../types.js'
 
   interface Props {
@@ -37,8 +38,23 @@
     <p class="text-sm text-muted-foreground">
       Пароль показывается один раз: в базе хранится только HMAC.
     </p>
-    <Button {...link('dav-issue')} size="sm">Создать пароль</Button>
+    {#if initial.davEnabled}
+      <Button {...link('dav-issue')} size="sm">Создать пароль</Button>
+    {:else}
+      <p class="text-sm text-destructive" role="status">{driveMessage('drive.dav-disabled')}</p>
+    {/if}
   </div>
+
+  {#if initial.davEnabled}
+    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg border border-border p-3 text-sm">
+      <dt class="text-muted-foreground">Адрес</dt>
+      <dd class="font-mono text-xs">/api/dav/</dd>
+      <dt class="text-muted-foreground">Логин</dt>
+      <dd>любой</dd>
+      <dt class="text-muted-foreground">Пароль</dt>
+      <dd>пароль приложения из списка ниже</dd>
+    </dl>
+  {/if}
 
   {#if initial.tokens.length === 0}
     <p class="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
@@ -60,7 +76,7 @@
               Создан {format(token.createdAt)} · использован {format(token.lastUsedAt)}
             </span>
           </div>
-          {#if !token.revokedAt}
+          {#if !token.revokedAt && initial.davEnabled}
             <Button
               {...link('dav-revoke', { tokenId: token.id })}
               variant="ghost"

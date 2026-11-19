@@ -18,8 +18,10 @@ const data = (patch: Partial<DriveOperationData> = {}): DriveOperationData => ({
   parent: null,
   node: null,
   caps: { canRead: true, canWrite: true, canShare: true },
-  folders: [],
   shares: [],
+  subjectOptions: [],
+  storageError: null,
+  davEnabled: true,
   tokens: [
     {
       id: '11111111-1111-4111-8111-111111111111',
@@ -38,9 +40,18 @@ const data = (patch: Partial<DriveOperationData> = {}): DriveOperationData => ({
       revokedAt: new Date('2025-12-02T10:00:00Z'),
     },
   ],
-  values: { name: '', targetId: null, starred: false, uid: '', role: 'viewer', tokenId: '', label: '' },
+  values: {
+    name: '',
+    targetId: null,
+    targetLabel: 'Корень диска',
+    starred: false,
+    subjects: [],
+    uid: '',
+    role: 'viewer',
+    tokenId: '',
+    label: '',
+  },
   quota: { used: 0, limit: 0, remaining: 0 },
-  filters: { search: '', sort: 'name', type: 'all', starred: false, pageSize: 30, from: '', to: '' },
   ...patch,
 })
 
@@ -57,6 +68,8 @@ describe('DriveDavTokens SSR', () => {
     expect(body).toContain('/user/config/dav/issue')
     expect(body).not.toContain('?/revoke')
     expect(body).toContain('11111111-1111-4111-8111-111111111111')
+    expect(body).toContain('/api/dav/')
+    expect(body).toContain('любой')
   })
 
   it('GET не выдаёт и не показывает секрет', () => {
@@ -70,5 +83,13 @@ describe('DriveDavTokens SSR', () => {
     const { body } = render(DriveDavTokens, { props: { initial: data({ tokens: [] }) } })
     expect(body).toContain('Паролей ещё нет')
     expect(body).toContain('Создать пароль')
+  })
+
+  it('выключенный WebDAV показывает сообщение вместо выдачи', () => {
+    const { body } = render(DriveDavTokens, {
+      props: { initial: data({ davEnabled: false, tokens: [] }) },
+    })
+    expect(body).toContain('Пароли WebDAV выключены')
+    expect(body).not.toContain('Создать пароль')
   })
 })

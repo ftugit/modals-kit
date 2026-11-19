@@ -82,7 +82,6 @@ function page(caps: DriveCapabilities): DriveListRouteData {
     quota: { used: 2048, limit: 5 * 1024 ** 3, remaining: 5 * 1024 ** 3 - 2048 },
     breadcrumbs: [{ id: CRUMB, name: 'Работа' }],
     trashed: false,
-    folders: [{ id: CRUMB, label: 'Работа' }],
     notice: null,
     pick: null,
   }
@@ -111,5 +110,8 @@ describe('DriveBrowse SSR', () => {
     // Ссылка операции ведёт на свой fallback route, а не на `?/rename`.
     expect(body).toContain('/drive/rename')
     expect(body).not.toContain('?/rename')
+    // «Важное» и WebDAV — отдельные входы, а не скрытые фильтры.
+    expect(body).toContain('/drive/starred')
+    expect(body).toContain('/user/config/dav')
   })
 })

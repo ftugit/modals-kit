@@ -414,43 +414,94 @@ const toShareView = (row: Record<string, unknown>): DriveShareView => ({
   id: String(row.id),
   nodeId: String(row.node_id),
   uid: String(row.uid),
+  label: String(row.uid),
   role: row.role === 'editor' ? 'editor' : 'viewer',
   createdAt: row.created_at instanceof Date ? row.created_at : new Date(String(row.created_at ?? 0)),
 })
 
-/** Выдать доступ или изменить роль уже выданного. */
+/** Нормализация набора получателей: trim, пустые отброшены, дубликаты слиты. */
+export function driveShareUids(raw: readonly string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const item of raw) {
+    const value = typeof item === 'string' ? item.trim() : ''
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    out.push(value)
+  }
+  return out
+}
+
+/** Существование получателей проверяется в одной выборке до записи. */
+async function liveAccountIds(db: Database, uids: readonly string[]): Promise<Set<string>> {
+  if (uids.length === 0) return new Set()
+  const { rows } = await db.query<{ id: string }>({
+    text: `SELECT id::text AS id FROM public.user_auth
+           WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
+    values: [uids],
+  })
+  return new Set(rows.map((row) => row.id))
+}
+
+/** Выдать доступ набору получателей одной транзакцией; любой отказ откатывает всё. */
+export async function shareDriveNodeMany(
+  db: Database,
+  actor: DriveActor,
+  input: { nodeId: string; uids: readonly string[]; role: string },
+): Promise<DriveResult<DriveShareView[]>> {
+  const uids = driveShareUids(input.uids)
+  return db.transaction(async (tx) => {
+    const access = await resolveDriveAccess(tx, actor, input.nodeId)
+    if (!access) return driveFail('drive.not-found')
+    if (!access.caps.canShare) return driveFail('drive.forbidden')
+    if (uids.length === 0) return driveFail('drive.share-target-missing', { uid: '' })
+    if (uids.includes(access.node.ownerId)) return driveFail('drive.share-self')
+    const roleProblem = checkShareRole(input.role)
+    if (roleProblem) return driveFail(roleProblem)
+
+    const existing = await liveAccountIds(tx, uids)
+    for (const uid of uids) {
+      if (!existing.has(uid)) return driveFail('drive.share-target-missing', { uid })
+    }
+
+    const role = input.role === 'editor' ? 'editor' : 'viewer'
+    const views: DriveShareView[] = []
+    for (const uid of uids) {
+      const rows = (await tx.resource(driveShare).select(DRIVE_SERVER, {
+        filter: {
+          and: [
+            { field: 'node_id', op: 'eq', value: access.node.id },
+            { field: 'uid', op: 'eq', value: uid },
+          ],
+        },
+      })) as unknown as Record<string, unknown>[]
+      const row = rows[0]
+        ? await tx.resource(driveShare).update(DRIVE_SERVER, String(rows[0].id), { role })
+        : await tx.resource(driveShare).insert(DRIVE_SERVER, {
+            node_id: access.node.id,
+            uid,
+            role,
+          })
+      views.push(toShareView(row as unknown as Record<string, unknown>))
+    }
+    return driveOk(views)
+  })
+}
+
+/** Выдать доступ или изменить роль уже выданного (один получатель). */
 export async function shareDriveNode(
   db: Database,
   actor: DriveActor,
   input: { nodeId: string; uid: string; role: string },
 ): Promise<DriveResult<DriveShareView>> {
-  return db.transaction(async (tx) => {
-    const access = await resolveDriveAccess(tx, actor, input.nodeId)
-    if (!access) return driveFail('drive.not-found')
-    if (!access.caps.canShare) return driveFail('drive.forbidden')
-    if (input.uid === access.node.ownerId) return driveFail('drive.share-self')
-    const roleProblem = checkShareRole(input.role)
-    if (roleProblem) return driveFail(roleProblem)
-    const rows = (await tx.resource(driveShare).select(DRIVE_SERVER, {
-      filter: {
-        and: [
-          { field: 'node_id', op: 'eq', value: access.node.id },
-          { field: 'uid', op: 'eq', value: input.uid },
-        ],
-      },
-    })) as unknown as Record<string, unknown>[]
-    const role = input.role === 'editor' ? 'editor' : 'viewer'
-    if (rows[0]) {
-      const row = await tx.resource(driveShare).update(DRIVE_SERVER, String(rows[0].id), { role })
-      return driveOk(toShareView(row as unknown as Record<string, unknown>))
-    }
-    const row = await tx.resource(driveShare).insert(DRIVE_SERVER, {
-      node_id: access.node.id,
-      uid: input.uid,
-      role,
-    })
-    return driveOk(toShareView(row as unknown as Record<string, unknown>))
+  const result = await shareDriveNodeMany(db, actor, {
+    nodeId: input.nodeId,
+    uids: [input.uid],
+    role: input.role,
   })
+  if (!result.ok) return driveFail(result.code, result.params)
+  const first = result.value[0]
+  return first ? driveOk(first) : driveFail('drive.share-target-missing', { uid: input.uid })
 }
 
 /** Отозвать доступ аккаунта к узлу. */

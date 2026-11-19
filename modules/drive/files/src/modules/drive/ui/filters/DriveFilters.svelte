@@ -32,6 +32,8 @@
     from: string
     /** Адрес списка без фильтров — «Сбросить» без JS. */
     resetHref?: string
+    /** В чужой папке и корзине глобальная область недоступна. */
+    scopeLocked?: boolean
     onApply?: (patch: Record<string, string | undefined>, pageSize: number) => void | Promise<void>
     onReset?: () => void | Promise<void>
     /** Результат нативного POST (`page.data.formResult`) при загрузке без JS. */
@@ -42,6 +44,7 @@
     initial,
     from,
     resetHref,
+    scopeLocked = false,
     onApply,
     onReset,
     form = null,
@@ -60,10 +63,12 @@
     mirrorToField(bound, 'ord', () => init.ord)
     mirrorToField(bound, 'size', () => init.size)
     mirrorToField(bound, 'type', () => init.type)
-    mirrorToField(bound, 'starred', () => init.starred)
+    mirrorToField(bound, 'scope', () => init.scope)
     mirrorToField(bound, 'from_date', () => init.from_date)
     mirrorToField(bound, 'to_date', () => init.to_date)
   }
+
+  const scopeField = $derived({ ...bound.field('scope')!, disabled: scopeLocked })
 
   let hydrated = $state(false)
   onMount(() => {
@@ -122,6 +127,12 @@
       </div>
     </div>
     <Field of={bound.field('type')!} />
+    <Field of={scopeField} />
+    {#if scopeLocked}
+      <p class="text-xs text-muted-foreground">
+        «Весь диск» доступен только в своей живой папке.
+      </p>
+    {/if}
     <div class="flex flex-wrap gap-3">
       <div class="min-w-0 flex-1 basis-44">
         <Field of={bound.field('from_date')!} />
@@ -130,7 +141,6 @@
         <Field of={bound.field('to_date')!} />
       </div>
     </div>
-    <Field of={bound.field('starred')!} />
     {#if rangeError}
       <p class="text-sm text-destructive" role="alert">{rangeError}</p>
     {/if}

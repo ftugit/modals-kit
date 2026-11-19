@@ -68,7 +68,7 @@
           data-testid="drive-share-row"
         >
           <div class="flex min-w-0 flex-col">
-            <span class="truncate font-mono text-xs">{share.uid}</span>
+            <span class="truncate text-sm" title={share.uid}>{share.label}</span>
             <span class="text-xs text-muted-foreground">
               {roleLabel(share.role)} · с {created(share)}
             </span>

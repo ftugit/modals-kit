@@ -8,13 +8,6 @@
 import { localPath } from '#core/lib/address/index.js'
 import { driveRootRoute } from './routes.js'
 
-export interface DriveOperationField {
-  /** Имя поля в описании формы (`defineForm`). */
-  readonly name: string
-  /** Видимое поле рисуется открыто, скрытое — в закрытом блоке. */
-  readonly visible: boolean
-}
-
 export type DriveOperationName =
   | 'mkdir'
   | 'upload'
@@ -27,12 +20,12 @@ export type DriveOperationName =
   | 'purge'
   | 'share'
   | 'unshare'
-  | 'filters'
   | 'dav-issue'
   | 'dav-revoke'
 
+export type DriveOperationSuccess = 'stay' | 'target'
+
 export interface DriveOperationSpec {
-  readonly id: DriveOperationName
   readonly formId: string
   /** Адрес fallback-страницы и явный `action` формы. */
   readonly path: string
@@ -41,80 +34,69 @@ export interface DriveOperationSpec {
   readonly description: string
   readonly submit: string
   readonly destructive?: boolean
-  readonly fields: readonly DriveOperationField[]
+  readonly success: DriveOperationSuccess
+  /** Секрет нельзя вернуть через PRG: ответ рисуется на месте, без 303. */
+  readonly inlineSuccess?: true
 }
 
 const DRIVE_ROOT = driveRootRoute.href()
 
-const hidden = (name: string): DriveOperationField => ({ name, visible: false })
-const shown = (name: string): DriveOperationField => ({ name, visible: true })
-
-const RETURN_TO = hidden('return_to')
-const NODE_ID = hidden('node_id')
-
 export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = {
   mkdir: {
-    id: 'mkdir',
     formId: 'drive-mkdir',
     path: `${DRIVE_ROOT}/mkdir`,
     modal: 'drive.mkdir',
     title: 'Новая папка',
     description: 'Папка создаётся в текущей папке списка.',
     submit: 'Создать папку',
-    fields: [hidden('parent_id'), RETURN_TO, shown('name')],
+    success: 'stay',
   },
   upload: {
-    id: 'upload',
     formId: 'drive-upload',
     path: `${DRIVE_ROOT}/upload`,
     modal: 'drive.upload',
     title: 'Загрузить файл',
     description: 'Файл загружается в текущую папку списка.',
     submit: 'Загрузить',
-    fields: [hidden('parent_id'), RETURN_TO, shown('file')],
+    success: 'stay',
   },
   rename: {
-    id: 'rename',
     formId: 'drive-rename',
     path: `${DRIVE_ROOT}/rename`,
     modal: 'drive.rename',
     title: 'Переименовать',
     description: 'Новое имя должно быть свободно в этой папке.',
     submit: 'Переименовать',
-    fields: [NODE_ID, RETURN_TO, shown('name')],
+    success: 'stay',
   },
   move: {
-    id: 'move',
     formId: 'drive-move',
     path: `${DRIVE_ROOT}/move`,
     modal: 'drive.move',
     title: 'Перенести',
     description: 'Перенос доступен только в живую папку своего диска.',
     submit: 'Перенести',
-    fields: [NODE_ID, RETURN_TO, shown('target_id')],
+    success: 'target',
   },
   copy: {
-    id: 'copy',
     formId: 'drive-copy',
     path: `${DRIVE_ROOT}/copy`,
     modal: 'drive.copy',
     title: 'Скопировать',
     description: 'Копия занимает место в квоте, даже если байты общие.',
     submit: 'Скопировать',
-    fields: [NODE_ID, RETURN_TO, shown('target_id'), shown('name')],
+    success: 'target',
   },
   star: {
-    id: 'star',
     formId: 'drive-star',
     path: `${DRIVE_ROOT}/star`,
     modal: 'drive.star',
     title: 'Важное',
     description: 'Звёздочка меняет только отметку, файл остаётся на месте.',
     submit: 'Сохранить',
-    fields: [NODE_ID, RETURN_TO, hidden('starred')],
+    success: 'stay',
   },
   'trash-action': {
-    id: 'trash-action',
     formId: 'drive-trash',
     path: `${DRIVE_ROOT}/trash-action`,
     modal: 'drive.trash-action',
@@ -122,20 +104,18 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
     description: 'Узел и его поддерево можно вернуть из корзины.',
     submit: 'В корзину',
     destructive: true,
-    fields: [NODE_ID, RETURN_TO],
+    success: 'stay',
   },
   restore: {
-    id: 'restore',
     formId: 'drive-restore',
     path: `${DRIVE_ROOT}/restore`,
     modal: 'drive.restore',
     title: 'Восстановить',
     description: 'Узел вернётся в прежнюю папку, если она жива.',
     submit: 'Восстановить',
-    fields: [NODE_ID, RETURN_TO],
+    success: 'stay',
   },
   purge: {
-    id: 'purge',
     formId: 'drive-purge',
     path: `${DRIVE_ROOT}/purge`,
     modal: 'drive.purge',
@@ -143,20 +123,18 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
     description: 'Байты удаляются, когда на них больше не ссылается ни один узел.',
     submit: 'Удалить навсегда',
     destructive: true,
-    fields: [NODE_ID, RETURN_TO],
+    success: 'stay',
   },
   share: {
-    id: 'share',
     formId: 'drive-share',
     path: `${DRIVE_ROOT}/share`,
     modal: 'drive.share',
     title: 'Выдать доступ',
     description: 'Доступ наследуется всем поддеревом узла.',
     submit: 'Выдать доступ',
-    fields: [NODE_ID, RETURN_TO, shown('uid'), shown('role')],
+    success: 'stay',
   },
   unshare: {
-    id: 'unshare',
     formId: 'drive-unshare',
     path: `${DRIVE_ROOT}/unshare`,
     modal: 'drive.unshare',
@@ -164,40 +142,19 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
     description: 'Строка доступа удаляется; наследование с папки выше остаётся.',
     submit: 'Отозвать',
     destructive: true,
-    fields: [NODE_ID, hidden('uid'), RETURN_TO],
-  },
-  filters: {
-    id: 'filters',
-    formId: 'drive-filters',
-    path: `${DRIVE_ROOT}/filters`,
-    modal: 'drive.filters',
-    title: 'Фильтры списка',
-    description: 'Срез применяется к списку «Диска» целиком.',
-    submit: 'Применить',
-    fields: [
-      hidden('from'),
-      hidden('paginator'),
-      hidden('page_param'),
-      shown('ord'),
-      shown('type'),
-      shown('size'),
-      shown('from_date'),
-      shown('to_date'),
-      shown('starred'),
-    ],
+    success: 'stay',
   },
   'dav-issue': {
-    id: 'dav-issue',
     formId: 'drive-dav-issue',
     path: '/user/config/dav/issue',
     modal: 'drive.dav-issue',
     title: 'Новый пароль WebDAV',
     description: 'Пароль показывается один раз сразу после создания.',
     submit: 'Создать пароль',
-    fields: [RETURN_TO, shown('label')],
+    success: 'stay',
+    inlineSuccess: true,
   },
   'dav-revoke': {
-    id: 'dav-revoke',
     formId: 'drive-dav-revoke',
     path: '/user/config/dav/revoke',
     modal: 'drive.dav-revoke',
@@ -205,7 +162,7 @@ export const DRIVE_OPERATIONS: Record<DriveOperationName, DriveOperationSpec> = 
     description: 'Вход по этому паролю перестанет работать сразу.',
     submit: 'Отозвать пароль',
     destructive: true,
-    fields: [RETURN_TO, hidden('token_id')],
+    success: 'stay',
   },
 }
 
@@ -220,6 +177,7 @@ export function driveOperation(op: DriveOperationName): DriveOperationSpec {
 export interface DriveOperationParams {
   readonly nodeId?: string | null
   readonly parentId?: string | null
+  readonly targetId?: string | null
   readonly uid?: string | null
   readonly tokenId?: string | null
   readonly returnTo?: string | null
@@ -237,6 +195,7 @@ export function driveOperationHref(
   const query = new URLSearchParams()
   if (params.nodeId) query.set('node_id', params.nodeId)
   if (params.parentId) query.set('parent_id', params.parentId)
+  if (params.targetId) query.set('target_id', params.targetId)
   if (params.uid) query.set('uid', params.uid)
   if (params.tokenId) query.set('token_id', params.tokenId)
   const back = localPath(params.returnTo ?? null)

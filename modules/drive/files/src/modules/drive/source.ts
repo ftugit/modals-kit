@@ -24,7 +24,7 @@ import {
   type PaginatorState,
 } from '#core/lib/paginate/index.js'
 import type { DriveListItem, DriveListRouteData } from './types.js'
-import { driveFolderRoute, driveRootRoute, driveTrashRoute } from './routes.js'
+import { driveFolderRoute, driveRootRoute, driveStarredRoute, driveTrashRoute } from './routes.js'
 
 /** Имя пагинатора списка. Одно на страницу, модалку и пикер. */
 export const DRIVE_NAME = 'drive-list'
@@ -37,11 +37,13 @@ export const DRIVE_PAGE_SIZES = [30, 50, 100] as const
 export const DRIVE_IDENTITY_KEY = '_list'
 export const DRIVE_LIST_ROOT = 'root'
 export const DRIVE_LIST_TRASH = 'trash'
+export const DRIVE_LIST_STARRED = 'starred'
 
 export type DriveListIdentity =
   | { readonly kind: 'root' }
   | { readonly kind: 'folder'; readonly id: string }
   | { readonly kind: 'trash' }
+  | { readonly kind: 'starred' }
 
 /** Личность папки в строковом виде (её держит `extra`). */
 export function driveFolderIdentity(id: string): string {
@@ -52,6 +54,7 @@ export function driveFolderIdentity(id: string): string {
 export function parseDriveIdentity(raw: string | null | undefined): DriveListIdentity {
   const value = typeof raw === 'string' ? raw : ''
   if (value === DRIVE_LIST_TRASH) return { kind: 'trash' }
+  if (value === DRIVE_LIST_STARRED) return { kind: 'starred' }
   const match = /^folder:([0-9a-f-]{36})$/i.exec(value)
   return match?.[1] ? { kind: 'folder', id: match[1] } : { kind: 'root' }
 }
@@ -59,6 +62,7 @@ export function parseDriveIdentity(raw: string | null | undefined): DriveListIde
 /** Личность → адрес списка (носитель страницы и цель `preloadData`). */
 export function driveIdentityPath(identity: DriveListIdentity): string {
   if (identity.kind === 'trash') return driveTrashRoute.href()
+  if (identity.kind === 'starred') return driveStarredRoute.href()
   if (identity.kind === 'folder') return driveFolderRoute.href({ folderId: identity.id })
   return driveRootRoute.href()
 }
@@ -66,6 +70,7 @@ export function driveIdentityPath(identity: DriveListIdentity): string {
 /** Значение `extra` для личности. */
 export function driveIdentityExtra(identity: DriveListIdentity): string {
   if (identity.kind === 'trash') return DRIVE_LIST_TRASH
+  if (identity.kind === 'starred') return DRIVE_LIST_STARRED
   if (identity.kind === 'folder') return driveFolderIdentity(identity.id)
   return DRIVE_LIST_ROOT
 }
@@ -75,6 +80,7 @@ export const DRIVE_KEYS = {
   sort: 'drive.ord',
   type: 'drive.type',
   starred: 'drive.starred',
+  scope: 'drive.scope',
   size: 'drive.size',
   from: 'drive.from',
   to: 'drive.to',
@@ -83,7 +89,7 @@ export const DRIVE_KEYS = {
 } as const
 
 /** Ключи фильтров формы (без поиска, среза id и размера порции). */
-export const DRIVE_FILTER_KEYS = ['ord', 'type', 'starred', 'from', 'to'] as const
+export const DRIVE_FILTER_KEYS = ['ord', 'type', 'scope', 'from', 'to'] as const
 
 /** `none` — явно пустой набор; UUID через запятую — ограничение выдачи. */
 export const DRIVE_IDS_NONE = 'none'
@@ -103,11 +109,13 @@ function dateOf(raw: string | null | undefined): string {
   return Number.isNaN(Date.parse(`${raw}T00:00:00.000Z`)) ? '' : raw
 }
 
+export type DriveListScope = 'folder' | 'global'
+
 export interface DriveListFilters {
   readonly search: string | null
   readonly sort: DriveSort
   readonly type: 'all' | 'file' | 'folder'
-  readonly starred: boolean
+  readonly scope: DriveListScope
   readonly pageSize: number
   /** `YYYY-MM-DD`; пусто — без границы. */
   readonly from: string | null
@@ -122,11 +130,12 @@ export function parseDriveFilters(params: URLSearchParams): DriveListFilters {
   const type: 'all' | 'file' | 'folder' =
     typeRaw === 'file' || typeRaw === 'folder' ? typeRaw : 'all'
   const size = Number(params.get(DRIVE_KEYS.size))
+  const scope: DriveListScope = params.get(DRIVE_KEYS.scope) === 'global' ? 'global' : 'folder'
   return {
     search: params.get(DRIVE_KEYS.search)?.trim() || null,
     sort,
     type,
-    starred: ['1', 'true'].includes(params.get(DRIVE_KEYS.starred) ?? ''),
+    scope,
     pageSize: (DRIVE_PAGE_SIZES as readonly number[]).includes(size) ? size : DRIVE_PAGE_DEFAULT,
     from: dateOf(params.get(DRIVE_KEYS.from)) || null,
     to: dateOf(params.get(DRIVE_KEYS.to)) || null,
@@ -173,7 +182,7 @@ export function driveFilterExtras(
   if (filters.search) extra.q = filters.search
   if (filters.sort !== 'name') extra.ord = filters.sort
   if (filters.type !== 'all') extra.type = filters.type
-  if (filters.starred) extra.starred = '1'
+  if (filters.scope === 'global') extra.scope = 'global'
   if (filters.from) extra.from = filters.from
   if (filters.to) extra.to = filters.to
   if (ids !== null) extra.ids = ids.length > 0 ? ids.join(',') : DRIVE_IDS_NONE
@@ -211,7 +220,7 @@ export const DRIVE_EXTRA_SEARCH: ExtraSearchSpec = {
   q: extraField('text', (v) => typeof v === 'string' && v.length <= 255),
   ord: extraField('text', (v) => v === 'name' || v === 'updated' || v === 'size'),
   type: extraField('text', (v) => v === 'all' || v === 'file' || v === 'folder'),
-  starred: extraField('text', (v) => v === '1'),
+  scope: extraField('text', (v) => v === 'folder' || v === 'global'),
   from: extraField('text', (v) => typeof v === 'string' && v.length <= 10),
   to: extraField('text', (v) => typeof v === 'string' && v.length <= 10),
   ids: extraField(
@@ -226,11 +235,21 @@ export const DRIVE_EXTRA_DEFAULTS = {
   q: '',
   ord: 'name',
   type: 'all',
-  starred: '',
+  scope: 'folder',
   from: '',
   to: '',
   ids: '',
 } as const
+
+/** Код успешной операции для `?notice=` (PRG-ветка без JS). */
+export const DRIVE_NOTICE_DONE = 'drive.notice-done'
+
+/** Добавить/заменить `notice`, сохранив остальные query-параметры адреса. */
+export function driveNoticeHref(href: string, code = DRIVE_NOTICE_DONE): string {
+  const url = new URL(href, 'http://local.invalid')
+  url.searchParams.set('notice', code)
+  return `${url.pathname}${url.search}`
+}
 
 /** Одно описание extra-ключей списка: отсюда выводятся `filterKeys`/`reloadKeys`. */
 export const DRIVE_EXTRAS = defineListExtras({

@@ -11,6 +11,9 @@ export function driveOk<T>(value: T): DriveResult<T> {
   return { ok: true, value }
 }
 
-export function driveFail<T = never>(code: string): DriveResult<T> {
-  return { ok: false, code }
+export function driveFail<T = never>(
+  code: string,
+  params?: Record<string, unknown>,
+): DriveResult<T> {
+  return { ok: false, code, ...(params ? { params } : {}) }
 }

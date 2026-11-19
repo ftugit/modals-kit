@@ -19,15 +19,19 @@
   advisory-замком владельца) и `service/download.ts` (Range/304 через `serve`).
 - **WebDAV** `/api/dav`: `createDriveDav` → `DavBackend` поверх сервисов,
   Class 1, `Depth: 1`.
-- **UI** `/drive`, `/drive/[folderId]`, `/drive/node/[id]`, `/drive/trash`,
-  `/drive/access`, `/drive/filters`, `/drive/pick`; модалки `drive.browse`,
-  `drive.node`, `drive.trash`, `drive.access`, `drive.filters`, `drive.picker`.
+- **UI** `/drive`, `/drive/[folderId]`, `/drive/starred`, `/drive/node/[id]`,
+  `/drive/trash`, `/drive/access`, `/drive/filters`, `/drive/pick`; модалки
+  `drive.browse`, `drive.node`, `drive.trash`, `drive.access`, `drive.filters`,
+  `drive.picker`.
   Списки — один `<Listing>` на `DriveBrowse.svelte`
   (source/paginator/url-adapter), каждая строка — `DriveNodeCard` внутри
   `ListingRow`, действия — ссылки операций.
 - **Списки и фильтры**: страничный пагинатор `drive` (30/50/100, «Назад /
   Дальше» вместо курсора), ключи `drive.q`, `drive.ord`, `drive.type`,
-  `drive.starred`, `drive.size`, `drive.from`, `drive.to`, `drive.ids`.
+  `drive.scope`, `drive.size`, `drive.from`, `drive.to`, `drive.ids`.
+  `drive.scope=folder|global` явно выбирает папку или весь свой живой диск;
+  `drive.starred=1` остаётся только распознаванием старых ссылок и редиректит
+  на `/drive/starred`.
   Разбор/сборка и снапшот — `source.ts`; даты режут `updated_at` в UTC.
   Смена фильтра начинает список с первой страницы, переход по крошкам и
   папкам переносит активные фильтры (`driveFilterExtras`). Фильтры — одна
@@ -38,20 +42,28 @@
   ограничения, `drive.ids=none` — явно пустой набор, иначе сжатый список
   UUID (`parseDriveIds`). Ограничение, ACL и `kind=folder` применяются
   сервером до totals и нарезки страницы.
-- **Операции — 14 штук, все ссылками**: `mkdir`, `upload`, `rename`, `move`,
+- **Операции — 13 штук, все ссылками**: `mkdir`, `upload`, `rename`, `move`,
   `copy`, `star`, `trash-action`, `restore`, `purge`, `share`, `unshare`,
-  `filters`, `dav-issue`, `dav-revoke`. Матрица (id формы, адрес, модалка, заголовок,
-  поля) — `operations.ts`; разметка — один `DriveOperationForm.svelte` с
-  вызывающими оболочками `ui/<op>/`; регистрации мутаций —
+  `dav-issue`, `dav-revoke`. Реестр (id формы, адрес, модалка, заголовок,
+  `success`) — `operations.ts`; фабрики полей — `forms/<op>.ts`; разметка —
+  `ui/<op>/<Op>.svelte` поверх `DriveOperationShell`; общий успех —
+  `ui/operation/use-drive-operation.svelte.ts`; регистрации мутаций —
   `sections/drive/operations.form.server.ts`, dispatch — `operations.server.ts`.
   У операции свой route-носитель (`/drive/mkdir`, `/drive/node/[id]/rename`,
   `/user/config/dav/issue`, …), поэтому без JS работает обычный POST
-  (PRG с `?notice=<код>`), а с JS — форма без перезагрузки и stationary
-  receipt. В строке списка mutation-форм нет.
+  (PRG с `?notice=drive.notice-done`, кроме inline `dav-issue`), а с JS —
+  закрытие модалки или переход на `next` без квитанции и счётчиков. Фильтры —
+  отдельная component-form, в реестр операций не входят.
 - **Выбор папки** для переноса/копии: пикер `?from=&param=&kind=&folder=`
-  через тот же `DriveBrowse` (файлы в `kind=folder` не приходят с сервера), 
-  пустой `target_id` — корень. Файл в `target_id` отклоняет сервис
-  (`drive.not-folder`).
+  через тот же `DriveBrowse`; в модалке выбор уходит через
+  `sharedData['picker:drive.target']`, на странице — в `target_id`. Пустой
+  `target_id` — корень. Файл в `target_id` отклоняет сервис (`drive.not-folder`).
+- **Доступ**: share принимает набор `subjects` (multiselect + `user.picker`,
+  ручной UUID как fallback), batch атомарен; `/drive/access` показывает имена
+  получателей из `DriveShareView.label`.
+- **WebDAV**: `/user/config/dav` показывает endpoint `/api/dav/`, логин
+  «любой» и пароли приложений; при выключенном серверном ключе —
+  `drive.dav-disabled` вместо кнопки.
 - **Скачивание** — `/api/drive/[nodeId]/download`: GET, `serveDriveFile` сам
   ставит `content-disposition`, `nosniff` и CSP.
 
