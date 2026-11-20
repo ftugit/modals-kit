@@ -1736,6 +1736,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - Убраны `?notice=`/`shownNotice`, `DRIVE_NOTICE_DONE`/`driveNoticeHref`, поле `notice` и плашка `drive-notice`; PRG без квитанции, success-toast уйдёт с операциями (§8a.1).
 - `DriveBackLink` определяет модалку через `useInstance()`: page-fallback переходит, модалка закрывается.
 - Проверки: payload установлен в core, `vitest src/modules/drive src/sections/drive` — 64 теста; `check` — baseline 13.
+- Браузер: `/drive` без `drive-notice`; `/drive/mkdir` — back-link ведёт на `/drive`; модалка `?modal=drive.mkdir` — back-link закрывает модалку без перехода; успешное создание папки — URL без `notice=`.
 
 **D2. Пикер «выбранные» (историческое имя — «этап 0»).** — `[-]` в работе.
 
