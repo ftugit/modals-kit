@@ -1748,7 +1748,13 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `[x]` Подключение codec (`e52b3810`): `loadDriveList` и `fetchDrivePage` работают через `decodeDriveList`/`driveListStateFromExtra`, ручные сборки убраны.
 - `[x]` Контракт `DrivePickerData` (`a30583e0`): `mode`/`step`/`picked`, `overrides.ids` через `resolveDriveList`, `single` нормализует `step` в `pick`.
 - `[x]` Хелперы пикера (`9aec6ba9`): `canApplyChosen`, `chosenSlice`, `applyHref` + тесты.
-- `[ ]` Остальное: UI пикера (`Steps`, `Checkbox`/`ListingRow`, счётчик), `chosen`-срез и `canApplyChosen`, `filter_owner`, пустые состояния, no-JS-ссылки (§7a).
+- `[x]` Адрес пикера (`cb88ac7c`): `picker-url.ts` — `parseDriveIdsUrl` (100/4000, без усечения), `mode`/`upicks`/`filter_owner`, `normalizePickerState`, единый `pickerHref`, `pickerFrom`.
+- `[x]` Шаги и набор (`cb88ac7c`): `loadDrivePicker` читает `mode`/`step`/`picked`, `chosen` идёт через `overrides.ids`, `totalItems`/`hiddenCount`; `DrivePicker` — шаги, отметки, `Apply` по `canApplyChosen`, скрытые и пустой `chosen`; `DriveBrowse` — отметка строки и single-футер только в single.
+- `[x]` Транспорт результата (`cb88ac7c`): `DriveTargetPicked` — union, монотонный `seq`, `isSingleDriveTarget`; move/copy принимают только `mode:'single'` без `ids`; ссылки пикера пишут `mode`.
+- `[x]` Фильтры шага (`74aba419`): обычный `pick → chosen` сбрасывает pick-фильтры, маркер `filter_owner=chosen` сохраняет их; «Сбросить фильтры» в `chosen`.
+- `[x]` Защита от устаревших ответов (`3decda70`): `driveListKey`/`driveListKeyFromSnapshot`, `signal` до/после `preloadData`, `AbortError`, `drive.list-stale`.
+- `[ ]` Остальное D2: `driveEmptyOf`/`DriveEmptySpec` (§7a.10) и подключение к списку; multiple в модалке (сейчас только страница `/drive/pick`); гидрация отметки в `Checkbox` (сейчас GET-ссылка с `aria-pressed`); полное скрытие `chosen` (`Empty` `chosen-hidden`) отдельным `Empty`-состоянием.
+- `[~]` Браузерная проверка D2 отправлена beam-агенту.
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
      - `drive.ids` — **производный срез списка** для шага `chosen`: `null` — без ограничения, `[]`/`none` — явно пустой набор, иначе ID в порядке `picked`; передаётся через `overrides.ids` и попадает в `snapshot.extra`. Не является результатом для вызывающего экрана.
