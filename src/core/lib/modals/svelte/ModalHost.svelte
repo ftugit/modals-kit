@@ -27,6 +27,7 @@
   } from '../core'
   import { createLoader } from '../loader'
   import { ensureModalComponent } from './component.svelte'
+  import { isStaleChunkError, reloadOnceForStale } from '#core/hooks/stale-build.js'
   import type { Modals } from '../create'
   import type { ModalRegistry } from '../registry'
   import { entryLabel } from '../types'
@@ -127,7 +128,14 @@
       // Готовность записи — данные и вид: ленивый чанк ждётся тем же
       // ожиданием, что данные (иначе между скелетоном и содержимым —
       // пустой кадр на время импорта).
-      ensureView: (definition) => ensureModalComponent(definition),
+      ensureView: (definition) => {
+        const pending = ensureModalComponent(definition)
+        // 404 чанка после деплоя повтором не лечится — перезагружаем один раз.
+        return pending?.catch((error) => {
+          if (isStaleChunkError(error)) reloadOnceForStale()
+          throw error
+        })
+      },
     })
 
   // Начальные значения — для SSR и первого кадра. В браузере загрузчик

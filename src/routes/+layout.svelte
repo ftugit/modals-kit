@@ -7,6 +7,7 @@
   //   cycle/, spike/     — вне каркаса, со своими модальными системами.
   import favicon from '#core/lib/assets/favicon.svg'
   import { appErrors } from '#core/hooks/app-errors.svelte.js'
+  import { useBuildWatch } from '#core/hooks/build-watch.svelte.js'
   import Error500 from '#core/ui/errors/Error500.svelte'
   import { LoaderBar } from '#core/ui/loader/index.js'
   import { NoticeHost } from '#core/ui/notice/index.js'
@@ -15,6 +16,9 @@
   import '../app.css'
 
   let { children } = $props()
+
+  // Смена билда: один guarded reload на приложение (см. build-watch).
+  useBuildWatch()
 
   // Базовые SEO-метаданные сайта; конкретные страницы накладывают свой слой через `useHeadSeo`.
   setPageContext({

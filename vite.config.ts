@@ -37,7 +37,9 @@ export default defineConfig(async ({ command, isPreview }) => {
   const getEnv = (key: string) => process.env[key];
   // Выбор площадки — только tooling/platform.mjs. Здесь адаптер нужен SvelteKit до сборки,
   // потому что у него есть собственные Vite-плагины.
-  const platform = detectPlatform(process.env, command === 'build' || isPreview ? 'build' : 'dev');
+  const platform = detectPlatform(process.env, command === 'build' || isPreview ? 'build' : 'dev')
+  // Детерминированная версия билда: коммит CI, иначе timestamp самого SvelteKit.
+  const buildVersion = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.KIT_VERSION;
   if (command === 'build' && !process.env.KIT_PLATFORM_LOGGED) {
     console.log(`[platform] ${platform.id} (${platform.source}) → ${platform.module}`);
   }
@@ -47,6 +49,10 @@ export default defineConfig(async ({ command, isPreview }) => {
   // `#modules/*`, `#sections/*`): `kit.alias` устарел в SvelteKit 3.
   const kit = {
     adapter: await createAdapter(platform.id),
+    version: {
+      ...(buildVersion ? { name: buildVersion } : {}),
+      pollInterval: 60_000,
+    },
     // Node и Cloudflare: origin задаётся в рантайме. Vercel сохраняет прежний контракт сборки.
     // `relative: false` — адреса реестра абсолютны в рантайме. Без этого `resolve()`
     // внутри запроса отдавал относительный путь, `safeRedirect` его отбрасывал, и
