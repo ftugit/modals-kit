@@ -201,7 +201,11 @@
       >
         {#snippet trigger(t)}
           <Button
-            {...t}
+            ref={t.ref}
+            onclick={t.toggle}
+            aria-expanded={t.expanded ? 'true' : 'false'}
+            aria-controls={t.controls}
+            aria-haspopup={t.popup}
             variant="ghost"
             size="icon-sm"
             aria-label={moreBadge && split.hidden.length > 0 ? `${moreLabel}: скрыто ${split.hidden.length}` : moreLabel}
