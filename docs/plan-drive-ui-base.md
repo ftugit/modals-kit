@@ -1711,7 +1711,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 
 **A3. Базовые примитивы.** — `[-]` в работе.
 - `[x]` `Empty` (`f7013816`): §3a, экспорт из `core/ui`, README, тесты.
-- `[ ]` `OverflowMenu` + `MoreHorizontalIcon` (§5).
+- `[x]` `OverflowMenu` + `MoreHorizontalIcon` (`ec8f9518`): `count`-режим через `Floating`, клавиатура, fallback `scroll|wrap|none` без хоста и без JS.
 - `[ ]` `Attachment`: `kind:'folder'`, `count`, `badges` (§4).
 
 **A4. `Surface.rail` и модульные настройки.**
