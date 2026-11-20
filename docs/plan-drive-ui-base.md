@@ -1699,10 +1699,11 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 
 ### A. Arch (`refs/core`) — по шагам
 
-**A0. Контракты и гигиена (без новых компонентов).**
-- UnoCSS-проверка: все классы статические, `presetWind4`, семантические токены, `gap-*`; `[scrollbar-width:none]` есть в исходниках, а не в комментариях.
-- Уведомления в arch: частичный успех sessions — `Result.data` вместо `?notice=`, удалить мёртвые `rename-failed` и `?done=1` (§8a).
-- Тесты arch, завязанные на эти адреса, переписать. Drive-часть уведомлений — в D0 (другой репозиторий/ветка).
+**A0. Контракты и гигиена (без новых компонентов).** — `[x]` done.
+- **A0.1** (`8070bef5`): удалены мёртвые `?notice=rename-failed` и schema `?done=1`/`justDone`, обновлён `core/ui` README.
+- **A0.2** (`74774ed9`): `runBulkExit` отдаёт `current/requested/revoked`; частичный набор — `Result.data` + `Alert` из `formResult`, `?notice=` в списке не читается; README `user/base` обновлён.
+- UnoCSS-проверка: `space-*`/`dark:` только в запретах, палитровых классов нет, `[scrollbar-width:none]` есть в `ActiveFilters`/`HeaderRowView`; `SurfaceBar` скроллбар не скрывает (входит в A9).
+- Тесты: `KIT_ADAPTER=node vitest run src/modules/user/sessions src/sections/user` — 73 passed; `check` — 64 ошибки, все вне изменённых файлов (baseline не вырос).
 
 **A1. Toast-хост.** Слой выше модалок, дедупликация `text + tone`, максимум 3 плашки, один `aria-live`, очистка таймеров (§8a.3).
 
