@@ -6,7 +6,7 @@
 
 ## 1. Единственный источник истины для стилей (`*Variants` и `field.ts`)
 
-1. **Одиночный примитив (`Button`, `Badge`, `Alert`, `Card`, `Checkbox`, `Switch`, `Label`, `Spinner`, `Skeleton`, `Separator`, `Stat`, `TimeAgo`):**
+1. **Одиночный примитив (`Button`, `Badge`, `Alert`, `Empty`, `Card`, `Checkbox`, `Switch`, `Label`, `Spinner`, `Skeleton`, `Separator`, `Stat`, `TimeAgo`):**
    - `export const <name>Variants = variants(...)` объявляется в `<script module lang="ts">` самого `.svelte`-файла и реэкспортируется из `src/core/ui/index.ts`.
 2. **Многофайловый примитив (`attachment/`):**
    - при наличии собственной модели (`model.ts`), подкомпонентов и тестов CVA-варианты выносятся в `variants.ts` внутри папки примитива и реэкспортируются через локальный `index.ts` → `ui/index.ts`.
@@ -86,6 +86,7 @@
   - `SurfaceBar` (`SurfaceBar.svelte`) — сам ряд из трёх зон `leading` / `center` / `end`: `flex w-full flex-wrap items-center gap-x-2 gap-y-1.5`, каждая зона `overflow-x-auto` со скрытым скроллбаром (`[scrollbar-width:none] [&::-webkit-scrollbar]:hidden`) и `min-w-0`, `center` забирает свободное место (`flex-1`), `end` прижимается (`ml-auto`). Пустая зона не рендерится. Зоны помечены `data-surface-zone`.
   - `surfaceVariants` и `SurfaceVariant` реэкспортируются из `ui/index.ts` — оформление поверхности берётся оттуда, а не копируется в потребителя.
 - **Экраны отказа, пустоты и ошибок (`Empty`):** полноэкранные/модальные заглушки (`Acl`, `ModalError`, пустые списки) оформляются нейтральным паттерном `Empty` (`size-10 rounded-lg bg-muted` со значком + заголовок + `text-muted-foreground` + кнопка действия), а не сплошной цветной рамкой вокруг всего контейнера.
+- **Пустое состояние (`Empty`):** презентация пустоты (иконка, заголовок, описание, действия, `variant`, `size`, `align`, `role`). Причину пустоты знает вызывающий и берёт её из таксономии (`driveEmptyOf`); `Empty` её не вычисляет и не заменяет `EmptyState` пагинатора, который остаётся детектором готовности списка.
 - **Инлайновые уведомления (`Alert`):** `Alert` используется только для коротких вложенных уведомлений внутри карточки/формы; основной текст остаётся `text-foreground`, чтобы сохранять контраст WCAG AA (`>= 4.5:1`) на полупрозрачных подложках и в `lemonade`, и в `night`.
 - **Гигиена раскладки и токенов:** отступы между соседями задаются только через `flex`/`grid` + `gap-*` (без `space-x-*`/`space-y-*`), переполнение строк в ячейках списков — через `truncate` (с полным значением в `title`), цвета — строго семантическими токенами темы без ручных `dark:*` и палитровых классов.
 
