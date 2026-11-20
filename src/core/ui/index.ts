@@ -16,6 +16,13 @@ export { default as CardContent } from './card/CardContent.svelte'
 export { default as CardFooter } from './card/CardFooter.svelte'
 export { default as EntryCard, entryCardVariants, type EntryCardVariant } from './card/EntryCard.svelte'
 export {
+  DescriptionList,
+  DescriptionListItem,
+  type DescriptionListLayout,
+  type DescriptionListVariant,
+} from './description-list/index.js'
+export { default as FormMessage, type FormMessageVariant } from './form/FormMessage.svelte'
+export {
   ItemGroup,
   Item,
   ItemMedia,
