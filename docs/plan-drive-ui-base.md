@@ -1789,12 +1789,13 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 **D3. Действия, гигиена, мобильный аудит.** — `[-]` в работе.
 - `[x]` `DriveNodeAction[]` и `OverflowMenu` (`96476b2d`, `e2c0ad2e`): дескриптор действий, 2 видимых на узком экране и 5 на широком, `mode="count"`; пункт меню несёт `attrs` модальной ссылки.
 - `[x]` Гигиена и мобильный аудит §9a (`558bf3a0`, `a31b85ce`): `min-w-0` на корнях, крошки/имена с `truncate`+`title`, `break-words`, сетки `grid-cols-1 sm:grid-cols-*`, футеры с переносом, `gap` вместо `mt-3`.
-- `[ ]` Тулбар списка `DriveBrowse.controls` (5 кнопок + quota) ещё не переведён на `OverflowMenu`: на мобильном это горизонтальный скролл `SurfaceBar`.
+- `[x]` Тулбар списка на `OverflowMenu` (`d6b3ee6e`): mkdir/upload primary, dav/trash — пункты; 2 видимых на узком экране, 4 на широком; «Важное» — кнопка с `aria-current`, квота — `Badge`.
 - Гигиена: `min-w-0`/`truncate`/`title`, `gap` вместо `mt-*`/`my-4`.
 - Мобильный аудит drive (§9a): `DriveFilters`, `DriveNodeCard`, крошки, detail-`dl`, футер фильтров.
 
-**D4. Карточки, модалки и проверки.**
-- `EntryCard`/`Item`/`Surface` в `DriveEntry`, `DriveFiltersPage`, detail-`DriveNodeCard`, `DriveDavTokensStep`; row → `Attachment` + `Item`. Только после D2.
+**D4. Карточки, модалки и проверки.** — `[-]` в работе.
+- `[x]` `DriveEntry` на `EntryCard`, модалки drive — `p-4 sm:p-6` (`5a399c8e`).
+- `[ ]` `Item`/`Surface` в detail-`DriveNodeCard`, `DriveDavTokensStep`, `DriveFiltersPage`; row → `Attachment` + `Item`; SSR/no-JS, `data-testid`, клавиатура, адаптивность, `test:classes`.
 - Модалки drive: `min-h-0 flex-1` + `p-4 sm:p-6`, ветка `card`/`plain`.
 - Проверки drive: SSR/no-JS, `data-testid`, клавиатура, адаптивность, `test:classes`.
 
