@@ -6,7 +6,7 @@
   import { invalidateAll } from '$app/navigation'
   import { useLoader, useModal, useModals } from '#core/lib/modals/svelte/index.js'
   import Acl from './Acl.svelte'
-  import UserConfig from './user-config/UserConfig.svelte'
+  import SettingsHost from './user-config/SettingsHost.svelte'
   import type { AuthErrorCode } from '../model/error.js'
   import type { UserConfigRouteData } from '../model/types.js'
   import { Surface } from '#core/ui/index.js'
@@ -29,7 +29,7 @@
   {:else if effectiveAcl}
     <Acl status={effectiveAcl} enabled={ldr.data?.enabled} backHref="/" variant="plain" />
   {:else if ldr.data}
-    <UserConfig
+    <SettingsHost
       class="min-h-0 flex-1"
       {uid}
       initial={ldr.data}

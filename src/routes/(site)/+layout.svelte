@@ -18,6 +18,8 @@
   // Нет субмодуля — нет записи в реестре, и база не тянет его компоненты.
   import.meta.glob('/src/modules/**/auth.ext.ts', { eager: true })
   import.meta.glob('/src/modules/**/config.ext.ts', { eager: true })
+  // Пункты настроек: модуль регистрирует имя и компонент, хост рисует rail и активную секцию.
+  import.meta.glob('/src/modules/**/settings.ext.ts', { eager: true })
   import ModalSystem from '#core/app/ModalSystem.svelte'
   import { NAV_ITEMS } from '../../composition/nav.js'
   import { AppShell, useHeaderSlot, useSidebarSlot } from '#core/ui/shell/index.js'
