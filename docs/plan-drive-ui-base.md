@@ -1704,9 +1704,9 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - Тост: `z-300`, дедупликация `text + tone` с продлением таймера, лимит 3, один `aria-live`, снятие таймеров (§8a.3).
 - Тесты и README, затронутые этими изменениями.
 
-**A2. Модалки и версии.**
-- Открытие только после данных **и** чанка; ошибка остаётся на кнопке; без hover-prefetch; классификация `chunk-stale`/`network`/`data` (§8b.2–8b.3).
-- `kit.version.name`, `pollInterval`, `updated.current`; принудительный `location.reload()` с guard по версии для `chunk-stale` (§8b.4).
+**A2. Модалки и версии.** — `[-]` в работе.
+- `[x]` (`ac67096a`): `kit.version.name`/`pollInterval`, `updated.current` → guarded reload, классификация `chunk-stale` и перезагрузка из `ModalHost`.
+- `[ ]` Осталось: модалка не должна открываться до `ready` (данные и чанк); ошибка — на кнопке, повтор по клику; проверить, нужен ли отказ от hover-prefetch (сейчас он только греет данные и модалку не открывает).
 
 **A3. Базовые примитивы.**
 - `Empty` с расширенным API (§3a).
