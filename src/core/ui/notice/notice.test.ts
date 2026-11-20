@@ -26,4 +26,30 @@ describe('notice queue', () => {
     dismissNotice(manual!)
     expect(noticeQueue.items.some((item) => item.id === manual)).toBe(false)
   })
+
+  it('дедупликация различает тон', () => {
+    const a = notify('Ошибка', { tone: 'error' })
+    const b = notify('Ошибка', { tone: 'success' })
+    expect(a).not.toBe(b)
+    expect(noticeQueue.items.filter((item) => item.text === 'Ошибка')).toHaveLength(2)
+  })
+
+  it('повтор продлевает таймер, а не игнорируется', () => {
+    vi.useFakeTimers()
+    const id = notify('Долго', { timeout: 1000 })
+    vi.advanceTimersByTime(800)
+    notify('Долго', { timeout: 1000 })
+    vi.advanceTimersByTime(800)
+    expect(noticeQueue.items.some((item) => item.id === id)).toBe(true)
+    vi.advanceTimersByTime(300)
+    expect(noticeQueue.items.some((item) => item.id === id)).toBe(false)
+  })
+
+  it('держит не больше трёх плашек — старая вытесняется', () => {
+    notify('a')
+    notify('b')
+    notify('c')
+    notify('d')
+    expect(noticeQueue.items.map((item) => item.text)).toEqual(['b', 'c', 'd'])
+  })
 })
