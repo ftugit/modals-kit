@@ -38,9 +38,10 @@ import {
   driveSnapshot,
   parseDriveFilters,
   parseDriveIdentity,
+  parseDriveIds,
   type DriveListIdentity,
 } from '#modules/drive/source.js'
-import { decodeDriveList, encodeDriveListExtra } from '#modules/drive/list-codec.js'
+import { decodeDriveList, encodeDriveListExtra, resolveDriveList } from '#modules/drive/list-codec.js'
 import type {
   DriveFiltersPageData,
   DriveListItem,
@@ -140,7 +141,7 @@ export async function loadDriveList(
   event: RequestEvent,
   identity: DriveListIdentity,
   /** Ограничение пикера: применяется сервером до totals и нарезки страницы. */
-  overrides: { kind?: 'file' | 'folder' } = {},
+  overrides: { kind?: 'file' | 'folder'; ids?: readonly string[] } = {},
 ): Promise<DriveListRouteData> {
   event.setHeaders({ 'cache-control': 'private, no-store' })
   const gate = await actorOf(event)
@@ -153,10 +154,11 @@ export async function loadDriveList(
   }
 
   const decoded = decodeDriveList(event.url.searchParams, identity)
-  const filters = { ...decoded.state.filters, pageSize: decoded.state.pageSize }
-  const ids = decoded.state.ids
+  const state = resolveDriveList(decoded.state, overrides.ids !== undefined ? { ids: overrides.ids } : {}).state
+  const filters = { ...state.filters, pageSize: state.pageSize }
+  const ids = state.ids
   const range = driveDateRange(filters)
-  const page = decoded.state.page
+  const page = state.page
 
   const result = await loadDrivePage(db, gate.actor, {
     folderId: identity.kind === 'folder' ? identity.id : null,
@@ -179,7 +181,7 @@ export async function loadDriveList(
 
   const data = result.value
   const items = data.items.map(toItem)
-  const extra = encodeDriveListExtra(decoded.state)
+  const extra = encodeDriveListExtra(state)
   return {
     ...emptyList(identity),
     snapshot: driveSnapshot(
@@ -260,7 +262,13 @@ export async function loadDrivePicker(event: RequestEvent): Promise<DrivePickerD
   const identity: DriveListIdentity =
     folderId && UUID.test(folderId) ? { kind: 'folder', id: folderId } : { kind: 'root' }
   const kind = event.url.searchParams.get('kind') === 'folder' ? 'folder' : 'any'
-  const list = await loadDriveList(event, identity, kind === 'folder' ? { kind } : {})
+  const mode = event.url.searchParams.get('mode') === 'multiple' ? 'multiple' : 'single'
+  const step = mode === 'multiple' && event.url.searchParams.get('step') === 'chosen' ? 'chosen' : 'pick'
+  const picked = step === 'chosen' ? (parseDriveIds(event.url.searchParams.get('picked')) ?? []) : []
+  const list = await loadDriveList(event, identity, {
+    ...(kind === 'folder' ? { kind } : {}),
+    ...(step === 'chosen' ? { ids: picked } : {}),
+  })
   const from = localPath(event.url.searchParams.get('from')) ?? '/drive'
   const rawParam = event.url.searchParams.get('param') ?? ''
   return {
@@ -269,6 +277,9 @@ export async function loadDrivePicker(event: RequestEvent): Promise<DrivePickerD
     param: PICKER_PARAM.test(rawParam) ? rawParam : 'id',
     kind,
     folderId,
+    mode,
+    step,
+    picked,
   }
 }
 

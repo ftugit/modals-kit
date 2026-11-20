@@ -89,6 +89,9 @@ const picker = (kind: 'any' | 'folder', items: DriveListItem[]): DrivePickerData
   param: kind === 'folder' ? 'target_id' : 'id',
   kind,
   folderId: null,
+  mode: 'single',
+  step: 'pick',
+  picked: [],
 })
 
 describe('DrivePicker SSR', () => {
