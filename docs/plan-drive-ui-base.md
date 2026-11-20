@@ -1798,7 +1798,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 
 **D4. Карточки, модалки и проверки.** — `[-]` в работе.
 - `[x]` `DriveEntry` на `EntryCard`, модалки drive — `p-4 sm:p-6` (`5a399c8e`).
-- `[ ]` `Item`/`Surface` в detail-`DriveNodeCard`, `DriveDavTokensStep`, `DriveFiltersPage`; row → `Attachment` + `Item`; SSR/no-JS, `data-testid`, клавиатура, адаптивность, `test:classes`.
+- `[x]` detail-`DriveNodeCard` на `Item`, `DriveDavTokensStep` и `DriveFiltersPage` на `EntryCard` (`d1878ad7`).
+- `[ ]` Строка списка → `Attachment` + `Item`; проверки drive (`test:classes`, SSR/no-JS, клавиатура, адаптивность).
 - Модалки drive: `min-h-0 flex-1` + `p-4 sm:p-6`, ветка `card`/`plain`.
 - Проверки drive: SSR/no-JS, `data-testid`, клавиатура, адаптивность, `test:classes`.
 
