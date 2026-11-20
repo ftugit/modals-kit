@@ -245,7 +245,7 @@
 
   const subtitleParts = $derived.by(() => {
     const parts: string[] = []
-    if (normalized.kind === 'folder' && normalized.count !== undefined) {
+    if (normalized.kind === 'folder' && normalized.count !== undefined && !normalized.sizeText) {
       parts.push(`${normalized.count} объектов`)
     }
     if (showSize) {
@@ -351,7 +351,7 @@
     {#if normalized.badges.length > 0}
       <span class="flex min-w-0 flex-wrap items-center gap-1" data-slot="attachment-badges">
         {#each normalized.badges as badge (badge)}
-          <span class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{badge}</span>
+          <span class="rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{badge}</span>
         {/each}
       </span>
     {/if}

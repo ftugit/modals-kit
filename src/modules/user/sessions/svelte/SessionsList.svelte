@@ -16,7 +16,7 @@
   import { visibleAddress } from '#core/lib/address/sveltekit.js'
   import type { SidebarPlace } from '#core/ui/shell/index.js'
   import { Listing, ListingRow } from '#core/ui/listing/index.js'
-  import { Button, Checkbox } from '#core/ui/index.js'
+  import { Alert, Button, Checkbox } from '#core/ui/index.js'
   import { acquireScopedStore, getClientStore, getState, releaseScopedStore, setExtra } from '#core/lib/paginate/index.js'
   import { useModalLink, type LinkAttrs } from '#core/hooks/links/index.js'
   import { useSlotPaginatorScope } from '#core/hooks/modal-paginator.svelte.js'
@@ -278,9 +278,9 @@
   {#if activeNotice?.kind === 'bulk-exit-partial'}
     <!-- Набор закрыт не целиком: часть строк погасили между счётом и отзывом.
          Показываем расхождение, а не молчим (P1-1). -->
-    <p class="text-sm text-muted-foreground" role="status" data-testid="sessions-list-partial">
+    <Alert variant="info" data-testid="sessions-list-partial">
       Запрошено сессий: {activeNotice.requested}, завершено: {activeNotice.revoked} — часть уже была закрыта.
-    </p>
+    </Alert>
   {/if}
 
 

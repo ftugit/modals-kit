@@ -77,13 +77,10 @@
   )
 
   const split = $derived.by(() => {
-    const visible: OverflowMenuItem[] = []
-    const hidden: OverflowMenuItem[] = []
-    for (const item of items) {
-      if (hidden.length === 0 && (item.primary || visible.length < limit)) visible.push(item)
-      else hidden.push(item)
-    }
-    return { visible, hidden }
+    const primaries = items.filter((item) => item.primary)
+    const rest = items.filter((item) => !item.primary)
+    const room = Math.max(0, Math.max(limit, primaries.length) - primaries.length)
+    return { visible: [...primaries, ...rest.slice(0, room)], hidden: rest.slice(room) }
   })
 
   let open = $state(false)
@@ -200,7 +197,7 @@
             data-testid={testId ? `${testId}-more` : 'overflow-more'}
           >
             <MoreHorizontalIcon />
-            {#if moreBadge}<span class="sr-only">{split.hidden.length}</span>{/if}
+            {#if moreBadge}<span class="text-xs tabular-nums text-muted-foreground">{split.hidden.length}</span>{/if}
           </Button>
         {/snippet}
 
