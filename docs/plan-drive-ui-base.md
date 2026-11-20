@@ -239,7 +239,7 @@ export interface OverflowMenuProps {
 - пустое «выбранные» — `Empty` (из §3a), а не ручной `<p>`;
 - ошибки — `Alert`, без ручных `rounded-lg border`-заглушек.
 
-`Empty` — единственная зависимость этапа 0, которой ещё нет: создаём её первым маленьким шагом этапа 0 (до пикера), чтобы не писать временную заглушку. Остальное (`Steps`, `Surface`, `Button`, `Checkbox`, `ListingRow`, `Badge`, `Alert`) уже есть.
+`Empty` — единственная зависимость этапа 0, которой ещё нет: создаётся в arch-этапе A4 (§8), до пикера (D2), чтобы не писать временную заглушку. Остальное (`Steps`, `Surface`, `Button`, `Checkbox`, `ListingRow`, `Badge`, `Alert`) уже есть.
 
 Новых компонентов `DrivePickerSteps`, `DriveSelectedFilter`, `DrivePickerRow` **не создаём**: логика шага живёт в `DrivePicker`, разметка строки — в `DriveBrowse`, примитивы — в `#core/ui`.
 
@@ -263,10 +263,12 @@ export interface DrivePickerData {
 **Критично для пагинатора:** override `ids` — это не только аргумент `loadDrivePage`, но и часть `extra` снапшота. Один и тот же набор должен уйти и в запрос, и в `driveFilterExtras` → `snapshot.extra`:
 
 ```ts
-const fromUrl = parseDriveIdsUrl(event.url.searchParams.get(DRIVE_KEYS.ids))
-if (fromUrl.overflow) throw error(400, 'drive.ids-too-long')
-const ids = overrides.ids !== undefined ? [...overrides.ids] : fromUrl.ids
-if (ids && ids.length > DRIVE_IDS_URL_MAX) throw error(400, 'drive.ids-too-long')
+// Этап 0: список сохраняет legacy-потолок DRIVE_IDS_MAX = 200 и не отвечает 400
+// на длинный набор. URL-предел 100 и parseDriveIdsUrl/overflow — future-миграция
+// (§7a.6, §7a.7); в этапе 0 100 ограничивает только builder пикера.
+const fromUrl = parseDriveIds(event.url.searchParams.get(DRIVE_KEYS.ids))
+const ids = overrides.ids !== undefined ? [...overrides.ids] : fromUrl
+if (ids && ids.length > DRIVE_IDS_MAX) throw error(400, 'drive.ids-too-long')
 
 const result = await loadDrivePage(db, gate.actor, {
   // …
@@ -305,7 +307,33 @@ const extra = driveFilterExtras(filters, ids)
 
 В `single + folder` **выбор папки не входит внутрь**: кнопка «Выбрать» только возвращает папку как target и не меняет текущую папку. При этом имя папки и крошки по-прежнему остаются навигацией внутрь. Запрет «не входить» относится к действию выбора, а не к навигации.
 
-**Скрытые выбранные (этап 0).** `chosen` показывает только текущую папку **с собственными фильтрами** (включая direct-URL и фильтры, применённые в самом `chosen`); фильтры, унаследованные из `pick`, к `chosen` автоматически не применяются; `kind` сохраняется. `picked` может содержать ID из других папок. В этапе 0 `Apply` доступен только при известном/корректном `total` (visiblePicked) и `hiddenCount = picked.length - total = 0`, где `total` — число `picked`, попавших в текущий срез на всех страницах (visiblePicked), а не размер страницы; неизвестный `total` или `total > picked.length` блокируют Apply. `hiddenCount` вычисляется при известном `totalItems`; при неизвестном — Apply недоступен. Если `hidden > 0` из-за собственных фильтров, другой папки или недоступности, это состояние `chosen-hidden`: при `total>0` видимые строки остаются, над ними `Alert` со счётчиком скрытых; при `total=0` — `Empty` `chosen-hidden`; `Apply` заблокирован в обоих случаях. Полный cross-folder manifest — future, не этап 0; контракт — §7a.9. В `single` скрытых нет: выбор атомарен.
+**Скрытые выбранные (этап 0).** `chosen` показывает только текущую папку **с собственными фильтрами** (включая direct-URL и фильтры, применённые в самом `chosen`); фильтры, унаследованные из `pick`, к `chosen` автоматически не применяются; `kind` сохраняется. `picked` может содержать ID из других папок. `hiddenCount = pickedCount - visiblePicked`, где `visiblePicked` — `totalItems` среза `drive.ids` по всем страницам, а не размер страницы; при неизвестном `totalItems` `hiddenCount` неизвестен. Доступность Apply определяется только `canApplyChosen` (ниже). `hiddenCount>0` — состояние `chosen-hidden`: при `totalItems>0` видимые строки остаются, над ними `Alert` со счётчиком скрытых; при `totalItems=0` — `Empty` `chosen-hidden`; Apply недоступен в обоих случаях. Полный cross-folder manifest — future, не этап 0; контракт — §7a.9. В `single` скрытых нет: выбор атомарен.
+
+**Единый предикат `Apply` и единые имена (единственное определение).** Ниже он описан один раз; §7a.3, §7a.4, §7a.6 и §7a.10 ссылаются на него, а не повторяют условие своими словами.
+
+```ts
+// visiblePicked — totalItems среза drive.ids: число picked на всех страницах,
+// а не размер страницы. totalItems вне chosen — общий total списка.
+// hiddenCount = pickedCount - visiblePicked; null — visiblePicked неизвестен.
+export function canApplyChosen(i: {
+  readonly pickedCount: number
+  readonly totalItems: number | null | undefined
+  readonly hiddenCount: number | null
+}): boolean {
+  const known = typeof i.totalItems === 'number' && Number.isFinite(i.totalItems) && i.totalItems >= 0
+  if (i.pickedCount === 0) return false
+  if (!known || i.hiddenCount === null) return false
+  if (!Number.isInteger(i.hiddenCount)) return false
+  if (i.hiddenCount < 0 || i.hiddenCount > i.pickedCount) return false
+  return i.hiddenCount === 0
+}
+```
+
+- `canApplyChosen` — **единственный** источник истины для доступности Apply: непустой `picked`, известный `totalItems`, целый `hiddenCount` в `0..pickedCount`, `hiddenCount === 0`. Всё остальное — «Apply недоступен», без локальных вариаций.
+- Имена полей: в состоянии списка и снапшоте — `totalItems`; в тексте про `chosen` он означает `visiblePicked`. Слово `total` без уточнения в плане больше не употребляется.
+- **JS:** при `canApplyChosen=false` кнопка рендерится `aria-disabled`/`disabled` с объяснением причины (`hidden>0` / total неизвестен / пусто), а не как рабочая ссылка.
+- **No-JS:** при `canApplyChosen=false` ссылка Apply не рендерится вовсе (нет `href`); вместо неё — `Alert`/`Empty` и действия выхода. `aria-disabled` к ссылке не применяется: без JS это не блокировка, а всё ещё переход.
+- `hiddenCount` для SSR считает сервер из `snapshot.total` среза `drive.ids` и передаёт в `DrivePickerData`; клиент не пересчитывает его из видимых строк и не заменяет `0` при неизвестном total.
 
 **Инварианты:**
 
@@ -314,7 +342,7 @@ const extra = driveFilterExtras(filters, ids)
 3. **`single` атомарен.** Выбор сразу заменяет предыдущий и вызывает `onPick(id, label)`; шага `chosen` и кнопки «Применить» нет. `id=null` — только явный «Выбрать корень».
 4. **Текущая папка и корень — выбор, а не навигация.** В `single` это отдельные кнопки «Выбрать эту папку» (только если текущая папка существует) и «Выбрать корень»; они не меняют текущую папку и не закрывают пикер сами по себе. В `multiple` текущая папка и корень **не выбираются** и соответствующих кнопок в футере нет; крошки и «Диск» по-прежнему ведут внутрь/в корень. В корне кнопка «Выбрать эту папку» не дублирует «Выбрать корень».
 5. **Крошки не равны выбору.** В `single + folder` имя папки и крошки ведут внутрь, а «Выбрать»/«Выбрать эту папку»/«Выбрать корень» только возвращают target. В `multiple` крошки и имя папки меняют текущую папку, но не добавляют её в `picked`.
-6. **`multiple` — только набор.** Выбор копится в `picked`; шаг `chosen` показывает срез `drive.ids`; `onPicked(ids, labels)` / `Применить` получает непустой набор только при `hiddenCount===0`. При `hiddenCount>0` `Apply` заблокирован; частичное скрытие — `list` + `Alert` с числом скрытых, полное (`totalItems=0`) — `Empty` `chosen-hidden`; одиночного `id` в multiple нет.
+6. **`multiple` — только набор.** Выбор копится в `picked`; шаг `chosen` показывает срез `drive.ids`; `onPicked(ids, labels)` / «Применить» доступны ровно при `canApplyChosen` (§7a.2a). При `hiddenCount>0` `Apply` заблокирован; частичное скрытие — `list` + `Alert` с числом скрытых, полное (`totalItems=0`) — `Empty` `chosen-hidden`; одиночного `id` в multiple нет.
 7. **`step=chosen` при `mode=single`** нормализуется в `pick`; в `single` этот шаг не рендерится.
 
 **Форма результата:**
@@ -377,7 +405,7 @@ type DriveTargetPicked =
 - Футер:
   - `single`: «Отмена», «Выбрать эту папку» (только при наличии текущей папки), «Выбрать корень». Это selection-кнопки, они не навигируют; «Применить» нет — выбор уже применён.
   - `multiple`, шаг `pick`: «Сбросить выбор» (при непустом `picked`), «Отмена», переход к шагу `chosen` («Выбранные (N)»); «Применить» здесь не показываем.
-  - `multiple`, шаг `chosen`: «← К выбору» (`Button variant="link"` / `stepLink`), «Применить» (только при непустом `picked`, `known(totalItems)`, корректном `hiddenCount` в `0..picked.length` и `hiddenCount === 0`; иначе — `aria-disabled`/неактивная ссылка с объяснением). В no-JS при `hiddenCount !== 0`/неизвестном `totalItems`/пустом наборе ссылка Apply не рендерится (href отсутствует), чтобы нельзя было применить частичный/неизвестный набор; `aria-disabled` относится только к JS-кнопке., «Сбросить фильтры» при активных собственных фильтрах `chosen`; иначе «Снять весь выбор» при `hiddenCount > 0` (явно очищает `picked`, сохраняет текущие фильтры с `filter_owner=chosen` и возвращает в `pick`); «Отмена». `hiddenCount` вычисляется только при `known(totalItems)`; при неизвестном `totalItems` Apply недоступен.
+  - `multiple`, шаг `chosen`: «← К выбору» (`Button variant="link"` / `stepLink`), «Применить» — ровно при `canApplyChosen` из §7a.2a; при `false` JS-кнопка `aria-disabled` с объяснением причины, no-JS ссылка не рендерится вовсе. «Сбросить фильтры» — при активных собственных фильтрах `chosen`; иначе при `hiddenCount > 0` — «Снять весь выбор» (явно очищает `picked`, сохраняет текущие фильтры с `filter_owner=chosen` и возвращает в `pick`); «Отмена».
   - `single` на шаге `chosen` не рендерится: `step=chosen` нормализуется в `pick`.
 - В `chosen` список идёт через `drive.ids` (тот же `setExtra`/`stepHref`), а не через локальную фильтрацию массива: иначе пагинация и догрузка разъедутся. После `setExtra` проверять, что `snapshot.extra.ids` равен `picked.join(',')` или `'none'`, а не пустой строке/`undefined`. `snapshot.total` (`totalItems`) — число `picked` в текущем срезе на всех страницах (`visiblePicked`); `hiddenCount = picked.length - snapshot.total` только при `known(totalItems)`. Если `snapshot.total` неизвестен, не число, больше `picked.length` или `hiddenCount` некорректен, `Apply` disabled — это не `hiddenCount===0` и не повод отправлять набор.
 - **`chosen` и пустая текущая страница:** при непустом `picked`, `hiddenCount===0` и известном `totalItems>0` пустой `items` — это не «обычный список» и не `empty-chosen`/`chosen-hidden`. При `page>1` показывается `empty-page` с действием «К первой странице» (сохраняя `picked`, `upicks` и собственные фильтры; `drive.ids` пересобирается из `picked`); при `page<=1` это противоречие данных (`Alert`/retry), а не `empty-page` или пустой `chosen`.
@@ -394,6 +422,13 @@ No-JS-ссылки делятся на два класса, и их нельзя
 - **Выйти в `from`** — выбор в `single`, Apply в `multiple`, отмена. Строятся одним `applyHref`; используют валидированные `from`/`param`, не добавляют в адрес вызывающей страницы ключи пикера и не меняют текущую папку пикера.
 
 `single` и `multiple` — разные no-JS-контракты. В `single` нет накопительного набора. В `multiple` есть `pick`/`chosen` и Apply.
+
+**Отметка строки без JS (прогрессивное улучшение).** Чекбокс — это JS-состояние, а не no-JS-контракт: без JS нативного переключения нет, и SSR не может «поставить галочку» GET-переходом.
+
+- SSR всегда рендерит отметку как **GET-ссылку** (`Button href`/`<a>`) на `drivePickerHref` с `picked ± id`: `aria-pressed="true|false"`, `data-testid="drive-pick-toggle"`, доступное имя «Отметить»/«Снять отметку». Ссылка не навигирует по папкам и не меняет target.
+- При гидрации ссылка заменяется/дополняется примитивом `Checkbox` (сосед ссылки имени, не внутри `<a>`); клик по чекбоксу меняет только `picked` и не всплывает в навигацию.
+- Оба варианта дают один и тот же URL-контракт: `picked` в адресе пикера, предел 100, без `upicks`/`drive.ids` в `pick`.
+- Проверка: SSR-разметка содержит `aria-pressed` и рабочий `href` отметки; после гидрации тот же элемент — `Checkbox`; no-JS клик по отметке меняет `picked` и остаётся в `pick`.
 
 #### Single: только GET-выбор
 
@@ -431,7 +466,7 @@ No-JS-ссылки делятся на два класса, и их нельзя
 - «Сбросить фильтры» очищает только собственные фильтры текущего `chosen`, ставит `page=1`, снимает `filter_owner=chosen` и сохраняет `picked`, `upicks=chosen`, `drive.ids`, `mode`/`kind`/`from`/`param`; это не чистит набор и не возвращает pick-фильтры.
 - Снятие отметки меняет `picked` и пересчитывает `drive.ids` (`none` при пустом наборе), не возвращает полный список; скрытые выбранные остаются в `picked`.
 - «Снять весь выбор» доступно, когда активных собственных фильтров `chosen` нет; оно очищает `picked`, снимает `upicks`/`drive.ids` и возвращает в `pick`; текущие фильтры сохраняются с `filter_owner=chosen`, чтобы возврат не выдал их за pick-фильтры. Это явная очистка выбора, не навигация по папкам. При активных фильтрах сначала доступно только «Сбросить фильтры».
-- «Применить» — GET в `from` с `param=picked.join(',')`; ссылка есть только при непустом наборе и `hidden=0`. Пустой `chosen` и `hidden>0` показывают `Empty`/`Alert` без Apply; пустой список в `from` не отправляется.
+- «Применить» — GET в `from` с `param=picked.join(',')`; ссылка рендерится только при `canApplyChosen` (§7a.2a). Пустой `chosen`, `hidden>0` и неизвестный `totalItems` показывают `Empty`/`Alert` без Apply; пустой список в `from` не отправляется.
 - «Отмена» возвращает валидированный `from` без изменений.
 
 #### Общие правила
@@ -501,7 +536,7 @@ function applyHref(selection: DriveSelection): string | null {
 - «Выбрать» в `single`, «Выбрать эту папку», «Выбрать корень» и «Применить» используют этот builder; «Отмена» — сам валидированный `initial.from` без изменений.
 - Остальные query-ключи `from` сохраняются; целевой `param` **заменяется** через `set` или удаляется для корня, а не дописывается вторым. Это данные вызывающей страницы, а не пикера.
 - `picked`, `upicks`, `mode`, `kind`, `from`, `param`, `filter_owner` и `drive.ids` в адрес вызывающей страницы **не добавляются как самостоятельные ключи**. Если такие ключи уже были в самом `from`, они принадлежат вызывающей странице и не вычищаются. `param` используется только как имя целевого поля; `drive.ids` — ключ среза списка пикера, а не результат выбора.
-- `mode=single` с явным `id:null` (корень) — `param` удаляется; пустая/невалидная строка корнем не становится; `mode=multiple`, пустой набор — `applyHref` возвращает `null`, ссылки «Применить» нет. `applyHref` не знает `hidden`; компонент не рендерит ссылку при `hidden>0` (это состояние `chosen-hidden`, а не пустой набор). Пустой `chosen` показывает `Empty`, но не отправляет пустой список в `from`.
+- `mode=single` с явным `id:null` (корень) — `param` удаляется; пустая/невалидная строка корнем не становится; `mode=multiple`, пустой набор — `applyHref` возвращает `null`, ссылки «Применить» нет. `applyHref` не знает `hidden`/`totalItems`; компонент рендерит ссылку только при `canApplyChosen` (§7a.2a), иначе — `Alert`/`Empty` с действиями выхода (`chosen-hidden` при `hiddenCount>0`, а не пустой набор). Пустой `chosen` показывает `Empty`, но не отправляет пустой список в `from`.
 - Для multiple значение `param` — `picked.join(',')`; `URLSearchParams` кодирует запятые, вызывающая страница получает обычный список. `from` — адрес возврата, `param` — имя поля, а не значения target.
 
 #### Валидация `from` и `param`
@@ -530,7 +565,7 @@ function applyHref(selection: DriveSelection): string | null {
 
 #### Превышение лимита
 
-- **UI:** в `mode=multiple` при 100 выбранных новая отметка не добавляется; чекбокс/GET-ссылка отметки получает `aria-disabled`, счётчик показывает `100 / 100`, «Применить» доступно для 1–100 только при `hidden=0`, при пустом наборе или `hidden>0` — нет. 101-й элемент не появляется в `picked`.
+- **UI:** в `mode=multiple` при 100 выбранных новая отметка не добавляется; чекбокс/GET-ссылка отметки получает `aria-disabled`, счётчик показывает `100 / 100`, «Применить» доступно только по `canApplyChosen` (§7a.2a) — при пустом наборе, `hidden>0` или неизвестном `totalItems` его нет. 101-й элемент не появляется в `picked`.
 - **Сервер:** `loadDrivePicker` при `picked` с `overflow`, `loadDriveList` при `drive.ids` с `overflow` (URL, `parseDriveIdsUrl`) и при `overrides.ids.length > DRIVE_IDS_MAX` (200) отвечают `400` (`drive.picked-too-long` / `drive.ids-too-long`). В этапе 0 `overrides.ids` проверяется legacy-потолком 200; URL-предел 100 и 400 появятся только с `parseDriveIdsUrl` (future), иначе прямое поведение списка изменится. Частичный список и молчаливое усечение запрещены: иначе пользователь применил бы не тот набор.
 - **Builder:** `drivePickerHref` не пишет `picked`, если `parseDriveIdsUrl` дал `overflow`, и не включает `upicks=chosen`/`drive.ids` для такого набора; нормальный UI до этого не доводит. Прямой вызов с 101 ID — ошибка вызывающего, а не повод обрезать набор.
 - `drive.ids=none` и пустой `chosen` под лимит не попадают: это явный пустой набор, а не overflow.
@@ -541,7 +576,7 @@ function applyHref(selection: DriveSelection): string | null {
 - `from`: `https://evil.example`, `//evil.example`, `/drive/pick`, строка > 2048 → `/drive`; локальный `/drive/move?...` сохраняется.
 - `param`: `target_id` — ок; `bad param`, `from`, `__proto__`, `constructor` → `id`; применение идёт в `initial.param`.
 - no-JS apply: GET-ссылка, остальные query `from` сохранены, `target_id` заменён; single с явным `id:null` удаляет `target_id`, пустой multiple и `hidden>0` не имеют «Применить»; `picked`/`upicks`/`mode`/`kind`/`from`/`param`/`filter_owner`/`drive.ids` не добавлены в `from`.
-- `chosen`: `total` считается по всем страницам среза; `hidden>0` блокирует Apply, `hidden=0` на другой странице — нет; частичное скрытие даёт `list` + `Alert`, полное (`total=0`) — `Empty` `chosen-hidden`.
+- `chosen`: `visiblePicked` (`totalItems` среза `drive.ids`) считается по всем страницам среза; `hiddenCount>0` блокирует Apply (`canApplyChosen`), `hiddenCount=0` на другой странице — нет; частичное скрытие даёт `list` + `Alert`, полное (`totalItems=0`) — `Empty` `chosen-hidden`.
 - no-JS links: в `multiple` навигация/шаг сохраняют `picked`, `upicks` (только в `chosen`), `filter_owner` (если стоит), `mode`, `kind`, `from`, `param` и текущую папку; отметка не навигирует; current/root selection не меняет папку; «Отмена» возвращает `from` без target; пагинатор не теряет контекст; в `single` навигация сохраняет только `mode`/`kind`/`from`/`param` и текущую папку; `picked`/`upicks`/`drive.ids`/`filter_owner` не переносятся вовсе, а stale-значения снимаются.
 - `filter_owner`: `chosen` — валиден; `true`/`1`/`CHOSEN`/дубль — отбрасываются без `400`; в `single` маркер снимается; `chosen→pick` пишет, изменение фильтра в `pick` и сброс фильтров в `chosen` снимают; `pick→chosen` с маркером сохраняет фильтры, без маркера — сбрасывает унаследованные; direct-URL `chosen` без маркера трактует фильтры как собственные, а невалидный маркер не обходит схему фильтров.
 - 101 `picked`/`drive.ids`/override → 400, ни одной строки частичного среза; 100 — срез строится, `snapshot.extra.ids` совпадает с URL.
@@ -795,14 +830,14 @@ async function fetchDrivePage(page, pageSize, input, signal) {
 | Успешная операция с обычного списка | `picked` в ней не участвует; ревизия выбора не требуется. |
 
 - `drive.ids` в этапе 0 — производное от всего `picked` для шага `chosen`; пустой набор — `none`, а не отсутствие ключа. Пересечение с текущей папкой/фильтром считает `loadDriveList` и отражает в `total`/`hidden`; сам `drive.ids` не укорачивается до видимых строк.
-- Если выбранный набор пуст (`picked=[]`), показывается `empty-chosen` из §7a.10, Apply недоступен; полный список не возвращается. Пустая страница при `picked≠[]`, подтверждённом `hidden=0` и `page>1` — это `empty-page`, а не пустой выбор; Apply блокируется по `hidden`/неизвестному или некорректному `total`, а не из-за пустой страницы; пустой набор — отдельный случай `empty-chosen`.
+- Если выбранный набор пуст (`picked=[]`), показывается `empty-chosen` из §7a.10, Apply недоступен; полный список не возвращается. Пустая страница при `picked≠[]`, подтверждённом `hiddenCount=0` и `page>1` — это `empty-page`, а не пустой выбор; Apply блокируется через `canApplyChosen` (неизвестный/некорректный `totalItems`, `hiddenCount>0`), а не из-за пустой страницы; пустой набор — отдельный случай `empty-chosen`.
 - В этапе 0 отсутствие ID на странице не доказывает удаление, и `picked` не чистится. Per-ID-проверки набора на Apply нет: удаление или потерю доступа в будущем подтверждает per-ID outcome либо manifest ACL, а не текущий `hidden`.
 
 #### Проверки этапа 0
 
 - Цель move/copy: rename/move — валидна; delete/trash/no-access — ошибка, без fallback на корень.
-- Внешнее исчезновение выбранного ID: `picked` не чистится по странице. Per-ID проверки на Apply нет. При `hidden>0` или неизвестном/некорректном `total` Apply disabled (состояние `chosen-hidden`); при подтверждённом `hidden=0` это обычный GET с `param`, а отсутствие/доступ к ID проявляется у получателя — это не ревизия выбора.
-- При `hidden>0` или неизвестном/некорректном `total` Apply disabled, а не «ошибка Apply»; при `hidden=0` Apply не делает per-ID проверку набора.
+- Внешнее исчезновение выбранного ID: `picked` не чистится по странице. Per-ID проверки на Apply нет. При `hiddenCount>0` или неизвестном/некорректном `totalItems` Apply disabled по `canApplyChosen` (состояние `chosen-hidden`); при подтверждённом `hiddenCount=0` это обычный GET с `param`, а отсутствие/доступ к ID проявляется у получателя — это не ревизия выбора.
+- При `hiddenCount>0` или неизвестном/некорректном `totalItems` Apply disabled, а не «ошибка Apply»; при `hiddenCount=0` Apply не делает per-ID проверку набора.
 - Навигация и фильтры не меняют `picked`.
 - Два picker-callback подряд применяют только последний; payload `multiple`/любое `ids`/missing или wrong `mode`/невалидный или отсутствующий `id` не меняет `target_id`; только явный `mode:'single'` + `id:null` даёт корень.
 
@@ -1304,7 +1339,7 @@ execute: async ({ values, commit, fail }, event) => {
 - `DriveBulkOperationDone`/`DriveBulkOperationDoneData` — внутренний typed-вид серверного результата; потребитель читает `Result.data.outcome`, а не кастует `Record<string, unknown>`.
 - `Result.errors` — только глобальный отказ/ошибки полей. Per-ID `failed` не дублируются в `Result.errors`; их коды и `params` лежат в `outcome.results`.
 - `commit()` вызывается и когда все ID завершились `failed`: команда обработана, ответ должен кэшироваться по `submissionId`; это не превращает per-ID ошибки в глобальный `ok:false`.
-- `redirectOnSuccess` остаётся прежним: `next` — локальный адрес, no-JS получает обычный PRG/notice. Bulk-форма не делает `inline`-успех и не открывает второй route.
+- `redirectOnSuccess` остаётся прежним: `next` — локальный адрес, no-JS получает обычный PRG без плашки. Bulk-форма не делает `inline`-успех и не открывает второй route.
 
 ##### Partial success
 
@@ -1635,11 +1670,69 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `hiddenCount>0`, `totalItems=0`, `itemCount=0` → `component='empty'`, `kind='chosen-hidden'`; `hiddenCount>0`, `totalItems>0`, `itemCount=0` → `page` при `page>1`, иначе `Alert`; `hiddenCount>0`, `totalItems>0`, `itemCount>0` → `component='list'` с `hidden`, а `Empty` не рендерится; при `totalItems=0` — `Alert` (не list).
 - `itemCount>0` при `totalItems=0` → `alert`/retry, не `list` и не `Empty`.
 
+#### Аудит §7a (2026-11-20): устранённые противоречия
+
+Проверено всё: §7a.1–§7a.10 на `hidden`/`chosen`/`Apply`, `totalItems` и no-JS. Ниже — что было противоречиво и как исправлено.
+
+1. **Apply описывался тремя разными условиями.** §7a.3 требовал `known(totalItems)` + `hiddenCount===0`, §7a.4/§7a.6 — только «непустой набор и `hidden=0`», §7a.9 добавлял неизвестный `total`. Теперь есть один `canApplyChosen` в §7a.2a; остальные места ссылаются на него и не переписывают условие.
+2. **Одно поле под тремя именами.** `total`, `snapshot.total`, `totalItems` обозначали одно и то же. В тесте про `chosen` это `visiblePicked` (все страницы среза `drive.ids`), вне `chosen` — общий total списка. Канон: `totalItems`, смысл — `visiblePicked`; «total» без уточнения больше не используется.
+3. **Предел `drive.ids` имел два взаимоисключающих расписания.** §7a.2 бросал `400` при `>100` прямо в `loadDriveList`, а §7a.6/§7a.7 дважды фиксировали, что `parseDriveIdsUrl`/100/`400` — future, а в этапе 0 список живёт на legacy-потолке 200. Оставлено расписание §7a.6/§7a.7: этап 0 — 200 и без `400`, 100 — предел builder'а пикера; `parseDriveIdsUrl` с `overflow` — отдельная миграция.
+4. **Отметка строки в no-JS не имела контракта.** §7a.4 относил «отметку» к no-JS-ссылкам, §7a.3 требовал `Checkbox`. Добавлено правило прогрессивного улучшения: SSR — GET-ссылка с `aria-pressed`, после гидрации — `Checkbox`; оба пишут только `picked`.
+5. **«Сбросить фильтры» и «Снять весь выбор» читались как одновременные.** Формулировка футера склеивала их через «иначе», хотя §7a.9/§7a.10 требуют при активных собственных фильтрах только сброс. Футер переписан: сброс фильтров — при активных фильтрах, «Снять весь выбор» — только когда их нет.
+6. **Не было сказано, кто считает `hiddenCount` для SSR.** Добавлено: сервер считает из `snapshot.total` среза `drive.ids` и передаёт в `DrivePickerData`; клиент не пересчитывает из видимых строк.
+
+Проверено и оставлено как есть (не противоречия):
+
+- `hiddenCount = pickedCount - visiblePicked`, диапазон `0..pickedCount`, `chosen-hidden` только при `totalItems=0`; частичное скрытие — `list` + `Alert`. Совпадает в §7a.2a, §7a.3, §7a.9, §7a.10.
+- `empty-chosen` при `picked=[]` не требует `totalItems`; остальные `Empty` требуют известного total. Исключение описано одинаково в §7a.10 и в `DriveEmptyInput`.
+- `empty-page` — только при известном `totalItems>0` и `page>1`; `page<=1` при непустом total — `Alert`/retry. Совпадает в дереве решений и в `driveEmptyOf`.
+- `filter_owner` — служебный маркер, не фильтр, только `multiple`, не входит в `codec`/`extra`/`from`.
+- Нормализация `step=chosen` → `pick` в `single` и снятие `picked`/`upicks`/`drive.ids`/`filter_owner`.
+
+Оставшиеся дубли (не противоречия, к объединению при пересортировке плана): `filter_owner` описан и в §7a.4, и в §7a.6; перечень пустых состояний повторяется в §7a.3, §7a.9 и §7a.10.
+
 ---
 
 ## 8. План миграции (этапы)
 
-0. **Этап 0 — UI пикера «выбранные»:** сначала `Empty` (нужна для пустого chosen), затем `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять первым.
+Порядок жёсткий: **сначала arch (`refs/core`), потом drive (`refs/module-drive`)**. Внутри arch — от контрактов без UI к примитивам и каркасу. Идентификаторы `A*`/`D*` стабильны и используются в ссылках из §7a/§9/§9a/§10.
+
+### A. Arch (`refs/core`) — по шагам
+
+**A0. Контракты и гигиена (без новых компонентов).**
+- UnoCSS-проверка: все классы статические, `presetWind4`, семантические токены, `gap-*`; `[scrollbar-width:none]` есть в исходниках, а не в комментариях.
+- Уведомления в arch: частичный успех sessions — `Result.data` вместо `?notice=`, удалить мёртвые `rename-failed` и `?done=1` (§8a).
+- Тесты arch, завязанные на эти адреса, переписать. Drive-часть уведомлений — в D0 (другой репозиторий/ветка).
+
+**A1. Toast-хост.** Слой выше модалок, дедупликация `text + tone`, максимум 3 плашки, один `aria-live`, очистка таймеров (§8a.3).
+
+**A2. Версия и перезапуск.** `kit.version.name`, `pollInterval`, `updated.current`, принудительный `location.reload()` с guard для `chunk-stale` (§8b.4).
+
+**A3. Модалки: открытие по готовности.** Данные и чанк, ошибка на кнопке, без hover-prefetch, классификация сбоя (§8b.2–8b.3).
+
+**A4. `Empty`.** Новый примитив `core/ui/empty/` по §3a; используется пикером (D2) и списками.
+
+**A5. `OverflowMenu`.** Примитив + `MoreHorizontalIcon` по §5 (`mode`, `maxVisible`, `fallback`).
+
+**A6. `Attachment` для папок.** `kind:'folder'`, `count`, `badges` по §4.
+
+**A7. `Surface.rail`.** Необязательный левый rail (аналог sidebar) с одним DOM и мобильной горизонтальной прокруткой (§10b.4).
+
+**A8. Настройки: реестр и хост.** `SettingsSection`, `settings.ext.ts` + glob, `uid` в контексте, `UserConfig` → `SettingsHost` на `Surface`+`rail`; «Сессии» — самодостаточный список (§10b).
+
+**A9. Base UI: мобильный аудит.** `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок; глобальные `p-6` не трогаем (§9).
+
+**A10. Паттерны arch.** `Item` family, `DescriptionList`, `FormMessage`, `EntryCard` + замены §10.3, которые находятся в arch. Примитивы создаются здесь; в drive они подключаются только в D6.
+
+**A11. Проверки arch.** `check`, unit/SSR-тесты, `test:classes`, браузерные сьюты, затронутые A0–A10.
+
+### D. Drive (`refs/module-drive`) — после arch
+
+**D0. Drive: убрать inline-уведомления.** `?notice=` и `shownNotice` в `sections/drive/load.server.ts`, поле `notice` в `DriveListRouteData`/`DriveOperationData`/`DrivePickerData`, `<p data-testid="drive-notice">` в `DriveBrowse`, `driveNoticeHref`, success-toast в `use-drive-operation.svelte.ts`; ошибки — в форму, успех — навигация (§8a.1).
+
+**D1. `DriveBackLink`.** `useInstance()` вместо `tryUseModals()`; регрессионный тест: page-fallback переходит, модалка закрывается.
+
+**D2. Пикер «выбранные» (историческое имя — «этап 0»).** `Empty` уже создан в A4, поэтому здесь только `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять после arch (A0–A11).
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
      - `drive.ids` — **производный срез списка** для шага `chosen`: `null` — без ограничения, `[]`/`none` — явно пустой набор, иначе ID в порядке `picked`; передаётся через `overrides.ids` и попадает в `snapshot.extra`. Не является результатом для вызывающего экрана.
@@ -1657,7 +1750,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
    - **0.7. Транспорт Apply.** Реализовать один транспорт результата:
      - no-JS — **GET** на валидированный `from` с `initial.param`; single — один UUID, а корень только при явном `id:null` (не пустая/невалидная строка; ключ удаляется), multiple — `picked.join(',')`; POST остаётся у операции move/copy, не у пикера.
      - JS-модалка — `onPick(id,label)` для single и `onPicked(ids,labels)` для multiple; `DriveTargetPicked` — дискриминированный union (§7a.2a), multiple/`ids` не попадают в move/copy. Single-guard move/copy: только `mode:'single'` без `ids`; отсутствующий/неверный `mode` игнорируется, невалидный/отсутствующий `id` не становится корнем, `id:null` — только явный корень.
-     - Apply доступен только для непустого multiple и `hidden=0`; пустой `chosen` показывает `Empty`, `chosen-hidden` блокирует Apply; single применяется сразу. `from`/`param` валидируются по §7a.6, `drive.ids` в целевой адрес не добавляется.
+     - Apply доступен только по `canApplyChosen` (§7a.2a): непустой multiple, известный `totalItems`, `hiddenCount===0`; пустой `chosen` показывает `Empty`, `chosen-hidden` блокирует Apply; single применяется сразу. `from`/`param` валидируются по §7a.6, `drive.ids` в целевой адрес не добавляется.
      - no-JS-ссылки в `single` не сохраняют `picked`/`upicks`/`drive.ids`/`filter_owner`: навигация несёт только `mode`/`kind`/`from`/`param` и текущую папку, target не меняется. `picked` допустим в `multiple` на `pick`/`chosen`, `upicks`/`drive.ids` — только в `chosen`, `filter_owner` — только в `multiple` (`pick`/`chosen`) и только со значением `chosen`.
      - Проверки: GET-ссылка/модальный callback, сохранение остальных query `from`, замена `param`, удаление `param` только при явном `id:null`, отказ при `mode=multiple`/`ids` у move/copy, игнорирование missing/wrong `mode`, невалидный `id` не даёт корень, лимит 100, `hidden>0` не даёт Apply; no-JS-ссылки single не содержат `picked`/`upicks`/`drive.ids`/`filter_owner`; в `multiple` навигация `pick` сохраняет уже стоящий `filter_owner`, а `single` его снимает.
    - **0.8. Единый codec состояния списка.** Один чистый слой вместо ручных сборок URL:
@@ -1670,23 +1763,144 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
      - Порядок: 0.5 → 0.6 → 0.8 → 0.9 → 0.7. Codec 0.8 нужен до защиты 0.9 и финального подключения Apply в 0.7; 0.8 не меняет семантику `picked`/`param`, только убирает ручные сборки.
    - **0.9. Защита от устаревших ответов.** Использовать `reqId`/`AbortController`/`prefetchGen` ядра, а не второй счётчик. `fetchDrivePage` принимает `signal`, проверяет его до/после `preloadData` и сверяет `driveListKey` снапшота с ожидаемым; чужой снапшот — `drive.list-stale`, отменённый — тихий `AbortError`. Picker-колбэки — монотонный `seq`, move/copy — только `mode=single` без `ids`, с UUID или явным `id:null`; missing/wrong `mode` и невалидный `id` игнорируются без подстановки корня; `picked`/`upicks`/`step` относятся только к `multiple`. Детали и тесты — §7a.8; выполнять после 0.8.
    - **0.10. Таксономия пустых состояний.** Сначала определить `DriveEmptyKind`/`DriveEmptySpec` и `driveEmptyOf` (дерево приоритетов), затем подключить `Empty` в слот `Listing`/`EmptyState`. Не писать отдельные `{#if}` на каждый экран. Детали и тексты — §7a.10; `filter_owner` не входит в `hasFilters`/`hasSearch` и не передаётся в `DriveEmptyInput`; он влияет только на сохранение/сброс фильтров при переходе, а `DriveEmptyKind`/`DriveEmptySpec` через `driveEmptyOf` определяются итоговыми фильтрами. Снятие маркера при сбросе фильтров — по §7a.4. Выполнять после 0.9, до финальной полировки списка.
-1. **UnoCSS-проверка (до кода):** прогнать план по `unocss.config.ts`; убедиться, что все новые классы статические, используют `presetWind4`, семантические токены и `gap-*`. Отдельно проверить, что `[scrollbar-width:none] [&::-webkit-scrollbar]:hidden` есть в исходниках, а не только в комментариях.
-2. **Создать примитивы в ядре (без `Empty`):** `OverflowMenu` + `MoreHorizontalIcon`, расширить `AttachmentKind` (`'folder'`, `count`, `badges`). `Empty` уже создаётся первым шагом этапа 0 и здесь не повторяется.
-3. **Этап 3 — base UI:** мобильный аудит `Surface`, `SurfaceBar`, `Card`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `Listing`, `PaginatorSettings`, классов модалок (см. §9). Глобальные `p-6` у `Surface`/`Card` не меняем: `p-4 sm:p-6` — только в drive через `class`.
-4. **Этап 4 — унификация паттернов (arch + drive):** `EntryCard`, `Item` family, `DescriptionList`, `FormMessage`; замена ручных карточек страниц на `Surface`, ссылок-кнопок на `Button`, уведомлений на `Alert` (см. §10).
-5. **Гигиена drive:** `min-w-0`/`truncate`/`title` в `DriveNodeCard`, `DriveBrowse`, `DriveDavTokens`; `mt-*` в `DriveBrowse` и `my-4` в `DriveEntry` заменить на `gap`/`flex-col` у родителя.
-6. **Мобильный аудит drive:** `DriveFilters` (`basis-44` → `grid-cols-1 sm:grid-cols-2`), `DriveNodeCard` (`basis-56` → `min-w-0 flex-1`), плюс крошки, detail-`dl`, target-label, заголовок доступов, футер фильтров и корневые `min-w-0` — точные файлы/классы в §9a.
-7. **Карточки/поверхности drive:** `DriveEntry`, `DriveFiltersPage`, `DriveNodeCard` detail, `DriveDavTokensStep` → `EntryCard`/`Surface`/`Card`; `DriveNodeCard` row → `Attachment` + `Item`.
-8. **Пустые состояния/уведомления:** `Empty` для токенов/доступов, `Alert` для notice/fact/storage.
-9. **Модалки:** унифицировать `min-h-0 flex-1` + `p-4 sm:p-6`.
-10. **OverflowMenu:** внедрить в `DriveNodeLinks` и `DriveBrowse` controls; `maxVisible` — `{2 на мобильных, 3–5 на десктопе}`, `fallback="scroll"`, `mode="count"` на старте; `fit` — после стабилизации.
-11. **Тесты:** SSR/no-JS, `data-testid`, клавиатура меню, адаптивность, `test:classes` (UnoCSS-аудит).
+
+**D3. `DriveNodeAction[]` + `OverflowMenu`.** Единый доменный дескриптор действий (`label`, `href`, `permission`, `variant`, no-JS link); `DriveNodeLinks` и `DriveBrowse` читают один список; внедрение A5 с `maxVisible` 2 на мобильном и 3–5 на десктопе, `mode="count"` на старте.
+
+**D4. Гигиена drive.** `min-w-0`/`truncate`/`title` в `DriveNodeCard`, `DriveBrowse`, `DriveDavTokens`; `mt-*` и `my-4` заменить на `gap`/`flex-col` у родителя.
+
+**D5. Мобильный аудит drive.** `DriveFilters` (`basis-44` → `grid-cols-1 sm:grid-cols-2`), `DriveNodeCard` (`basis-56` → `min-w-0 flex-1`), крошки, detail-`dl`, target-label, заголовок доступов, футер фильтров, корневые `min-w-0` (§9a).
+
+**D6. Карточки и поверхности drive.** `DriveEntry`, `DriveFiltersPage`, detail `DriveNodeCard`, `DriveDavTokensStep` → `EntryCard`/`Surface`/`Card`; row → `Attachment` (A6) + `Item` (A10). Только после D2: выбор и URL-состояние уже стабильны.
+
+**D7. Модалки drive.** Унифицировать `min-h-0 flex-1` + `p-4 sm:p-6`; ветка `card`/`plain`.
+
+**D8. Проверки drive.** SSR/no-JS, `data-testid`, клавиатура меню, адаптивность, `test:classes`.
+
+### 8.1. Проверка противоречий после пересортировки
+
+- **«Пикер выполнять первым» против «arch первым».** Противоречие снято: пикер стал D2, arch — A0–A11. Формулировка «Выполнять первым» удалена, вместо неё «после arch».
+- **Зависимость пикера от `Empty`.** §7a.1 больше не создаёт `Empty` «первым шагом этапа 0»: примитив живёт в A4, D2 его использует.
+- **§9 обещал идти «после Empty/OverflowMenu/Attachment.folder».** Теперь A4–A6 строго раньше A9 — порядок тот же, номера явные.
+- **Паттерны «после стабилизации выбора».** Создание примитивов (A10) не зависит от пикера; ограничение относится к их подключению в drive — это D6 после D2.
+- **OverflowMenu и `DriveNodeAction`.** A5 создаёт примитив, D3 — доменный дескриптор и внедрение; два разных шага, не дубль.
+- **Inline-уведомления.** §8a требует убрать их в D0; D6 и D7 не добавляют новых плашек.
+- **`Surface.rail` и настройки.** A7 — свойство поверхности, A8 — реестр; A8 зависит от A7, обратной зависимости нет.
+- **Модалки и версия.** A2 (версия/reload) не зависит от A3 (готовность), но оба трогают `lib/modals`; A2 идёт первым, чтобы ошибки чанка уже классифицировались.
+- **Проверки.** A11 и D8 не пересекаются по файлам: A11 — сьюты arch, D9 — drive.
+- **Граница репозиториев.** Уведомления разделены: sessions/rename/schema — arch (`refs/core`, A0), drive `?notice=`/`drive-notice`/success-toast — payload (`refs/module-drive`, D0). Один коммит не смешивает ветки.
+- **Пустые состояния не дублируются.** Таксономия `driveEmptyOf` — это 0.10 внутри D2; отдельного этапа про пустоту нет, D6 её только использует.
+
 
 ---
 
-## 9. Этап 3: мобильный аудит базовых UI-компонентов
+## 8a. Этап 1.5: Toast — только клиентские сбои
 
-Цель этапа — привести **base UI** к мобильному поведению: меньше фиксированных ширин/отступов, корректные скроллы, touch-target, единый вид и чистый UnoCSS. Глобальные `p-6` у `Surface`/`Card` **не меняем** — адаптивный `p-4 sm:p-6` задаётся точечно в drive через `class`. Этап идёт после создания `Empty`/`OverflowMenu`/`Attachment.folder`, до миграции карточек drive.
+**Сервер уведомлений не показывает.** Результат операции — навигация или квитанция формы; ошибка — в форму (`Field`, `Alert` внутри формы), а не отдельным маршрутом и не плашкой над страницей. Inline-объявления из UI убираем, cookie-транспорт не вводим.
+
+Toast — единственное исключение, и только на клиенте: событие, для которого нет экрана и которое нельзя вернуть в форму.
+
+- потеря сессии посреди работы;
+- неожиданная блокировка или отзыв права;
+- сеть недоступна;
+- чанк или билд не доехал (§8b).
+
+Без JS toast не показывается: такие события проявляются штатной ошибкой формы или страницы при следующем действии. Ни `<noscript>`-баннера, ни слота в каркасе, ни `?notice=`.
+
+### 8a.0. Аудит: куда сейчас уходят ошибки
+
+Проверено `#core/lib/form` (`result.ts`, `submit.ts`, `server.ts`, README «Исходы отправки») и все `redirect(...)` в `src`.
+
+**Модель библиотеки уже правильная:** `not-applied` → ошибки рендерятся в форме (`renderInlineWithResult`), `fail(...)` → `Result.errors` и статус, `redirect` — только при `ok` и `committed`. Обработчик `componentFormsHandle` сам различает эти ветки (`core/hooks/component-form/server.server.ts:709–721`), включая `redirectOnSuccess: 'inline'`.
+
+**Редиректов-ошибок в коде нет.** Все 13 мест с `redirect(` срабатывают только при `result.ok` (успех) либо когда экшена нет (`schema`: `if (!handled)`). Переименование устройства (`session-card`) и правка чужой сессии (`account-session`) уже возвращают `fail(...)` — это эталон.
+
+**Что реально нашлось:**
+
+| Место | Что это | Решение |
+|---|---|---|
+| drive `?notice=drive.notice-done` | маркер **успеха** в PRG | убрать (успех — просто навигация) |
+| sessions `?notice=bulk-exit-partial&requested&revoked` | **частичный успех**, числа из адреса | не ошибка: вернуть `{ requested, revoked }` в `Result.data`, показать `Alert` из результата формы; без query-ключей |
+| `?notice=rename-failed` в `session-card`/`account-session` | **мёртвый код**: парсится и рисуется, но никто его не выставляет (rename уже `fail`) | удалить парсинг, тип `notice` и блок в `SessionCard` |
+| schema `?done=1` → `justDone` | маркер успеха; `justDone` нигде не используется | удалить |
+
+**Правило на будущее:** ошибка операции — только `fail(...)`/`Result.errors` в форму; частичный успех — типизированные данные в `Result.data` и `Alert` рядом с формой; успех — навигация. `redirect` не несёт ни ошибок, ни чисел.
+
+### 8a.1. Что убрать из кода
+
+Разделение по репозиториям: arch-часть — этап A0 (`refs/core`), drive-часть — этап D0 (`refs/module-drive`).
+
+- drive: `?notice=` и `shownNotice` в `sections/drive/load.server.ts`, `notice` в `DriveListRouteData`/`DriveOperationData`/`DrivePickerData`, `<p data-testid="drive-notice">` в `DriveBrowse`, `driveNoticeHref`, а также `notify(\`${spec.title}: выполнено\`)` в `use-drive-operation.svelte.ts` — успешных тостов нет.
+- user/sessions: `?notice=bulk-exit-partial&requested&revoked` и `noticeOf` в `sessions-list/load.server.ts`; `runBulkExit` (`modules/user/sessions/service/sessions-exit.server.ts`) возвращает `redirect` с query — заменить на `{ data: { requested, revoked } }`, а список показывает `Alert` из результата формы.
+- user: `?notice=rename-failed` в session-card/account-session (мёртвый код) и `?done=1`/`justDone` в schema.
+- Тесты, которые проверяют эти адреса, переписать: успех — навигация без плашки, ошибка — в форме, частичный успех — `Result.data`.
+
+### 8a.2. Куда возвращать ошибку
+
+- Ошибка операции — ошибка `Field` или `Alert` внутри формы/модалки, рядом с кнопкой; страница не уходит на отдельный маршрут.
+- Частичный успех группы (bulk-сессии) — тот же экран списка, `Alert` с числами из ответа, без query-ключей.
+- Успех — навигация или закрытие модалки. Отдельного «выполнено» нет.
+
+### 8a.3. Контракт toast
+
+- Только клиент: `notify(...)` вызывается из обработчиков и эффектов, никогда из `load`/`execute`.
+- Слой выше модалок: `NoticeHost` с `z` больше 210, иначе тост из модалки не виден (сейчас `z-100` ниже backdrop `z-200`).
+- Дедупликация по `text + tone`, повтор продлевает таймер, а не игнорируется.
+- Максимум 3 плашки; новая вытесняет старую.
+- Один `aria-live="polite"` на контейнере; у элементов нет своего `role="status"`, иначе двойное чтение.
+- Таймеры очищаются при размонтировании и на `visibilitychange`.
+- Никаких success-тостов об операциях: это косметика без функции.
+
+### 8a.4. Проверки
+
+- Успешная операция не показывает тост и не пишет `?notice=`.
+- Ошибка операции видна в форме или модалке, отдельного маршрута нет.
+- No-JS: ошибка формы видна, тостов нет.
+- Тост, показанный при открытой модалке, виден поверх неё.
+- Одинаковые события не дублируются; разные тона одного текста не схлопываются.
+
+## 8b. Этап 1.6: модалка по готовности и принудительный перезапуск
+
+Симптом: кнопка показывает лоадер, модалка открывается со скелетоном и догружается внутри; после долгого фона вкладки ленивые компоненты не грузятся до перезапуска сайта.
+
+### 8b.1. Что уже есть
+
+- `lazy(() => import('./X.svelte'))` + `ensureModalComponent` (`core/lib/modals/svelte/component.svelte.ts`): готовность = данные **и** чанк; неудачный импорт не кешируется, повтор при следующем открытии.
+- `loader.ts` ждёт `ensureView` вместе с данными, ставит `status:'error'` и репортит причину; кнопка уже умеет состояние ошибки.
+- SvelteKit 3.0.1 сам умеет версии: `x-sveltekit-version` в ответах `load`/actions, проверка на focus/visibility, полная навигация при ошибке загрузки и смене версии, `updated.current`/`updated.check()` из `$app/state`, `kit.version.name`/`pollInterval`.
+
+### 8b.2. Контракт открытия
+
+- Клик → `preloadModal` (данные + чанк) → **только при успехе** открывается модалка. Кнопка: `idle → loading → error`; повторный клик из `error` повторяет загрузку.
+- Предзагрузка на hover для ленивых модалок не используется (`data-sveltekit-preload-data="hover"` на `<body>` не должен открывать модалку и не должен подменять клик).
+- Ошибка остаётся на кнопке; модалка не открывается. Причина уходит в `onError`.
+
+### 8b.3. Классификация сбоя
+
+- `chunk-stale` — 404 или `Failed to fetch dynamically imported module`: билд сменился, повтор того же импорта бесполезен.
+- `network` — обрыв или таймаут: повтор осмыслен.
+- `data` — ошибка загрузчика маршрута, к чанку отношения нет.
+
+### 8b.4. Смена билда: принудительный перезапуск
+
+В нашем сценарии выбираем **принудительный reload**, а не toast и не предложение обновиться. Причина: старые чанки не грузятся, навигация и отправка формы бьются в мёртвые адреса, и ожидать действия пользователя бессмысленно — он в этот момент может отправлять форму в никуда.
+
+- Условия срабатывания: `updated.current === true` **или** подтверждённый `chunk-stale`.
+- Действие: `location.reload()` на текущий адрес, не `goto` и не переход на главную.
+- Guard: ключ в `sessionStorage` по версии билда — один reload на версию; повторный сбой той же версии не циклит, а показывает текст ошибки.
+- `kit.version.name` — детерминированный (commit sha), не `Date.now()`; `pollInterval` — 60 000 или `0`, если хватает проверок на focus/visibility.
+- Несохранённые данные формы при reload теряются; это принятая цена против мёртвого интерфейса, но reload не запускается, пока идёт активный `submit` (сначала даём ему завершиться или упасть).
+
+### 8b.5. Проверки
+
+- Отклонённый импорт → модалка не открывается, кнопка в `error`, повтор запускает новую попытку.
+- `chunk-stale` → ровно один `reload` на версию, второй раз не перезагружает (guard).
+- `updated.current` после смены версии → reload без ожидания действия пользователя.
+- Успешный клик: модалка появляется сразу с содержимым, без кадра со скелетоном.
+- Hover не открывает модалку и не подменяет клик.
+
+## 9. A9: мобильный аудит базовых UI-компонентов
+
+Цель этапа — привести **base UI** к мобильному поведению: меньше фиксированных ширин/отступов, корректные скроллы, touch-target, единый вид и чистый UnoCSS. Глобальные `p-6` у `Surface`/`Card` **не меняем** — адаптивный `p-4 sm:p-6` задаётся точечно в drive через `class`. A9 идёт после A4–A6 и до D6 (карточки drive).
 
 ### 9.1. Что проверено
 
@@ -2106,6 +2320,100 @@ interface FormMessageProps extends Omit<HTMLAttributes<HTMLParagraphElement>, 'c
 - `Item` повторяет анатомию shadcn `Item` (media/content/title/description/actions), `Empty` — shadcn `Empty`, `FormMessage` — shadcn `FormMessage`.
 - `DescriptionList` и `EntryCard` — проектные тонкие обёртки над `Card`/`dl`; визуальный язык не меняют.
 - Таблицы вариантов и API из §10.2 — контракт этапа 4: новые варианты/пропы не добавлять без отдельного потребителя; всё новое сначала в `#core/ui`, не в drive.
+
+---
+
+## 10b. Настройки: модульные пункты (реестр + `Surface.rail`)
+
+### 10b.1. Принцип
+
+Первый уровень — **плоский реестр пунктов**, как схема фильтров: схема говорит, что есть и кому видно; UI рисует то, что разрешено. Вложенности в контракте нет: если пункту нужны свои табы, форма или список, он рисует их сам. Второй уровень — «отголосок» компонента, а не часть реестра.
+
+Пункт определяет **модуль**: нет модуля — нет файла регистрации, нет пункта; нет прав — `visible()` вернул `false`; показывать нечего — тоже `false`. Манифест для UI не используется: JSON не умеет проверять права и не знает `uid`.
+
+### 10b.2. Контракт
+
+```ts
+export interface SettingsContext {
+  readonly uid: string | null      // null — свои настройки, строка — чужой пользователь
+  readonly surface: 'page' | 'modal'
+  readonly stepsMode: 'url' | 'local' | 'hybrid'
+  readonly isOwn: boolean
+  readonly canRead: boolean
+  readonly canEdit: boolean
+}
+
+export interface SettingsSection {
+  readonly id: string              // модуль назначает имя сам; оно же ключ адреса
+  readonly label: string
+  readonly order?: number
+  readonly component: Component<{ ctx: SettingsContext }>
+  readonly visible?: (ctx: SettingsContext) => boolean
+  readonly ownOnly?: boolean       // сахар: только свои настройки
+}
+
+registerSettingsSection(section)
+settingsSectionsFor(ctx): SettingsSection[]   // filter(ownOnly) → filter(visible) → sort(order)
+```
+
+- `id` приходит от модуля (`account`, `drive`, …); центрального перечня нет.
+- `uid` — часть контекста, а не отдельный проп: компонент сам решает, что грузить и что скрывать для чужого пользователя.
+- `canRead=false` отсекает все пункты — исключение только у базового пункта, который показывает `Acl`.
+
+### 10b.3. Регистрация модулем
+
+```ts
+// modules/<name>/files/src/modules/<name>/settings.ext.ts
+registerSettingsSection({
+  id: 'drive',
+  label: 'Диск',
+  order: 30,
+  component: DriveSettings,
+  ownOnly: true,
+})
+```
+
+Glob в `(site)/+layout.svelte` рядом с `modals.ts`/`config.ext.ts`: `import.meta.glob('/src/modules/**/settings.ext.ts', { eager: true })`. Существующий `registerConfigStep` остаётся для внутренних подшагов пункта «Аккаунт».
+
+### 10b.4. `Surface.rail`
+
+`Surface` сегодня — шапка (`SurfaceBar`) + тело. Добавляем необязательный `rail`:
+
+```ts
+rail?: Snippet
+railLabel?: string
+railWidth?: 'sm' | 'md'   // w-40 | w-56
+```
+
+- Один DOM на оба layout: `nav` с `flex overflow-x-auto` на мобильном и `lg:flex-col lg:w-56 lg:border-r lg:pr-4 lg:overflow-visible` на десктопе. Второй экземпляр навигации не рендерится — иначе дублируются ссылки и `id`.
+- `aria-label={railLabel}`, активный пункт — `aria-current="page"`.
+- Без `rail` разметка и классы `Surface` не меняются — регрессии для остальных экранов нет.
+- Пункты rail — обычные ссылки (`Button href`), поэтому работают без JS.
+
+### 10b.5. Хост
+
+`UserConfig` становится `SettingsHost` поверх `Surface`:
+
+- `sections = settingsSectionsFor(ctx)`, `current` из адреса; прямой запрещённый `id` → `Acl`, а не тихий откат к первому;
+- значение по умолчанию — первый видимый пункт;
+- ноль видимых пунктов → `Acl`/`Empty`, не пустой `Surface`;
+- `ctx.uid` берётся у носителя: `/user/config` → `null`, `/user/[id]/config` → id, модалка → проп;
+- `rail` — навигация по пунктам; тело — компонент активного пункта с `ctx`.
+
+**Адрес.** Переиспользуем `user_config_step`: значения — `id` пункта, вложенные — `account.security`/`account.sessions` (как сейчас `security.sessions`). Одноразовый alias `profile → account`, `security → account.security` сохраняет старые ссылки; неизвестный `id` — `Acl`, не молчаливый переход.
+
+### 10b.6. «Сессии»
+
+Список сессий — самодостаточный компонент по образцу панели фильтров в `Listing`: рисует свои строки, счётчик и кнопки действий целиком, без специального «примитива сессий» в ядре. Хост передаёт только `ctx` (`uid`, `surface`). Общие элементы берутся из `Listing`/`ListingRow`, кнопки — `Button`, пустота — `Empty`.
+
+### 10b.7. Проверки
+
+- Модуль без файла регистрации → пункта нет; `visible=false` → пункта нет; `ownOnly` + чужой `uid` → пункта нет.
+- `id` назначает модуль; два модуля с одним `id` — второй игнорируется.
+- `Surface` без `rail` рендерится как раньше; с `rail` — одна `nav`, на мобильном горизонтальная прокрутка без видимого скроллбара.
+- Прямой `?user_config_step=<чужой id>` → `Acl`; `profile`/`security` ведут на «Аккаунт» и его подшаг.
+- no-JS: rail и подшаги — рабочие GET-ссылки; вложенные табы не требуют JS.
+- «Сессии» не тянут отдельный примитив: компонент собирается из `Listing`/`Button`/`Empty`.
 
 ---
 
