@@ -1786,8 +1786,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
    - **0.9. Защита от устаревших ответов.** Использовать `reqId`/`AbortController`/`prefetchGen` ядра, а не второй счётчик. `fetchDrivePage` принимает `signal`, проверяет его до/после `preloadData` и сверяет `driveListKey` снапшота с ожидаемым; чужой снапшот — `drive.list-stale`, отменённый — тихий `AbortError`. Picker-колбэки — монотонный `seq`, move/copy — только `mode=single` без `ids`, с UUID или явным `id:null`; missing/wrong `mode` и невалидный `id` игнорируются без подстановки корня; `picked`/`upicks`/`step` относятся только к `multiple`. Детали и тесты — §7a.8; выполнять после 0.8.
    - **0.10. Таксономия пустых состояний.** Сначала определить `DriveEmptyKind`/`DriveEmptySpec` и `driveEmptyOf` (дерево приоритетов), затем подключить `Empty` в слот `Listing`/`EmptyState`. Не писать отдельные `{#if}` на каждый экран. Детали и тексты — §7a.10; `filter_owner` не входит в `hasFilters`/`hasSearch` и не передаётся в `DriveEmptyInput`; он влияет только на сохранение/сброс фильтров при переходе, а `DriveEmptyKind`/`DriveEmptySpec` через `driveEmptyOf` определяются итоговыми фильтрами. Снятие маркера при сбросе фильтров — по §7a.4. Выполнять после 0.9, до финальной полировки списка.
 
-**D3. Действия, гигиена, мобильный аудит.**
-- `DriveNodeAction[]` — единый доменный дескриптор действий; внедрение `OverflowMenu` (`maxVisible` 2 на мобильном, 3–5 на десктопе, `mode="count"`).
+**D3. Действия, гигиена, мобильный аудит.** — `[-]` в работе.
+- `[x]` `DriveNodeAction[]` и `OverflowMenu` (`96476b2d`, `e2c0ad2e`): дескриптор действий, 2 видимых на узком экране и 5 на широком, `mode="count"`; пункт меню несёт `attrs` модальной ссылки.
 - Гигиена: `min-w-0`/`truncate`/`title`, `gap` вместо `mt-*`/`my-4`.
 - Мобильный аудит drive (§9a): `DriveFilters`, `DriveNodeCard`, крошки, detail-`dl`, футер фильтров.
 
