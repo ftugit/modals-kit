@@ -1799,7 +1799,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 **D4. Карточки, модалки и проверки.** — `[-]` в работе.
 - `[x]` `DriveEntry` на `EntryCard`, модалки drive — `p-4 sm:p-6` (`5a399c8e`).
 - `[x]` detail-`DriveNodeCard` на `Item`, `DriveDavTokensStep` и `DriveFiltersPage` на `EntryCard` (`d1878ad7`).
-- `[ ]` Строка списка → `Attachment` + `Item`; проверки drive (`test:classes`, SSR/no-JS, клавиатура, адаптивность).
+- `[ ]` Строка списка → `Attachment` + `Item` (не начато).
+- `[x]` SSR/no-JS и `data-testid` покрыты тестами drive (22 файла, 111 тестов), клавиатура меню — `OverflowMenu`. `test:classes` заблокирован средой: `node tooling/classes-audit.mjs` падает `RunnerError` в vite module-runner (не связано с правками).
 - Модалки drive: `min-h-0 flex-1` + `p-4 sm:p-6`, ветка `card`/`plain`.
 - Проверки drive: SSR/no-JS, `data-testid`, клавиатура, адаптивность, `test:classes`.
 
