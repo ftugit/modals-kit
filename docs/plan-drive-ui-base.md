@@ -1713,13 +1713,16 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `Empty` (§3a), `OverflowMenu` + `MoreHorizontalIcon` (§5), `Attachment` folder/count/badges (§4).
 - Проверки: `vitest` по `core/ui/{empty,overflow-menu,attachment}` — 17 тестов; `check` — baseline 64, ни одной в новых файлах.
 
-**A4. `Surface.rail` и модульные настройки.** — `[-]` в работе.
+**A4. `Surface.rail` и модульные настройки.** — `[x]` done (`b4f9e901`, `2edc4c64`, `6825f5b3`, `44dbb60a`), проверено в браузере.
 - `[x]` `Surface.rail` (`b4f9e901`): один DOM, десктоп — колонка, узкий экран — строка с прокруткой; тесты SSR.
 - `[x]` Реестр `SettingsSection` (`2edc4c64`): `uid` в контексте, `visible`/`ownOnly`, порядок; тесты.
-- `[x]` `SettingsHost` (`6825f5b3`): реестр секций, rail, активный пункт по `user_config_step`, «Аккаунт» через `UserConfig embedded`, `settings.ext.ts` + glob; страницы и модалка переключены.
+- `[x]` `SettingsHost` (`6825f5b3`): реестр секций, rail, активный пункт по `settings_section`, «Аккаунт» через `UserConfig embedded`, `settings.ext.ts` + glob; страницы и модалка переключены.
 - `[x]` Правки по проверке: `settings_section` вместо коллизии с `user_config_step`; `frame` больше не мутирует state во время рендера (SessionsList на клиенте).
 
-**A5. Base UI, паттерны и проверки arch.**
+**A5. Base UI, паттерны и проверки arch.** — `[-]` в работе.
+- `[x]` Мобильные правки base UI: `SurfaceBar` (скроллбар ряда, README приведён к коду), `SearchBar` (без `mb-3`, адаптивная ширина), `Badge` (`max-w-full min-w-0`), `PageNav` (номера скроллятся, `mt-2` убран), `FileAttachment` strip (скрытый скроллбар), `PaginatorSettings` (`p-3 sm:p-4`), модальные `p-4 sm:p-6`.
+- `[ ]` Паттерны `Item`/`DescriptionList`/`FormMessage`/`EntryCard` и замены §10.3.
+- `[ ]` Полный прогон проверок arch.
 - Мобильный аудит base UI: `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок (§9).
 - `Item` family, `DescriptionList`, `FormMessage`, `EntryCard` + замены §10.3 в arch (§10).
 - Проверки arch: `check`, unit/SSR, `test:classes`, затронутые браузерные сьюты.

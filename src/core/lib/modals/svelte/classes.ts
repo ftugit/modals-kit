@@ -137,10 +137,10 @@ export function floatingLayoutClass(anchor: string | undefined): string {
 
 /* ── состояния: скелетон, ошибка, спиннер ─────────────────────────── */
 
-export const MODAL_SKELETON_CLASS = 'flex flex-col gap-3 p-6'
+export const MODAL_SKELETON_CLASS = 'flex flex-col gap-3 p-4 sm:p-6'
 /** Классы блока ошибки модалки (общие у хоста и витрин). */
 export const MODAL_ERROR_CLASS =
-  'my-auto flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center'
+  'my-auto flex flex-1 flex-col items-center justify-center gap-3 p-4 text-center sm:p-6'
 /** Классы заголовка ошибки в модалке. */
 export const MODAL_ERROR_TITLE_CLASS = 'text-base font-semibold tracking-tight text-foreground'
 /** Классы подсказки под ошибкой в модалке. */

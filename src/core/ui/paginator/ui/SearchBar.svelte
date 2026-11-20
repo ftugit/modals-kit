@@ -60,11 +60,11 @@
   hiddenFields={search.hiddenFields}
   role="search"
   data-testid="search-form"
-  class={cn('mb-3 flex flex-wrap items-center gap-2', className)}
+  class={cn('flex flex-wrap items-center gap-2', className)}
   onsubmit={search.submit}
 >
   <SearchInput
-    wrapperClass="min-w-56"
+    wrapperClass="min-w-0 flex-1 basis-full sm:basis-auto"
     {...search.field.attrs}
     data-testid="search-input"
     disabled={search.hydrated && search.disabled}

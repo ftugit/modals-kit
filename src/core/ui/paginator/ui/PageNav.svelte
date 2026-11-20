@@ -64,9 +64,10 @@
     aria-label="Навигация по страницам"
     data-testid="page-nav"
     class={className ??
-      'sticky bottom-0 mt-2 flex items-center justify-center gap-3 bg-background/90 px-2 py-2 backdrop-blur'}
+      'sticky bottom-0 flex items-center justify-center gap-3 bg-background/90 px-2 py-2 backdrop-blur'}
   >
-    <ButtonGroup>
+    <div class="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <ButtonGroup>
       <PageLink
         {name}
         page={current - 1}
@@ -106,7 +107,8 @@
       >
         →
       </PageLink>
-    </ButtonGroup>
+      </ButtonGroup>
+    </div>
 
     {#if counter !== false && total != null && total > 0}
       {#if typeof counter === 'function'}

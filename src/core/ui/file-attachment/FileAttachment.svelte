@@ -227,7 +227,7 @@
   const ulClass = $derived(
     cn(
       layout === 'strip'
-        ? 'flex flex-nowrap gap-2.5 overflow-x-auto pb-1'
+        ? 'flex flex-nowrap gap-2.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
         : layout === 'tile'
           ? 'flex flex-wrap gap-2.5'
           : 'flex flex-col gap-2',

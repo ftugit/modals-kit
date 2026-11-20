@@ -166,7 +166,7 @@
       ...foreignParams.map(([fieldName, value]) => ({ name: fieldName, value })),
     ]}
     footer={footer ? footerLine : undefined}
-    class={className ?? 'rounded-xl border border-border bg-card p-4 text-sm shadow-sm'}
+    class={className ?? 'rounded-xl border border-border bg-card p-3 text-sm shadow-sm sm:p-4'}
     {...(applyLabel !== undefined ? { applyLabel } : {})}
     {...(fallbackHint !== undefined ? { fallbackHint } : {})}
   />

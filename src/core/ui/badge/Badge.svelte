@@ -2,7 +2,7 @@
   import { variants, type VariantProps } from '#core/ui/utils.js'
 
   export const badgeVariants = variants(
-    'inline-flex items-center gap-1 rounded-md border font-medium whitespace-nowrap transition-colors',
+    'inline-flex max-w-full min-w-0 items-center gap-1 rounded-md border font-medium whitespace-nowrap transition-colors',
     {
       variant: {
         default: 'border-transparent bg-primary text-primary-foreground',
