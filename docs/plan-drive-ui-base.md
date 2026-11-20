@@ -1703,15 +1703,18 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - Убрать inline-плашки и `?notice=`, ошибки — в форму, частичный успех — `Result.data`; удалить мёртвые `rename-failed` и `?done=1` (§8a).
 - Тост: `z-300`, дедупликация `text + tone` с продлением таймера, лимит 3, один `aria-live`, снятие таймеров (§8a.3).
 - Тесты и README, затронутые этими изменениями.
+- Аудит A1: success-тост drive удалён (`70c919b3`), частичный успех sessions — `Alert variant="info"` (`ca5e5880`).
 
 **A2. Модалки и версии.** — `[x]` done (`ac67096a`, `4084fcb4`).
 - Версия: `kit.version.name`/`pollInterval`, `updated.current` → guarded reload, `chunk-stale` классифицируется и лечится перезагрузкой.
 - Окно открывается только по `ready` (данные и чанк); при ошибке — карточка retry, без скелетона. Пока не готово, диалог и фон закрыты.
 - hover-prefetch оставлен: он только греет данные и модалку не открывает.
+- Аудит A2, принятые отклонения: guard — окно 10 с, а не «один reload на версию»; проверки активного `submit` нет; `version.name` из env, иначе дефолт SvelteKit.
 
 **A3. Базовые примитивы.** — `[x]` done (`f7013816`, `ec8f9518`, `b5f75548`).
 - `Empty` (§3a), `OverflowMenu` + `MoreHorizontalIcon` (§5), `Attachment` folder/count/badges (§4).
 - Проверки: `vitest` по `core/ui/{empty,overflow-menu,attachment}` — 17 тестов; `check` — baseline 64, ни одной в новых файлах.
+- Аудит A3: `mode="fit"`/`maxVisible`-функция отложены в D3; плоские пропы `count`/`badges` у `Attachment` не добавлены — только через `item`; типы `EmptyProps`/`OverflowMenuProps` не экспортируются.
 
 **A4. `Surface.rail` и модульные настройки.** — `[x]` done (`b4f9e901`, `2edc4c64`, `6825f5b3`, `44dbb60a`), проверено в браузере.
 - `[x]` `Surface.rail` (`b4f9e901`): один DOM, десктоп — колонка, узкий экран — строка с прокруткой; тесты SSR.
@@ -1729,6 +1732,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - Мобильный аудит base UI: `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок (§9).
 - `Item` family, `DescriptionList`, `FormMessage`, `EntryCard` + замены §10.3 в arch (§10).
 - Проверки arch: `check`, unit/SSR, `test:classes`, затронутые браузерные сьюты.
+- Аудит A5, отклонения: `SearchBar` — кнопки без `max-sm:w-full`; `PageNav` — без safe-area и `min-h-10` у `PageLink`; `OverflowMenu` — пункты без `min-h-11 sm:min-h-9`; `ItemActions` — `gap-1.5` без `flex-wrap`; `Item` без `data-size/data-selected/data-interactive`.
 
 ### D. Drive (`refs/module-drive`) — после arch
 
@@ -1742,7 +1746,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 
 - `[x]` Codec списка (`a787ef18`, `list-codec.ts`): decode/resolve/encode/href/fromExtra, тесты.
 - `[x]` Подключение codec (`e52b3810`): `loadDriveList` и `fetchDrivePage` работают через `decodeDriveList`/`driveListStateFromExtra`, ручные сборки убраны.
-- `[ ]` Остальное: `picked`/`mode`/`step`, `drive.ids` как срез, `chosen`, Apply по `canApplyChosen`, пустые состояния, no-JS. `Empty` уже создан в A3, поэтому здесь только `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять после arch (A1–A5).
+- `[x]` Контракт `DrivePickerData` (`a30583e0`): `mode`/`step`/`picked`, `overrides.ids` через `resolveDriveList`, `single` нормализует `step` в `pick`.
+- `[ ]` Остальное: UI пикера (`Steps`, `Checkbox`/`ListingRow`, счётчик), `chosen`-срез и `canApplyChosen`, `filter_owner`, пустые состояния, no-JS-ссылки (§7a).
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
      - `drive.ids` — **производный срез списка** для шага `chosen`: `null` — без ограничения, `[]`/`none` — явно пустой набор, иначе ID в порядке `picked`; передаётся через `overrides.ids` и попадает в `snapshot.extra`. Не является результатом для вызывающего экрана.
