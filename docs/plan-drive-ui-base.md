@@ -1705,7 +1705,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - UnoCSS-проверка: `space-*`/`dark:` только в запретах, палитровых классов нет, `[scrollbar-width:none]` есть в `ActiveFilters`/`HeaderRowView`; `SurfaceBar` скроллбар не скрывает (входит в A9).
 - Тесты: `KIT_ADAPTER=node vitest run src/modules/user/sessions src/sections/user` — 73 passed; `check` — 64 ошибки, все вне изменённых файлов (baseline не вырос).
 
-**A1. Toast-хост.** Слой выше модалок, дедупликация `text + tone`, максимум 3 плашки, один `aria-live`, очистка таймеров (§8a.3).
+**A1. Toast-хост.** — `[x]` done (`50a03bb7`): `z-300`, дедупликация `text + tone` с продлением таймера, лимит 3, один `aria-live`, `dismissAllNotices` на уходе и `visibilitychange` (§8a.3).
 
 **A2. Версия и перезапуск.** `kit.version.name`, `pollInterval`, `updated.current`, принудительный `location.reload()` с guard для `chunk-stale` (§8b.4).
 
