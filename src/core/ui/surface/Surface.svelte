@@ -65,6 +65,12 @@
     leading?: Snippet
     /** Правая зона шапки: действия экрана, либо две группы `{ start, end }`. */
     controls?: Snippet | SurfaceControls
+    /** Левая колонка-навигация внутри поверхности (аналог sidebar). На узком экране — строка сверху. */
+    rail?: Snippet
+    /** Доступное имя навигации rail. */
+    railLabel?: string
+    /** Ширина rail на десктопе: `sm` — 10rem, `md` — 14rem. */
+    railWidth?: 'sm' | 'md'
     /** Тело экрана. `children` — то же самое через стандартный проп. */
     render?: Snippet
     children?: Snippet
@@ -80,6 +86,9 @@
     description,
     leading,
     controls,
+    rail,
+    railLabel,
+    railWidth = 'md',
     render,
     children,
     scroll,
@@ -166,7 +175,24 @@
       )}
       data-surface-body=""
     >
-      {@render body()}
+      {#if rail}
+        <div class="flex min-h-0 flex-col gap-4 lg:flex-row lg:gap-6">
+          <nav
+            aria-label={railLabel}
+            data-surface-rail=""
+            class={cn(
+              'flex shrink-0 gap-1 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+              'lg:flex-col lg:overflow-visible lg:border-r lg:border-border lg:pb-0 lg:pr-4',
+              railWidth === 'sm' ? 'lg:w-40' : 'lg:w-56',
+            )}
+          >
+            {@render rail()}
+          </nav>
+          <div class="flex min-w-0 flex-1 flex-col gap-4">{@render body()}</div>
+        </div>
+      {:else}
+        {@render body()}
+      {/if}
     </div>
   {/if}
 </section>
