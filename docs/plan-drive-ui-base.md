@@ -1741,6 +1741,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 **D2. Пикер «выбранные» (историческое имя — «этап 0»).** — `[-]` в работе.
 
 - `[x]` Codec списка (`a787ef18`, `list-codec.ts`): decode/resolve/encode/href/fromExtra, тесты.
+- `[x]` Подключение codec (`e52b3810`): `loadDriveList` и `fetchDrivePage` работают через `decodeDriveList`/`driveListStateFromExtra`, ручные сборки убраны.
 - `[ ]` Остальное: `picked`/`mode`/`step`, `drive.ids` как срез, `chosen`, Apply по `canApplyChosen`, пустые состояния, no-JS. `Empty` уже создан в A3, поэтому здесь только `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять после arch (A1–A5).
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
