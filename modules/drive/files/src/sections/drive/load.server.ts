@@ -33,15 +33,14 @@ import {
   DRIVE_PAGE_DEFAULT,
   DRIVE_PAGE_SIZES,
   driveDateRange,
-  driveFilterExtras,
   driveIdentityExtra,
   driveIdentityPath,
   driveSnapshot,
   parseDriveFilters,
   parseDriveIdentity,
-  parseDriveIds,
   type DriveListIdentity,
 } from '#modules/drive/source.js'
+import { decodeDriveList, encodeDriveListExtra } from '#modules/drive/list-codec.js'
 import type {
   DriveFiltersPageData,
   DriveListItem,
@@ -153,11 +152,11 @@ export async function loadDriveList(
     if (old === '1' || old === 'true') redirect(307, driveStarredRoute.href())
   }
 
-  const filters = parseDriveFilters(event.url.searchParams)
-  const ids = parseDriveIds(event.url.searchParams.get(DRIVE_KEYS.ids))
+  const decoded = decodeDriveList(event.url.searchParams, identity)
+  const filters = { ...decoded.state.filters, pageSize: decoded.state.pageSize }
+  const ids = decoded.state.ids
   const range = driveDateRange(filters)
-  const pageRaw = Number(event.url.searchParams.get(DRIVE_KEYS.page) ?? '1')
-  const page = Number.isFinite(pageRaw) ? Math.max(1, Math.trunc(pageRaw)) : 1
+  const page = decoded.state.page
 
   const result = await loadDrivePage(db, gate.actor, {
     folderId: identity.kind === 'folder' ? identity.id : null,
@@ -180,7 +179,7 @@ export async function loadDriveList(
 
   const data = result.value
   const items = data.items.map(toItem)
-  const extra = driveFilterExtras(filters, ids)
+  const extra = encodeDriveListExtra(decoded.state)
   return {
     ...emptyList(identity),
     snapshot: driveSnapshot(

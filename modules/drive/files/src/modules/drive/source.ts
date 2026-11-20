@@ -11,6 +11,7 @@
  * ключи пагинатора (`drive`, `drive.size`).
  */
 import { preloadData } from '$app/navigation'
+import { driveListStateFromExtra, encodeDriveListQuery } from './list-codec.js'
 import type { DriveSort } from '#core/lib/drive/index.js'
 import {
   createUrlAdapter,
@@ -262,17 +263,10 @@ async function fetchDrivePage(
   input?: { q?: string; filters?: Readonly<Record<string, string>> },
 ): Promise<PageResponse<DriveListItem>> {
   const filters = filtersOf(input)
-  const identity = parseDriveIdentity(filters[DRIVE_IDENTITY_KEY])
-  const path = driveIdentityPath(identity)
-  const query = new URLSearchParams({
-    [DRIVE_PAGE_PARAM]: String(page),
-    [`${DRIVE_PAGE_PARAM}.size`]: String(pageSize),
-  })
+  const state = driveListStateFromExtra(filters, page, pageSize)
+  const query = encodeDriveListQuery(state)
   if (input?.q) query.set(DRIVE_KEYS.search, input.q)
-  for (const [key, value] of Object.entries(filters)) {
-    if (key === DRIVE_IDENTITY_KEY || !value) continue
-    query.set(`${DRIVE_PAGE_PARAM}.${key}`, value)
-  }
+  const path = driveIdentityPath(state.identity)
   const result = await preloadData(`${path}?${query}`)
   if (result.type !== 'loaded') {
     const error = new Error('Не удалось загрузить список') as Error & { code: string }
