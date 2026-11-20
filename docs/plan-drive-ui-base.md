@@ -1753,7 +1753,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `[x]` Транспорт результата (`cb88ac7c`): `DriveTargetPicked` — union, монотонный `seq`, `isSingleDriveTarget`; move/copy принимают только `mode:'single'` без `ids`; ссылки пикера пишут `mode`.
 - `[x]` Фильтры шага (`74aba419`): обычный `pick → chosen` сбрасывает pick-фильтры, маркер `filter_owner=chosen` сохраняет их; «Сбросить фильтры» в `chosen`.
 - `[x]` Защита от устаревших ответов (`3decda70`): `driveListKey`/`driveListKeyFromSnapshot`, `signal` до/после `preloadData`, `AbortError`, `drive.list-stale`.
-- `[ ]` Остальное D2: `driveEmptyOf`/`DriveEmptySpec` (§7a.10) и подключение к списку; multiple в модалке (сейчас только страница `/drive/pick`); гидрация отметки в `Checkbox` (сейчас GET-ссылка с `aria-pressed`); полное скрытие `chosen` (`Empty` `chosen-hidden`) отдельным `Empty`-состоянием.
+- `[x]` Таксономия пустых состояний (`52a50a44`): `DriveEmptySpec`/`driveEmptyOf` (§7a.10), 9 unit-тестов, `Empty`/`Alert` в `DriveBrowse`, SSR-тесты пустой папки, фильтра и неизвестного total.
+- `[ ]` Остальное D2: multiple в модалке (сейчас только страница `/drive/pick`); гидрация отметки в `Checkbox` (сейчас GET-ссылка с `aria-pressed`); `mode="fit"` в `OverflowMenu` (отложен).
 - `[x]` Браузерная проверка D2 (beam, Chromium): single без шагов и с GET-выбором в `/drive/move?...target_id=`, stale-ключи не попадают в ссылки; multiple `pick` копит `picked`, `chosen` даёт `upicks`+`drive.ids`, `Apply` ведёт в `/drive?ids=`, пустой `chosen` — «Ничего не выбрано» без Apply; консоль чистая.
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
@@ -1790,6 +1791,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `[x]` `DriveNodeAction[]` и `OverflowMenu` (`96476b2d`, `e2c0ad2e`): дескриптор действий, 2 видимых на узком экране и 5 на широком, `mode="count"`; пункт меню несёт `attrs` модальной ссылки.
 - `[x]` Гигиена и мобильный аудит §9a (`558bf3a0`, `a31b85ce`): `min-w-0` на корнях, крошки/имена с `truncate`+`title`, `break-words`, сетки `grid-cols-1 sm:grid-cols-*`, футеры с переносом, `gap` вместо `mt-3`.
 - `[x]` Тулбар списка на `OverflowMenu` (`d6b3ee6e`): mkdir/upload primary, dav/trash — пункты; 2 видимых на узком экране, 4 на широком; «Важное» — кнопка с `aria-current`, квота — `Badge`.
+- `[x]` Правки аудита D3 (`52a50a44`, `f2e070c7`): `pressed`/`menuitemcheckbox` для звезды, разделитель перед destructive, `moreBadge`, фокус на триггер, тап-цели `min-h-11 sm:min-h-9`, убран мёртвый `compact`, добита гигиена (mt/mb, второй `dd`, крошки, DAV-даты, кнопки фильтров).
+- `[~]` Принятое отклонение: `OverflowMenu.mode="fit"` и `maxVisible`-функция не реализованы; `DriveNodeLinks` меняет `maxVisible` через `matchMedia` после гидрации (мерцание на мобильном, не ошибка гидрации).
 - Гигиена: `min-w-0`/`truncate`/`title`, `gap` вместо `mt-*`/`my-4`.
 - Мобильный аудит drive (§9a): `DriveFilters`, `DriveNodeCard`, крошки, detail-`dl`, футер фильтров.
 
