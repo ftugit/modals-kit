@@ -1737,7 +1737,10 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `DriveBackLink` определяет модалку через `useInstance()`: page-fallback переходит, модалка закрывается.
 - Проверки: payload установлен в core, `vitest src/modules/drive src/sections/drive` — 64 теста; `check` — baseline 13.
 
-**D2. Пикер «выбранные» (историческое имя — «этап 0»).** `Empty` уже создан в A3, поэтому здесь только `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять после arch (A1–A5).
+**D2. Пикер «выбранные» (историческое имя — «этап 0»).** — `[-]` в работе.
+
+- `[x]` Codec списка (`a787ef18`, `list-codec.ts`): decode/resolve/encode/href/fromExtra, тесты.
+- `[ ]` Остальное: `picked`/`mode`/`step`, `drive.ids` как срез, `chosen`, Apply по `canApplyChosen`, пустые состояния, no-JS. `Empty` уже создан в A3, поэтому здесь только `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять после arch (A1–A5).
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
      - `drive.ids` — **производный срез списка** для шага `chosen`: `null` — без ограничения, `[]`/`none` — явно пустой набор, иначе ID в порядке `picked`; передаётся через `overrides.ids` и попадает в `snapshot.extra`. Не является результатом для вызывающего экрана.
