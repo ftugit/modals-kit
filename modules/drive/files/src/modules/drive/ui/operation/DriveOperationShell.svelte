@@ -41,12 +41,12 @@
   id={form.description.id}
   form={form}
   hiddenFields={form.hidden()}
-  class="flex w-full flex-col gap-3 text-left"
+  class="flex w-full min-w-0 flex-col gap-3 text-left"
   data-testid={`drive-op-${op}`}
 >
-  <div class="flex flex-col gap-1">
-    <h2 class="text-base font-semibold leading-tight">{title}</h2>
-    <p class="text-sm text-muted-foreground">{description}</p>
+  <div class="flex min-w-0 flex-col gap-1">
+    <h2 class="break-words text-base font-semibold leading-tight">{title}</h2>
+    <p class="break-words text-sm text-muted-foreground">{description}</p>
   </div>
 
   <Common errors={form.common} title="Не получилось выполнить операцию" />

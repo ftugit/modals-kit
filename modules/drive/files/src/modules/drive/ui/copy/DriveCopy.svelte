@@ -73,7 +73,7 @@
 >
   <div class="flex flex-col gap-1.5">
     <span class="text-sm font-medium">Куда скопировать</span>
-    <p class="text-sm text-muted-foreground" data-testid="drive-target-label">{targetLabel}</p>
+    <p class="min-w-0 break-words text-sm text-muted-foreground" data-testid="drive-target-label">{targetLabel}</p>
     <div>
       <Button {...pickerLink} variant="outline" size="sm">Выбрать папку</Button>
     </div>

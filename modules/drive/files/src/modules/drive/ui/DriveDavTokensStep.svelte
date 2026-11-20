@@ -14,10 +14,10 @@
   let { uid = null }: Props = $props()
 </script>
 
-<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4" data-testid="drive-dav-step">
-  <div class="flex flex-col gap-1">
+<div class="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4" data-testid="drive-dav-step">
+  <div class="flex min-w-0 flex-col gap-1">
     <span class="text-sm font-medium">Пароли приложений WebDAV</span>
-    <span class="text-xs text-muted-foreground">
+    <span class="min-w-0 break-words text-xs text-muted-foreground">
       Выдача, список и отзыв паролей для подключения к диску по WebDAV.
     </span>
   </div>

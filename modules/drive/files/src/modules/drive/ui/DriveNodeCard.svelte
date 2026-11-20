@@ -58,11 +58,11 @@
 {/snippet}
 
 {#if variant === 'detail'}
-  <div class="flex flex-col gap-2 rounded-lg border border-border p-4" data-testid="drive-node-card">
+  <div class="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4" data-testid="drive-node-card">
     <div class="flex items-center gap-2">
       {@render body()}
     </div>
-    <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+    <dl class="grid grid-cols-1 gap-x-3 gap-y-1 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
       <dt class="text-muted-foreground">Вид</dt>
       <dd class="min-w-0 break-words">{node.kind === 'folder' ? 'Папка' : (node.contentType ?? 'Файл')}</dd>
       <dt class="text-muted-foreground">Создан</dt>
@@ -72,7 +72,7 @@
   </div>
 {:else}
   <div
-    class="flex flex-wrap items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted/50"
+    class="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted/50"
     data-testid="drive-row"
   >
     <a {href} class="flex min-w-0 flex-1 basis-56 items-center gap-3 no-underline">
