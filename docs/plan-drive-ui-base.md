@@ -1719,11 +1719,12 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `[x]` `SettingsHost` (`6825f5b3`): реестр секций, rail, активный пункт по `settings_section`, «Аккаунт» через `UserConfig embedded`, `settings.ext.ts` + glob; страницы и модалка переключены.
 - `[x]` Правки по проверке: `settings_section` вместо коллизии с `user_config_step`; `frame` больше не мутирует state во время рендера (SessionsList на клиенте).
 
-**A5. Base UI, паттерны и проверки arch.** — `[-]` в работе.
+**A5. Base UI, паттерны и проверки arch.** — `[x]` done (`e2fc568b`, `392ad98c`, `cd5068d1`, `d1ea164c`).
 - `[x]` Мобильные правки base UI: `SurfaceBar` (скроллбар ряда, README приведён к коду), `SearchBar` (без `mb-3`, адаптивная ширина), `Badge` (`max-w-full min-w-0`), `PageNav` (номера скроллятся, `mt-2` убран), `FileAttachment` strip (скрытый скроллбар), `PaginatorSettings` (`p-3 sm:p-4`), модальные `p-4 sm:p-6`.
 - `[x]` `EntryCard` (`392ad98c`) и `Item` family (`cd5068d1`) по §10.2.1–10.2.2, тесты SSR.
 - `[x]` `DescriptionList` (§10.2.3) и `FormMessage` (§10.2.4) — `d1ea164c`, тесты SSR.
-- `[~]` Сверка §10.3 и полный прогон arch — отправлены beam-субагенту (проверка без правок).
+- `[x]` Сверка §10.3 — результат в §10.3a: замены ещё не выполнены, есть пропущенные места и сдвиг строк.
+- `[x]` Прогон `vitest src/core/ui`: 51 файл / 254 теста зелёные; 5 падений не связаны с новыми примитивами (`TimeAgo` локаль ICU, `page-seo` guard). Это известный фон, не регрессия A5.
 - `[ ]` Полный прогон проверок arch.
 - Мобильный аудит base UI: `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок (§9).
 - `Item` family, `DescriptionList`, `FormMessage`, `EntryCard` + замены §10.3 в arch (§10).
@@ -2295,13 +2296,26 @@ interface FormMessageProps extends Omit<HTMLAttributes<HTMLParagraphElement>, 'c
 ### 10.3. Что заменить на существующее
 
 - Карточки страниц и форм — на `Surface variant="card"` с `title`/`description`; `max-w-xl`/`max-w-2xl` остаются классами снаружи. В drive добавляем `class="p-4 sm:p-6"`; остальные страницы сохраняют глобальный `p-6`. Новый `PageCard` не нужен.
-- 5 карточек-входов (`DriveEntry`, `UserEntries`, `StorageServersEntry`, `SeedUsersEntry`, `HomePage`) — на `EntryCard`; `HomePage`-dev-кнопку — в `footer`.
+- 5 карточек-входов (`DriveEntry`, `UserEntries`, `StorageServersEntry`, `SeedUsersEntry`, `HomePage`) — на `EntryCard`; у `HomePage` dev-кнопка сейчас в теле карточки — её нужно перенести в `footer`.
 - Строки ресурсов/конфига — на `ItemGroup` + `Item` + `ItemContent`/`ItemTitle`/`ItemDescription`/`ItemActions`; `DriveDavTokens`/`DriveAccess` — `variant="outline" size="sm"`, read-only `ConfigGroupStep` — `variant="muted"`.
 - `dl` в `DriveNodeCard`/`DriveDavTokens` — на `DescriptionList` + `DescriptionListItem` (`layout="responsive"`), до неё — `min-w-0 break-words` по §9a.
-- Инлайн-ошибки `DriveFilters`/`SessionsFiltersForm`/`SeedUsersFiltersForm`/`BlocksFiltersForm`/`SessionCard` — на `FormMessage variant="error"`; подсказки без ошибки — `variant="muted"`.
+- Инлайн-ошибки `DriveFilters`/`SessionsFiltersForm`/`SeedUsersFiltersForm`/`BlocksFiltersForm` — на `FormMessage variant="error"`; подсказки без ошибки — `variant="muted"`. `SessionCard` сюда не входит: ручной инлайн-ошибки там нет.
 - Кнопки-ссылки в `UserConfig` — на `Button href variant="outline" size="sm"`; это уже есть и даёт focus/disabled/aria.
 - Уведомления `DriveBrowse`/`DriveUpload`/`DriveDavTokens` — на `Alert` (`role="status"`/`"alert"`) вместо ручных `<p class="rounded-lg border…">`.
 - `DriveNodeCard` row — на `Attachment` + `Item`/`OverflowMenu` (см. §4–§5), без собственной строки.
+
+### 10.3a. Сверка с кодом (2026-11-20)
+
+Замены ещё не выполнены ни в одном месте: `EntryCard`, `Item`, `DescriptionList`, `FormMessage` не импортируются в `src/modules` и `src/sections`. Таблица §10.3 верна по существу; ниже — уточнения.
+
+- **Сдвиг строк:** `dl` в `DriveNodeCard` — строки 64–69 (не 71), в `DriveDavTokens` — 48–56 (не 49).
+- **Пропущено в таблице, но подлежит замене:**
+  - `DescriptionList`: `ProfileCard.svelte:55`, `SessionCard.svelte:76`;
+  - `Item`: `storage-servers/ui/storage-servers/ServerCard.svelte`, `Acl.svelte` (detail `<li>`), `DriveNodeCard.svelte:21–28` (detail) и `:30–46` (row), `DriveDavTokensStep.svelte`;
+  - `FormMessage`: `DriveDavTokens.svelte:43` (`role="status"`), `AccountsDelete.svelte:140`, `SessionDelete.svelte:162`, `BlockDelete.svelte:177`, `BlocksBulk.svelte:145`;
+  - `Alert`: `SchemaPage.svelte`;
+  - `Surface variant="card"`: ~19 route-файлов `/drive/*` и `/user/config/dav/*`, плюс `DriveFiltersPage`, `BlocksFiltersPage`, `SessionsFiltersPage`, `UsersFiltersPage`, `AccountSessionPage`, `SessionCardPage`.
+- **Приоритет:** сначала ядро-паттерны (A5) уже создано; замена — в D-этапах, где экран и так трогается, чтобы не делать двойную работу.
 
 ### 10.4. Границы и риски
 
