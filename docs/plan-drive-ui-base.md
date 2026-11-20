@@ -1732,9 +1732,10 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 
 ### D. Drive (`refs/module-drive`) — после arch
 
-**D1. Уведомления и `DriveBackLink`.**
-- Drive-часть inline-уведомлений: `?notice=`/`shownNotice`, поле `notice`, `<p data-testid="drive-notice">`, `driveNoticeHref`, success-toast в `use-drive-operation` (§8a.1).
-- `DriveBackLink`: `useInstance()` вместо `tryUseModals()`; регрессионный тест page-fallback и модалки.
+**D1. Уведомления и `DriveBackLink`.** — `[x]` done (`008da8a4`, ветка `module-drive`).
+- Убраны `?notice=`/`shownNotice`, `DRIVE_NOTICE_DONE`/`driveNoticeHref`, поле `notice` и плашка `drive-notice`; PRG без квитанции, success-toast уйдёт с операциями (§8a.1).
+- `DriveBackLink` определяет модалку через `useInstance()`: page-fallback переходит, модалка закрывается.
+- Проверки: payload установлен в core, `vitest src/modules/drive src/sections/drive` — 64 теста; `check` — baseline 13.
 
 **D2. Пикер «выбранные» (историческое имя — «этап 0»).** `Empty` уже создан в A3, поэтому здесь только `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять после arch (A1–A5).
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
