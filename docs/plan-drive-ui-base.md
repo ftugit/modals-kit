@@ -239,7 +239,7 @@ export interface OverflowMenuProps {
 - пустое «выбранные» — `Empty` (из §3a), а не ручной `<p>`;
 - ошибки — `Alert`, без ручных `rounded-lg border`-заглушек.
 
-`Empty` — единственная зависимость этапа 0, которой ещё нет: создаётся в arch-этапе A4 (§8), до пикера (D2), чтобы не писать временную заглушку. Остальное (`Steps`, `Surface`, `Button`, `Checkbox`, `ListingRow`, `Badge`, `Alert`) уже есть.
+`Empty` — единственная зависимость этапа 0, которой ещё нет: создаётся в arch-этапе A3 (§8), до пикера (D2), чтобы не писать временную заглушку. Остальное (`Steps`, `Surface`, `Button`, `Checkbox`, `ListingRow`, `Badge`, `Alert`) уже есть.
 
 Новых компонентов `DrivePickerSteps`, `DriveSelectedFilter`, `DrivePickerRow` **не создаём**: логика шага живёт в `DrivePicker`, разметка строки — в `DriveBrowse`, примитивы — в `#core/ui`.
 
@@ -1695,45 +1695,40 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 
 ## 8. План миграции (этапы)
 
-Порядок жёсткий: **сначала arch (`refs/core`), потом drive (`refs/module-drive`)**. Внутри arch — от контрактов без UI к примитивам и каркасу. Идентификаторы `A*`/`D*` стабильны и используются в ссылках из §7a/§9/§9a/§10.
+Порядок жёсткий: **сначала arch (`refs/core`), потом drive (`refs/module-drive`)**. Пять этапов arch, четыре drive. Идентификаторы `A1–A5`/`D1–D4` стабильны и используются в ссылках из §7a/§9/§9a/§10.
 
-### A. Arch (`refs/core`) — по шагам
+### A. Arch (`refs/core`)
 
-**A0. Контракты и гигиена (без новых компонентов).** — `[x]` done.
-- **A0.1** (`8070bef5`): удалены мёртвые `?notice=rename-failed` и schema `?done=1`/`justDone`, обновлён `core/ui` README.
-- **A0.2** (`74774ed9`): `runBulkExit` отдаёт `current/requested/revoked`; частичный набор — `Result.data` + `Alert` из `formResult`, `?notice=` в списке не читается; README `user/base` обновлён.
-- UnoCSS-проверка: `space-*`/`dark:` только в запретах, палитровых классов нет, `[scrollbar-width:none]` есть в `ActiveFilters`/`HeaderRowView`; `SurfaceBar` скроллбар не скрывает (входит в A9).
-- Тесты: `KIT_ADAPTER=node vitest run src/modules/user/sessions src/sections/user` — 73 passed; `check` — 64 ошибки, все вне изменённых файлов (baseline не вырос).
+**A1. Контракты и уведомления.** — `[x]` done (`8070bef5`, `74774ed9`, `50a03bb7`).
+- Убрать inline-плашки и `?notice=`, ошибки — в форму, частичный успех — `Result.data`; удалить мёртвые `rename-failed` и `?done=1` (§8a).
+- Тост: `z-300`, дедупликация `text + tone` с продлением таймера, лимит 3, один `aria-live`, снятие таймеров (§8a.3).
+- Тесты и README, затронутые этими изменениями.
 
-**A1. Toast-хост.** — `[x]` done (`50a03bb7`): `z-300`, дедупликация `text + tone` с продлением таймера, лимит 3, один `aria-live`, `dismissAllNotices` на уходе и `visibilitychange` (§8a.3).
+**A2. Модалки и версии.**
+- Открытие только после данных **и** чанка; ошибка остаётся на кнопке; без hover-prefetch; классификация `chunk-stale`/`network`/`data` (§8b.2–8b.3).
+- `kit.version.name`, `pollInterval`, `updated.current`; принудительный `location.reload()` с guard по версии для `chunk-stale` (§8b.4).
 
-**A2. Версия и перезапуск.** `kit.version.name`, `pollInterval`, `updated.current`, принудительный `location.reload()` с guard для `chunk-stale` (§8b.4).
+**A3. Базовые примитивы.**
+- `Empty` с расширенным API (§3a).
+- `OverflowMenu` + `MoreHorizontalIcon` (§5).
+- `Attachment`: `kind:'folder'`, `count`, `badges` (§4).
 
-**A3. Модалки: открытие по готовности.** Данные и чанк, ошибка на кнопке, без hover-prefetch, классификация сбоя (§8b.2–8b.3).
+**A4. `Surface.rail` и модульные настройки.**
+- `Surface.rail` — необязательный левый rail с одним DOM и мобильной прокруткой (§10b.4).
+- `SettingsSection` + `settings.ext.ts` + glob, `uid` в контексте, `UserConfig` → `SettingsHost`; «Сессии» — самодостаточный список (§10b).
 
-**A4. `Empty`.** Новый примитив `core/ui/empty/` по §3a; используется пикером (D2) и списками.
-
-**A5. `OverflowMenu`.** Примитив + `MoreHorizontalIcon` по §5 (`mode`, `maxVisible`, `fallback`).
-
-**A6. `Attachment` для папок.** `kind:'folder'`, `count`, `badges` по §4.
-
-**A7. `Surface.rail`.** Необязательный левый rail (аналог sidebar) с одним DOM и мобильной горизонтальной прокруткой (§10b.4).
-
-**A8. Настройки: реестр и хост.** `SettingsSection`, `settings.ext.ts` + glob, `uid` в контексте, `UserConfig` → `SettingsHost` на `Surface`+`rail`; «Сессии» — самодостаточный список (§10b).
-
-**A9. Base UI: мобильный аудит.** `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок; глобальные `p-6` не трогаем (§9).
-
-**A10. Паттерны arch.** `Item` family, `DescriptionList`, `FormMessage`, `EntryCard` + замены §10.3, которые находятся в arch. Примитивы создаются здесь; в drive они подключаются только в D6.
-
-**A11. Проверки arch.** `check`, unit/SSR-тесты, `test:classes`, браузерные сьюты, затронутые A0–A10.
+**A5. Base UI, паттерны и проверки arch.**
+- Мобильный аудит base UI: `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок (§9).
+- `Item` family, `DescriptionList`, `FormMessage`, `EntryCard` + замены §10.3 в arch (§10).
+- Проверки arch: `check`, unit/SSR, `test:classes`, затронутые браузерные сьюты.
 
 ### D. Drive (`refs/module-drive`) — после arch
 
-**D0. Drive: убрать inline-уведомления.** `?notice=` и `shownNotice` в `sections/drive/load.server.ts`, поле `notice` в `DriveListRouteData`/`DriveOperationData`/`DrivePickerData`, `<p data-testid="drive-notice">` в `DriveBrowse`, `driveNoticeHref`, success-toast в `use-drive-operation.svelte.ts`; ошибки — в форму, успех — навигация (§8a.1).
+**D1. Уведомления и `DriveBackLink`.**
+- Drive-часть inline-уведомлений: `?notice=`/`shownNotice`, поле `notice`, `<p data-testid="drive-notice">`, `driveNoticeHref`, success-toast в `use-drive-operation` (§8a.1).
+- `DriveBackLink`: `useInstance()` вместо `tryUseModals()`; регрессионный тест page-fallback и модалки.
 
-**D1. `DriveBackLink`.** `useInstance()` вместо `tryUseModals()`; регрессионный тест: page-fallback переходит, модалка закрывается.
-
-**D2. Пикер «выбранные» (историческое имя — «этап 0»).** `Empty` уже создан в A4, поэтому здесь только `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять после arch (A0–A11).
+**D2. Пикер «выбранные» (историческое имя — «этап 0»).** `Empty` уже создан в A3, поэтому здесь только `picked`/`mode`/`step` в `DrivePickerData`, `drive.ids` как срез шага (override `ids` → `driveFilterExtras` → `snapshot.extra`, включая `none`), `Steps` + `SurfaceControls` + `Checkbox`/`ListingRow` по образцу `UserPicker`, no-JS GET (см. §7a). Выполнять после arch (A1–A5).
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
      - `drive.ids` — **производный срез списка** для шага `chosen`: `null` — без ограничения, `[]`/`none` — явно пустой набор, иначе ID в порядке `picked`; передаётся через `overrides.ids` и попадает в `snapshot.extra`. Не является результатом для вызывающего экрана.
@@ -1765,36 +1760,31 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
    - **0.9. Защита от устаревших ответов.** Использовать `reqId`/`AbortController`/`prefetchGen` ядра, а не второй счётчик. `fetchDrivePage` принимает `signal`, проверяет его до/после `preloadData` и сверяет `driveListKey` снапшота с ожидаемым; чужой снапшот — `drive.list-stale`, отменённый — тихий `AbortError`. Picker-колбэки — монотонный `seq`, move/copy — только `mode=single` без `ids`, с UUID или явным `id:null`; missing/wrong `mode` и невалидный `id` игнорируются без подстановки корня; `picked`/`upicks`/`step` относятся только к `multiple`. Детали и тесты — §7a.8; выполнять после 0.8.
    - **0.10. Таксономия пустых состояний.** Сначала определить `DriveEmptyKind`/`DriveEmptySpec` и `driveEmptyOf` (дерево приоритетов), затем подключить `Empty` в слот `Listing`/`EmptyState`. Не писать отдельные `{#if}` на каждый экран. Детали и тексты — §7a.10; `filter_owner` не входит в `hasFilters`/`hasSearch` и не передаётся в `DriveEmptyInput`; он влияет только на сохранение/сброс фильтров при переходе, а `DriveEmptyKind`/`DriveEmptySpec` через `driveEmptyOf` определяются итоговыми фильтрами. Снятие маркера при сбросе фильтров — по §7a.4. Выполнять после 0.9, до финальной полировки списка.
 
-**D3. `DriveNodeAction[]` + `OverflowMenu`.** Единый доменный дескриптор действий (`label`, `href`, `permission`, `variant`, no-JS link); `DriveNodeLinks` и `DriveBrowse` читают один список; внедрение A5 с `maxVisible` 2 на мобильном и 3–5 на десктопе, `mode="count"` на старте.
+**D3. Действия, гигиена, мобильный аудит.**
+- `DriveNodeAction[]` — единый доменный дескриптор действий; внедрение `OverflowMenu` (`maxVisible` 2 на мобильном, 3–5 на десктопе, `mode="count"`).
+- Гигиена: `min-w-0`/`truncate`/`title`, `gap` вместо `mt-*`/`my-4`.
+- Мобильный аудит drive (§9a): `DriveFilters`, `DriveNodeCard`, крошки, detail-`dl`, футер фильтров.
 
-**D4. Гигиена drive.** `min-w-0`/`truncate`/`title` в `DriveNodeCard`, `DriveBrowse`, `DriveDavTokens`; `mt-*` и `my-4` заменить на `gap`/`flex-col` у родителя.
+**D4. Карточки, модалки и проверки.**
+- `EntryCard`/`Item`/`Surface` в `DriveEntry`, `DriveFiltersPage`, detail-`DriveNodeCard`, `DriveDavTokensStep`; row → `Attachment` + `Item`. Только после D2.
+- Модалки drive: `min-h-0 flex-1` + `p-4 sm:p-6`, ветка `card`/`plain`.
+- Проверки drive: SSR/no-JS, `data-testid`, клавиатура, адаптивность, `test:classes`.
 
-**D5. Мобильный аудит drive.** `DriveFilters` (`basis-44` → `grid-cols-1 sm:grid-cols-2`), `DriveNodeCard` (`basis-56` → `min-w-0 flex-1`), крошки, detail-`dl`, target-label, заголовок доступов, футер фильтров, корневые `min-w-0` (§9a).
+### 8.1. Проверка противоречий после укрупнения
 
-**D6. Карточки и поверхности drive.** `DriveEntry`, `DriveFiltersPage`, detail `DriveNodeCard`, `DriveDavTokensStep` → `EntryCard`/`Surface`/`Card`; row → `Attachment` (A6) + `Item` (A10). Только после D2: выбор и URL-состояние уже стабильны.
-
-**D7. Модалки drive.** Унифицировать `min-h-0 flex-1` + `p-4 sm:p-6`; ветка `card`/`plain`.
-
-**D8. Проверки drive.** SSR/no-JS, `data-testid`, клавиатура меню, адаптивность, `test:classes`.
-
-### 8.1. Проверка противоречий после пересортировки
-
-- **«Пикер выполнять первым» против «arch первым».** Противоречие снято: пикер стал D2, arch — A0–A11. Формулировка «Выполнять первым» удалена, вместо неё «после arch».
-- **Зависимость пикера от `Empty`.** §7a.1 больше не создаёт `Empty` «первым шагом этапа 0»: примитив живёт в A4, D2 его использует.
-- **§9 обещал идти «после Empty/OverflowMenu/Attachment.folder».** Теперь A4–A6 строго раньше A9 — порядок тот же, номера явные.
-- **Паттерны «после стабилизации выбора».** Создание примитивов (A10) не зависит от пикера; ограничение относится к их подключению в drive — это D6 после D2.
-- **OverflowMenu и `DriveNodeAction`.** A5 создаёт примитив, D3 — доменный дескриптор и внедрение; два разных шага, не дубль.
-- **Inline-уведомления.** §8a требует убрать их в D0; D6 и D7 не добавляют новых плашек.
-- **`Surface.rail` и настройки.** A7 — свойство поверхности, A8 — реестр; A8 зависит от A7, обратной зависимости нет.
-- **Модалки и версия.** A2 (версия/reload) не зависит от A3 (готовность), но оба трогают `lib/modals`; A2 идёт первым, чтобы ошибки чанка уже классифицировались.
-- **Проверки.** A11 и D8 не пересекаются по файлам: A11 — сьюты arch, D9 — drive.
-- **Граница репозиториев.** Уведомления разделены: sessions/rename/schema — arch (`refs/core`, A0), drive `?notice=`/`drive-notice`/success-toast — payload (`refs/module-drive`, D0). Один коммит не смешивает ветки.
-- **Пустые состояния не дублируются.** Таксономия `driveEmptyOf` — это 0.10 внутри D2; отдельного этапа про пустоту нет, D6 её только использует.
+- **Arch раньше drive.** A1–A5 не меняют payload; D1–D4 не начинаются до A5.
+- **`Empty` до пикера.** A3 создаёт примитив, D2 его использует.
+- **Паттерны и пикер.** A5 создаёт `Item`/`EntryCard`, D4 их подключает — только после D2, когда выбор и URL стабильны.
+- **OverflowMenu.** A3 — примитив, D3 — доменный дескриптор и внедрение; не дубль.
+- **Уведомления.** A1 закрывает arch-часть, D1 — drive-часть; разные ветки, один контракт.
+- **Модалки и версии.** A2 не зависит от A3–A5, но идёт вторым: ошибки чанка классифицируются до переделки экранов.
+- **Проверки.** A5 и D4 не пересекаются по файлам.
+- **Настройки.** A4 зависит от A4-rail (внутри этапа), внешних зависимостей нет.
 
 
 ---
 
-## 8a. Этап 1.5: Toast — только клиентские сбои
+## 8a. A1: Toast — только клиентские сбои
 
 **Сервер уведомлений не показывает.** Результат операции — навигация или квитанция формы; ошибка — в форму (`Field`, `Alert` внутри формы), а не отдельным маршрутом и не плашкой над страницей. Inline-объявления из UI убираем, cookie-транспорт не вводим.
 
@@ -1828,7 +1818,7 @@ Toast — единственное исключение, и только на к
 
 ### 8a.1. Что убрать из кода
 
-Разделение по репозиториям: arch-часть — этап A0 (`refs/core`), drive-часть — этап D0 (`refs/module-drive`).
+Разделение по репозиториям: arch-часть — этап A1 (`refs/core`), drive-часть — этап D1 (`refs/module-drive`).
 
 - drive: `?notice=` и `shownNotice` в `sections/drive/load.server.ts`, `notice` в `DriveListRouteData`/`DriveOperationData`/`DrivePickerData`, `<p data-testid="drive-notice">` в `DriveBrowse`, `driveNoticeHref`, а также `notify(\`${spec.title}: выполнено\`)` в `use-drive-operation.svelte.ts` — успешных тостов нет.
 - user/sessions: `?notice=bulk-exit-partial&requested&revoked` и `noticeOf` в `sessions-list/load.server.ts`; `runBulkExit` (`modules/user/sessions/service/sessions-exit.server.ts`) возвращает `redirect` с query — заменить на `{ data: { requested, revoked } }`, а список показывает `Alert` из результата формы.
@@ -1859,7 +1849,7 @@ Toast — единственное исключение, и только на к
 - Тост, показанный при открытой модалке, виден поверх неё.
 - Одинаковые события не дублируются; разные тона одного текста не схлопываются.
 
-## 8b. Этап 1.6: модалка по готовности и принудительный перезапуск
+## 8b. A2: модалка по готовности и принудительный перезапуск
 
 Симптом: кнопка показывает лоадер, модалка открывается со скелетоном и догружается внутри; после долгого фона вкладки ленивые компоненты не грузятся до перезапуска сайта.
 
@@ -1899,9 +1889,9 @@ Toast — единственное исключение, и только на к
 - Успешный клик: модалка появляется сразу с содержимым, без кадра со скелетоном.
 - Hover не открывает модалку и не подменяет клик.
 
-## 9. A9: мобильный аудит базовых UI-компонентов
+## 9. A5: мобильный аудит базовых UI-компонентов
 
-Цель этапа — привести **base UI** к мобильному поведению: меньше фиксированных ширин/отступов, корректные скроллы, touch-target, единый вид и чистый UnoCSS. Глобальные `p-6` у `Surface`/`Card` **не меняем** — адаптивный `p-4 sm:p-6` задаётся точечно в drive через `class`. A9 идёт после A4–A6 и до D6 (карточки drive).
+Цель этапа — привести **base UI** к мобильному поведению: меньше фиксированных ширин/отступов, корректные скроллы, touch-target, единый вид и чистый UnoCSS. Глобальные `p-6` у `Surface`/`Card` **не меняем** — адаптивный `p-4 sm:p-6` задаётся точечно в drive через `class`. A5 идёт после A3 и до D4 (карточки drive).
 
 ### 9.1. Что проверено
 
