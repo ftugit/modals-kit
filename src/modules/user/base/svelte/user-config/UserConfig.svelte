@@ -320,6 +320,11 @@
 {/snippet}
 
 {#if embedded}
+  {#if showStepsNav}
+    <div class="flex flex-wrap items-center gap-2 border-b border-border pb-3">
+      {@render configSteps()}
+    </div>
+  {/if}
   {@render configBody()}
 {:else}
   <Acl

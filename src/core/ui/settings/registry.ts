@@ -17,16 +17,18 @@ export interface SettingsContext {
   readonly canEdit: boolean
 }
 
-export interface SettingsSectionProps {
+export interface SettingsSectionProps<Screen = unknown> {
   readonly ctx: SettingsContext
+  /** Экранные пропсы носителя: хост передаёт их секции. */
+  readonly screen: Screen
 }
 
-export interface SettingsSection {
+export interface SettingsSection<Screen = unknown> {
   /** Стабильный id: он же ключ адреса и `data-testid`. Имя назначает модуль. */
   readonly id: string
   readonly label: string
   readonly order?: number
-  readonly component: Component<SettingsSectionProps>
+  readonly component: Component<SettingsSectionProps<Screen>>
   /** Пункт виден, только если вернёт `true`. Права проверяются здесь. */
   readonly visible?: (ctx: SettingsContext) => boolean
   /** Сахар для частого случая: пункт только для своих настроек. */
@@ -35,14 +37,14 @@ export interface SettingsSection {
 
 const sections: SettingsSection[] = []
 
-export function registerSettingsSection(section: SettingsSection): void {
+export function registerSettingsSection<Screen>(section: SettingsSection<Screen>): void {
   if (sections.some((entry) => entry.id === section.id)) return
-  sections.push(section)
+  sections.push(section as SettingsSection)
 }
 
-export function settingsSectionsFor(ctx: SettingsContext): SettingsSection[] {
+export function settingsSectionsFor<Screen = unknown>(ctx: SettingsContext): SettingsSection<Screen>[] {
   if (!ctx.canRead) return []
-  return sections
+  return (sections as SettingsSection<Screen>[])
     .filter((entry) => !entry.ownOnly || ctx.isOwn)
     .filter((entry) => entry.visible?.(ctx) ?? true)
     .sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
