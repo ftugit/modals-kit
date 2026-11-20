@@ -82,7 +82,6 @@ function page(caps: DriveCapabilities): DriveListRouteData {
     quota: { used: 2048, limit: 5 * 1024 ** 3, remaining: 5 * 1024 ** 3 - 2048 },
     breadcrumbs: [{ id: CRUMB, name: 'Работа' }],
     trashed: false,
-    notice: null,
     pick: null,
   }
 }

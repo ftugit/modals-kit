@@ -241,16 +241,6 @@ export const DRIVE_EXTRA_DEFAULTS = {
   ids: '',
 } as const
 
-/** Код успешной операции для `?notice=` (PRG-ветка без JS). */
-export const DRIVE_NOTICE_DONE = 'drive.notice-done'
-
-/** Добавить/заменить `notice`, сохранив остальные query-параметры адреса. */
-export function driveNoticeHref(href: string, code = DRIVE_NOTICE_DONE): string {
-  const url = new URL(href, 'http://local.invalid')
-  url.searchParams.set('notice', code)
-  return `${url.pathname}${url.search}`
-}
-
 /** Одно описание extra-ключей списка: отсюда выводятся `filterKeys`/`reloadKeys`. */
 export const DRIVE_EXTRAS = defineListExtras({
   searchable: DRIVE_EXTRA_SEARCH,

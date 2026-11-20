@@ -51,7 +51,7 @@
   `sections/drive/operations.form.server.ts`, dispatch — `operations.server.ts`.
   У операции свой route-носитель (`/drive/mkdir`, `/drive/node/[id]/rename`,
   `/user/config/dav/issue`, …), поэтому без JS работает обычный POST
-  (PRG с `?notice=drive.notice-done`, кроме inline `dav-issue`), а с JS —
+  (PRG без квитанции, кроме inline `dav-issue`), а с JS —
   закрытие модалки или переход на `next` без квитанции и счётчиков. Фильтры —
   отдельная component-form, в реестр операций не входят.
 - **Выбор папки** для переноса/копии: пикер `?from=&param=&kind=&folder=`

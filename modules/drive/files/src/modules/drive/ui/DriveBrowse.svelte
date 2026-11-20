@@ -241,16 +241,6 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col gap-3">
-  {#if initial.notice}
-    <p
-      class="rounded-lg border border-border bg-muted/50 p-3 text-sm"
-      role="status"
-      data-testid="drive-notice"
-    >
-      {driveMessage(initial.notice)}
-    </p>
-  {/if}
-
   {#if !initial.trashed && snapshot && initial.caps.canRead}
     <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label="Хлебные крошки">
       <a class="text-muted-foreground hover:underline" href={picker ? pickerBrowseHref(null) : driveRootRoute.href()}>Диск</a>

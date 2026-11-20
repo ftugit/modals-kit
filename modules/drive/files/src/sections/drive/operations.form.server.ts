@@ -16,7 +16,6 @@ import {
   type DriveOperationName,
   type DriveOperationSpec,
 } from '#modules/drive/operations.js'
-import { driveNoticeHref } from '#modules/drive/source.js'
 import { DRIVE_UPLOAD_MAX_BYTES } from '#modules/drive/service/upload.js'
 import { driveOperationActor, driveStorageGate, runDriveOperation } from './operations.server.js'
 
@@ -44,7 +43,7 @@ export function driveSuccessRedirect(
   if (spec.inlineSuccess) return 'inline'
   const href = localPath(result.redirect ?? null)
   if (!href) return null // аварийный fallback
-  return driveNoticeHref(href)
+  return href
 }
 
 export const DRIVE_MUTATION_OPERATIONS = [

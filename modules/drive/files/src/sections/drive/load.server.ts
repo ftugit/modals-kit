@@ -77,13 +77,6 @@ async function actorOf(event: RequestEvent): Promise<{ enabled: boolean; actor: 
 
 const toItem = (entry: DriveEntry): DriveListItem => ({ ...entry, id: entry.node.id })
 
-function shownNotice(event: RequestEvent): string | null {
-  const value = event.url.searchParams.get('notice')
-  if (!value) return null
-  // Неизвестный код не показываем как успех: словарь — единственный источник.
-  return driveMessage(value) === value ? null : value
-}
-
 /** Имена получателей доступа: без права/строки остаётся uid, экран не падает. */
 async function driveUserLabels(
   event: RequestEvent,
@@ -138,7 +131,6 @@ function emptyList(
     quota: EMPTY_QUOTA,
     breadcrumbs: [],
     trashed: identity.kind === 'trash',
-    notice: null,
     pick: null,
     ...patch,
   }
@@ -183,7 +175,7 @@ export async function loadDriveList(
     pageSize: filters.pageSize,
   })
   if (!result.ok) {
-    return emptyList(identity, { fact: 'auth.forbidden', notice: shownNotice(event) })
+    return emptyList(identity, { fact: 'auth.forbidden' })
   }
 
   const data = result.value
@@ -209,7 +201,6 @@ export async function loadDriveList(
     quota: data.quota,
     breadcrumbs: data.breadcrumbs,
     trashed: data.trashed,
-    notice: shownNotice(event),
     pick: pickOf(event),
   }
 }

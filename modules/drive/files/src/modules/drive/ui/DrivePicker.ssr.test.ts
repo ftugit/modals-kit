@@ -79,7 +79,6 @@ function list(items: DriveListItem[]): DriveListRouteData {
     quota: { used: 1024, limit: 1024 ** 3, remaining: 1024 ** 3 - 1024 },
     breadcrumbs: [],
     trashed: false,
-    notice: null,
     pick: null,
   }
 }

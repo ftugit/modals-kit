@@ -64,8 +64,6 @@ export interface DrivePageData {
   readonly node: DriveNodeView | null
   /** Выданные доступы — только тому, кто вправе делиться. */
   readonly shares: readonly DriveShareView[]
-  /** Код прошлого действия из `?notice=`: показывается над списком. */
-  readonly notice: string | null
   /** Выбор папки из пикера для строки `nodeId`. */
   readonly pick: DrivePick | null
   /** Активные фильтры и порция списка. */
@@ -98,7 +96,6 @@ export interface DriveDavTokensData {
   /** Открытый пароль, показанный после выдачи ровно один раз. */
   readonly issued: string | null
   readonly fact: AuthErrorCode | null
-  readonly notice: string | null
 }
 
 /** Данные страницы узла (`/drive/node/[id]`) и модалки `drive.node`. */
@@ -162,7 +159,6 @@ export interface DriveListRouteData {
   readonly quota: DriveQuotaView
   readonly breadcrumbs: readonly DriveBreadcrumb[]
   readonly trashed: boolean
-  readonly notice: string | null
   readonly pick: DrivePick | null
 }
 
