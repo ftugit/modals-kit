@@ -6,7 +6,7 @@
  * сервис; здесь только гейт входа и форма ответа. Ответ всегда
  * `private, no-store`: имена файлов — личные данные.
  */
-import { redirect, type RequestEvent } from '@sveltejs/kit'
+import { error, redirect, type RequestEvent } from '@sveltejs/kit'
 import { AUTH_SEAL_SECRET } from '$app/env/private'
 import { localPath } from '#core/lib/address/index.js'
 import {
@@ -42,6 +42,13 @@ import {
   type DriveListIdentity,
 } from '#modules/drive/source.js'
 import { decodeDriveList, encodeDriveListExtra, resolveDriveList } from '#modules/drive/list-codec.js'
+import {
+  parseDriveIdsUrl,
+  parseFilterOwner,
+  parsePickerMode,
+  parsePickerStep,
+  pickerFrom,
+} from '#modules/drive/picker-url.js'
 import type {
   DriveFiltersPageData,
   DriveListItem,
@@ -262,15 +269,23 @@ export async function loadDrivePicker(event: RequestEvent): Promise<DrivePickerD
   const identity: DriveListIdentity =
     folderId && UUID.test(folderId) ? { kind: 'folder', id: folderId } : { kind: 'root' }
   const kind = event.url.searchParams.get('kind') === 'folder' ? 'folder' : 'any'
-  const mode = event.url.searchParams.get('mode') === 'multiple' ? 'multiple' : 'single'
-  const step = mode === 'multiple' && event.url.searchParams.get('step') === 'chosen' ? 'chosen' : 'pick'
-  const picked = step === 'chosen' ? (parseDriveIds(event.url.searchParams.get('picked')) ?? []) : []
+  const mode = parsePickerMode(event.url.searchParams.get('mode'))
+  const step = mode === 'multiple' ? parsePickerStep(event.url.searchParams.get('upicks')) : 'pick'
+  const filterOwner = mode === 'multiple' ? parseFilterOwner(event.url.searchParams.get('filter_owner')) : null
+  const pickedUrl = mode === 'multiple' ? parseDriveIdsUrl(event.url.searchParams.get('picked')) : { ids: [], overflow: false }
+  const idsUrl = mode === 'multiple' ? parseDriveIdsUrl(event.url.searchParams.get(DRIVE_KEYS.ids)) : { ids: [], overflow: false }
+  if (pickedUrl.overflow) throw error(400, 'drive.picked-too-long')
+  if (idsUrl.overflow) throw error(400, 'drive.ids-too-long')
+  const picked = step === 'chosen' ? (idsUrl.ids ?? []) : (pickedUrl.ids ?? [])
   const list = await loadDriveList(event, identity, {
     ...(kind === 'folder' ? { kind } : {}),
     ...(step === 'chosen' ? { ids: picked } : {}),
   })
-  const from = localPath(event.url.searchParams.get('from')) ?? '/drive'
+  const from = pickerFrom(event.url.searchParams.get('from'))
   const rawParam = event.url.searchParams.get('param') ?? ''
+  const total = list.snapshot?.totalItems
+  const totalItems = typeof total === 'number' && Number.isFinite(total) && total >= 0 ? total : null
+  const hiddenCount = totalItems === null ? null : picked.length - totalItems
   return {
     list,
     from,
@@ -280,6 +295,9 @@ export async function loadDrivePicker(event: RequestEvent): Promise<DrivePickerD
     mode,
     step,
     picked,
+    totalItems,
+    hiddenCount,
+    filterOwner,
   }
 }
 

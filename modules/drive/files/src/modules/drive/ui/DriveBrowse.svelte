@@ -76,10 +76,16 @@
       readonly param: string
       readonly kind: 'any' | 'folder'
       readonly folderId: string | null
+      readonly mode?: 'single' | 'multiple'
+      readonly step?: 'pick' | 'chosen'
+      readonly picked?: readonly string[]
+      readonly href?: (patch: { folderId?: string | null; picked?: readonly string[] }) => string
     } | null
     /** В модалке выбор отдаётся вызывающему экрану, а не переходом. */
     onPick?: ((id: string | null, label: string) => void) | null
     onCancel?: (() => void) | null
+    /** Ссылка отметки строки в `multiple`; `null` — режим без набора. */
+    toggle?: ((id: string) => string) | null
   }
 
   let {
@@ -92,7 +98,11 @@
     picker = null,
     onPick = null,
     onCancel = null,
+    toggle = null,
   }: Props = $props()
+
+  const multi = $derived(picker?.mode === 'multiple')
+  const pickedSet = $derived(new Set(picker?.picked ?? []))
 
   // Sidebar-фильтры живут в том же сторе, что и список: на странице это
   // scoped/клиентский стор, в модалке — слот `useSlotPaginatorScope`.
@@ -233,6 +243,7 @@
 
   const pickerBrowseHref = (id: string | null): string => {
     if (!picker) return driveRootRoute.href()
+    if (picker.href) return picker.href({ folderId: id })
     const query = new URLSearchParams({ from: picker.from, param: picker.param })
     if (picker.kind === 'folder') query.set('kind', 'folder')
     if (id) query.set('folder', id)
@@ -337,6 +348,15 @@
       {#snippet row(item, ctx)}
         {#if picker}
           <div class="flex flex-wrap items-center gap-2" data-testid="drive-picker-row">
+            {#if multi && toggle}
+              <Button
+                href={toggle(item.node.id)}
+                size="sm"
+                variant={pickedSet.has(item.node.id) ? 'default' : 'outline'}
+                aria-pressed={pickedSet.has(item.node.id)}
+                data-testid="drive-pick-toggle"
+              >{pickedSet.has(item.node.id) ? 'Отмечено' : 'Отметить'}</Button>
+            {/if}
             {#if item.node.kind === 'folder'}
               <a class="min-w-0 flex-1 truncate font-medium hover:underline" href={pickerBrowseHref(item.node.id)}>
                 {item.node.name}
@@ -347,7 +367,7 @@
             <span class="text-xs text-muted-foreground">
               {item.node.kind === 'folder' ? 'папка' : formatBytes(item.node.size)}
             </span>
-            {#if item.node.kind === 'folder' || picker.kind === 'any'}
+            {#if !multi && (item.node.kind === 'folder' || picker.kind === 'any')}
               {#if onPick}
                 <Button
                   type="button"
@@ -380,7 +400,7 @@
       {/snippet}
     </Listing>
 
-    {#if picker}
+    {#if picker && !multi}
       <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-2">
           {#if initial.folder}

@@ -41,6 +41,8 @@ export interface DrivePickerParams {
   readonly param?: string | null
   readonly kind?: 'any' | 'folder'
   readonly folder?: string | null
+  /** `multiple` пишется в адрес; `single` — умолчание и не дублируется. */
+  readonly mode?: 'single' | 'multiple'
 }
 
 /** Адрес пикера: `from` проверяется `localPath`, `folder` — UUID. */
@@ -50,6 +52,7 @@ export function drivePickerHref(p: DrivePickerParams = {}): string {
   if (from) query.set('from', from)
   if (p.param && PICKER_PARAM.test(p.param)) query.set('param', p.param)
   if (p.kind === 'folder') query.set('kind', 'folder')
+  if (p.mode === 'multiple') query.set('mode', 'multiple')
   if (p.folder && UUID.test(p.folder)) query.set('folder', p.folder)
   const text = query.toString()
   return text ? `${drivePickerRoute.href()}?${text}` : drivePickerRoute.href()

@@ -54,10 +54,24 @@
   (PRG без квитанции, кроме inline `dav-issue`), а с JS —
   закрытие модалки или переход на `next` без квитанции и счётчиков. Фильтры —
   отдельная component-form, в реестр операций не входят.
-- **Выбор папки** для переноса/копии: пикер `?from=&param=&kind=&folder=`
-  через тот же `DriveBrowse`; в модалке выбор уходит через
-  `sharedData['picker:drive.target']`, на странице — в `target_id`. Пустой
-  `target_id` — корень. Файл в `target_id` отклоняет сервис (`drive.not-folder`).
+- **Пикер** (`/drive/pick`, модалка `drive.picker`) поверх того же `DriveBrowse`.
+  Адрес: `from` (валидированный локальный возврат), `param` (имя целевого поля),
+  `kind`, `folder`, `mode`, `upicks`, `picked`, `filter_owner`; ссылки пикера
+  собирает один `pickerHref` (`picker-url.ts`), выход в `from` — один
+  `applyHref` (`picker.ts`).
+  - `single` атомарен: «Выбрать», «Выбрать эту папку», «Выбрать корень» — GET в
+    `from`; `picked`/`upicks`/`drive.ids`/`filter_owner` не пишутся и снимаются
+    из прямого URL. В модалке результат уходит через
+    `sharedData['picker:drive.target']` (`mode: 'single'`, только UUID или
+    явный `null`), move/copy принимают только такой payload.
+  - `multiple`: шаг `pick` копит `picked` (до 100 в адресе), шаг `chosen`
+    показывает срез `drive.ids` (`none` при пустом наборе); `Apply` доступен
+    ровно при `canApplyChosen` (непустой набор, известный `totalItems`,
+    `hiddenCount === 0`). Скрытые выбранные дают предупреждение и блокируют
+    `Apply`; пустой `chosen` — `Empty`.
+  - `picked`/`upicks`/`mode`/`from`/`param`/`filter_owner` — контекст пикера и в
+    адрес `from` не добавляются. Предел `picked` в URL — 100, строка — 4000;
+    сервисный `drive.ids` сохраняет legacy-потолок 200.
 - **Доступ**: share принимает набор `subjects` (multiselect + `user.picker`,
   ручной UUID как fallback), batch атомарен; `/drive/access` показывает имена
   получателей из `DriveShareView.label`.
@@ -68,9 +82,6 @@
   ставит `content-disposition`, `nosniff` и CSP.
 
 ## Чего ещё нет
-
-- Шаг «выбранные» пикера (`drive.ids` уже поддержан сервером, но шага выбора в UI
-  нет).
 
 Экран токенов WebDAV, `DriveEntry` на главной и Class 2 с общим стором
 блокировок (`drive_dav_lock`) реализованы; `LOCK`/`UNLOCK` включены.

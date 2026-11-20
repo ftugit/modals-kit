@@ -124,6 +124,12 @@ export interface DrivePickerData {
   readonly step: 'pick' | 'chosen'
   /** Отмеченные в `multiple`; в `single` всегда пусто. */
   readonly picked: readonly string[]
+  /** totalItems среза `drive.ids` (visiblePicked); `null` — неизвестен. */
+  readonly totalItems: number | null
+  /** `picked.length - totalItems`; `null` — неизвестен или не вычислим. */
+  readonly hiddenCount: number | null
+  /** Маркер принадлежности фильтров шагу `chosen`; только `multiple`. */
+  readonly filterOwner: 'chosen' | null
 }
 
 /**
