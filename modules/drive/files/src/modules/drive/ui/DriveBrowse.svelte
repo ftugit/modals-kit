@@ -21,7 +21,7 @@
     setExtra,
   } from '#core/lib/paginate/index.js'
   import { useSlotPaginatorScope } from '#core/hooks/modal-paginator.svelte.js'
-  import { Badge, Button } from '#core/ui/index.js'
+  import { Badge, Button, OverflowMenu, type OverflowMenuItem } from '#core/ui/index.js'
   import { formatBytes, type DriveSort } from '#core/lib/drive/index.js'
   import { vault } from '#modules/user/base/svelte/vault.svelte.js'
   import type { DriveListItem, DriveListRouteData } from '../types.js'
@@ -241,6 +241,40 @@
     return query ? `${url.pathname}?${query}` : url.pathname
   }
 
+  // Тулбар: 2 пункта на узком экране, 4 на широком; активное «Важное»
+  // остаётся кнопкой с aria-current, а не пунктом меню.
+  let narrow = $state(false)
+  $effect(() => {
+    if (typeof window === 'undefined') return
+    const query = window.matchMedia('(max-width: 639px)')
+    narrow = query.matches
+    const onChange = (event: MediaQueryListEvent) => (narrow = event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  })
+
+  const toolbarItems = $derived.by<OverflowMenuItem[]>(() => {
+    const items: OverflowMenuItem[] = []
+    if (!initial.trashed && !picker) {
+      if (initial.caps.canWrite) {
+        const parentId = initial.folder?.id ?? ''
+        const mkdir = opLink('mkdir', { parentId })
+        const upload = opLink('upload', { parentId })
+        items.push(
+          { id: 'mkdir', label: 'Создать папку', href: mkdir.href ?? undefined, attrs: mkdir, primary: true },
+          { id: 'upload', label: 'Загрузить', href: upload.href ?? undefined, attrs: upload, primary: true },
+        )
+      }
+      const dav = asLink('/user/config/dav')
+      const trash = asLink(driveTrashRoute.href())
+      items.push(
+        { id: 'dav', label: 'Подключить по WebDAV', href: dav.href ?? undefined, attrs: dav },
+        { id: 'trash', label: 'Корзина', href: trash.href ?? undefined, attrs: trash },
+      )
+    }
+    return items
+  })
+
   const pickerBrowseHref = (id: string | null): string => {
     if (!picker) return driveRootRoute.href()
     if (picker.href) return picker.href({ folderId: id })
@@ -314,18 +348,13 @@
       {/snippet}
 
       {#snippet controls()}
-        {#if initial.caps.canWrite && !initial.trashed && !picker}
-          <Button {...opLink('mkdir', { parentId: initial.folder?.id ?? '' })} size="sm">
-            Создать папку
-          </Button>
-          <Button
-            {...opLink('upload', { parentId: initial.folder?.id ?? '' })}
-            variant="outline"
-            size="sm"
-          >
-            Загрузить
-          </Button>
-        {/if}
+        <OverflowMenu
+          items={toolbarItems}
+          maxVisible={narrow ? 2 : 4}
+          mode="count"
+          moreLabel="Ещё действия списка"
+          data-testid="drive-controls"
+        />
         <Badge variant="outline" data-testid="drive-quota">
           {formatBytes(quota.used)} из {formatBytes(quota.limit)}
         </Badge>
@@ -336,10 +365,6 @@
             size="sm"
             aria-current={initial.identity === 'starred' ? 'page' : undefined}
           >Важное</Button>
-          <Button {...asLink('/user/config/dav')} variant="outline" size="sm">
-            Подключить по WebDAV
-          </Button>
-          <Button {...asLink(driveTrashRoute.href())} variant="ghost" size="sm">Корзина</Button>
         {/if}
         {#if onDone}
           <Button type="button" variant="ghost" size="sm" onclick={() => onDone?.()}>Закрыть</Button>
