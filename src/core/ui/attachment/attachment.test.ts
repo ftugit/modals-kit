@@ -95,4 +95,14 @@ describe('Attachment model: kind inference, formatting, normalization, selection
 
     expect(selectedItemsByValues(items, ['a3', 'a1']).map((x) => x.id)).toEqual(['a1', 'a3'])
   })
+
+  test('папка: kind=folder с count и badges', () => {
+    const n = normalizeAttachment({
+      item: { id: 'f1', filename: 'Документы', kind: 'folder', count: 12, badges: ['важное'] },
+    })
+    expect(n.kind).toBe('folder')
+    expect(n.kindLabel).toBe('Папка')
+    expect(n.count).toBe(12)
+    expect(n.badges).toEqual(['важное'])
+  })
 })

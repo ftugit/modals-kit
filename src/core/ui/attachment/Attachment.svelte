@@ -245,6 +245,9 @@
 
   const subtitleParts = $derived.by(() => {
     const parts: string[] = []
+    if (normalized.kind === 'folder' && normalized.count !== undefined) {
+      parts.push(`${normalized.count} объектов`)
+    }
     if (showSize) {
       if (normalized.description) parts.push(normalized.description)
       else if (normalized.sizeText) parts.push(normalized.sizeText)
@@ -285,6 +288,7 @@
     code: 'M8 8 4 12l4 4m8-8 4 4-4 4m-2.5-10-3 12',
     document: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zm0 0v5h5M9 13h6m-6 4h4',
     file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zm0 0v5h5',
+    folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
   } as const
 
   const iconPath = $derived(
@@ -341,6 +345,14 @@
           <Spinner size="xs" aria-label={normalized.stateLabel} class="shrink-0" />
         {/if}
         <span class="truncate">{subtitleParts.join(' · ')}</span>
+      </span>
+    {/if}
+
+    {#if normalized.badges.length > 0}
+      <span class="flex min-w-0 flex-wrap items-center gap-1" data-slot="attachment-badges">
+        {#each normalized.badges as badge (badge)}
+          <span class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{badge}</span>
+        {/each}
       </span>
     {/if}
   </span>

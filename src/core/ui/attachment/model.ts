@@ -6,6 +6,7 @@ export type AttachmentKind =
   | 'archive'
   | 'code'
   | 'file'
+  | 'folder'
 
 export type AttachmentState = 'idle' | 'uploading' | 'processing' | 'error' | 'done'
 export type AttachmentLayout = 'row' | 'tile'
@@ -25,6 +26,10 @@ export interface AttachmentItem {
   byteSize?: number
   mimeType?: string
   kind?: AttachmentKind
+  /** Число объектов внутри папки. */
+  count?: number
+  /** Короткие статусы папки: «важное», «в корзине», «общий». */
+  badges?: readonly string[]
   /** Доверенный URL превью уже сохранённого вложения (только для `<img src>`). */
   previewUrl?: string
   alt?: string
@@ -56,6 +61,8 @@ export interface NormalizeAttachmentInput {
   byteSize?: number
   mimeType?: string
   kind?: AttachmentKind
+  count?: number
+  badges?: readonly string[]
   previewUrl?: string
   alt?: string
   state?: AttachmentState
@@ -73,6 +80,8 @@ export interface NormalizedAttachment {
   description?: string
   kind: AttachmentKind
   kindLabel: string
+  count?: number
+  badges: readonly string[]
   state: AttachmentState
   stateLabel: string
   progress: number | null
@@ -91,6 +100,7 @@ export const ATTACHMENT_KIND_LABELS: Record<AttachmentKind, string> = {
   archive: 'Архив',
   code: 'Код',
   file: 'Файл',
+  folder: 'Папка',
 }
 
 export const ATTACHMENT_STATE_LABELS: Record<AttachmentState, string> = {
@@ -331,6 +341,8 @@ export function normalizeAttachment(input: NormalizeAttachmentInput): Normalized
     description,
     kind,
     kindLabel: ATTACHMENT_KIND_LABELS[kind],
+    count: input.count ?? item?.count,
+    badges: input.badges ?? item?.badges ?? [],
     state,
     stateLabel: ATTACHMENT_STATE_LABELS[state],
     progress,
