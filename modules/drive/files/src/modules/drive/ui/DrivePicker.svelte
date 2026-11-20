@@ -92,13 +92,14 @@
     mode: initial.mode,
     step: initial.step,
     picked: initial.picked,
+    hiddenCount: initial.hiddenCount,
     href,
   })
 </script>
 
 <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
   {#if multiple}
-    <nav aria-label="Шаги выбора" class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+    <nav aria-label="Шаги выбора" class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
       {#if initial.step === 'chosen'}
         <Button href={href({ step: 'pick', filterOwner: 'chosen' })} variant="link" size="sm">← К выбору</Button>
       {:else}
@@ -116,7 +117,7 @@
   {/if}
 
   {#if multiple && initial.step === 'chosen' && hasOwnFilters}
-    <div class="mb-2">
+    <div>
       <Button href={href({ filters: EMPTY_DRIVE_PICKER_FILTERS })} variant="outline" size="sm" data-testid="drive-picker-reset-filters">
         Сбросить фильтры
       </Button>
@@ -124,7 +125,7 @@
   {/if}
 
   {#if multiple && initial.step === 'chosen' && initial.hiddenCount !== null && initial.hiddenCount > 0}
-    <p class="mb-2 text-sm text-muted-foreground" role="status" data-testid="drive-picker-hidden">
+    <p class="text-sm text-muted-foreground" role="status" data-testid="drive-picker-hidden">
       Часть выбранных ({initial.hiddenCount}) недоступна в текущей папке или скрыта фильтром:
       применить набор нельзя, пока он не виден целиком.
     </p>

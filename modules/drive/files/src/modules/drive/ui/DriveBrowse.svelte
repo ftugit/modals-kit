@@ -21,7 +21,7 @@
     setExtra,
   } from '#core/lib/paginate/index.js'
   import { useSlotPaginatorScope } from '#core/hooks/modal-paginator.svelte.js'
-  import { Badge, Button, OverflowMenu, type OverflowMenuItem } from '#core/ui/index.js'
+  import { Alert, Badge, Button, Empty, OverflowMenu, type OverflowMenuItem } from '#core/ui/index.js'
   import { formatBytes, type DriveSort } from '#core/lib/drive/index.js'
   import { vault } from '#modules/user/base/svelte/vault.svelte.js'
   import type { DriveListItem, DriveListRouteData } from '../types.js'
@@ -48,6 +48,8 @@
   } from '../routes.js'
   import { driveFilterLabels, driveFilterText, driveFilterValues, type DriveFilterValues } from '../filters-form.js'
   import { driveMessage } from '../messages.js'
+  import { driveEmptyOf, type DriveEmptyAction, type DriveEmptySpec } from '../drive-empty.js'
+  import { EMPTY_DRIVE_PICKER_FILTERS } from '../picker-url.js'
   import { driveOperationHref, type DriveOperationName, type DriveOperationParams } from '../operations.js'
   import DriveFilters from './filters/DriveFilters.svelte'
   import DriveNodeCard from './DriveNodeCard.svelte'
@@ -79,7 +81,14 @@
       readonly mode?: 'single' | 'multiple'
       readonly step?: 'pick' | 'chosen'
       readonly picked?: readonly string[]
-      readonly href?: (patch: { folderId?: string | null; picked?: readonly string[] }) => string
+      readonly hiddenCount?: number | null
+      readonly href?: (patch: {
+        folderId?: string | null
+        picked?: readonly string[]
+        step?: 'pick' | 'chosen'
+        filters?: import('../picker-url.js').DrivePickerFilters
+        filterOwner?: 'chosen' | null
+      }) => string
     } | null
     /** В модалке выбор отдаётся вызывающему экрану, а не переходом. */
     onPick?: ((id: string | null, label: string) => void) | null
@@ -134,6 +143,7 @@
   let appliedValues = $state<DriveFilterValues | null>(valuesOf(untrack(() => initial)))
   let appliedExtra = $state<Record<string, unknown> | null>(null)
   let appliedKey = $state('')
+  let live = $state<{ status: 'init' | 'loading' | 'idle' | 'error'; itemCount: number; page: number; totalItems: number | null } | null>(null)
 
   $effect(() => {
     if (!filterStore) return
@@ -146,6 +156,12 @@
       appliedValues = next
       appliedExtra = (state.extra ?? {}) as Record<string, unknown>
       appliedKey = [next.ord, next.type, next.scope, next.size, next.from_date, next.to_date].join('|')
+      live = {
+        status: state.status,
+        itemCount: Object.values(state.pages ?? {}).reduce((sum, page) => sum + page.length, 0),
+        page: state.page,
+        totalItems: state.totalItems,
+      }
     }
     sync()
     const unsub = filterStore.subscribe?.(DRIVE_NAME, sync)
@@ -208,6 +224,81 @@
     to: appliedValues?.to_date || null,
   })
   const ids = $derived(parseDriveIds(text('ids') || null))
+
+  const listMeta = $derived.by(() => {
+    if (live) return live
+    const snap = initial.snapshot
+    if (!snap) return { status: 'init' as const, itemCount: 0, page: 1, totalItems: null }
+    return {
+      status: snap.status,
+      itemCount: Object.values(snap.pages ?? {}).reduce((sum, page) => sum + page.length, 0),
+      page: snap.page,
+      totalItems: snap.totalItems,
+    }
+  })
+
+  const identityKind = $derived<'root' | 'folder' | 'trash' | 'starred'>(
+    initial.trashed
+      ? 'trash'
+      : initial.identity === 'starred'
+        ? 'starred'
+        : initial.identity.startsWith('folder:')
+          ? 'folder'
+          : 'root',
+  )
+
+  const EMPTY_ACTION_LABEL: Record<DriveEmptyAction, string> = {
+    upload: 'Загрузить файл',
+    'create-folder': 'Создать папку',
+    'reset-filters': 'Сбросить фильтры',
+    'clear-search': 'Очистить поиск',
+    'to-pick': 'К выбору',
+    'clear-picked': 'Снять весь выбор',
+    'previous-level': 'На уровень выше',
+    'first-page': 'К первой странице',
+    'to-drive': 'К диску',
+    retry: 'Повторить',
+  }
+
+  const emptyActionHref = (action: DriveEmptyAction): string | null => {
+    if (action === 'retry') return listFrom
+    if (action === 'to-drive') return driveRootRoute.href()
+    if (action === 'first-page') return driveListHref(initial.pathname, filters, 1, ids)
+    if (action === 'reset-filters' || action === 'clear-search') {
+      return picker?.href
+        ? picker.href({ filters: EMPTY_DRIVE_PICKER_FILTERS })
+        : driveListHref(initial.pathname, { ...filters, search: null, type: 'all', scope: 'folder', from: null, to: null }, 1, ids)
+    }
+    if (action === 'to-pick') return picker?.href ? picker.href({ step: 'pick', filterOwner: 'chosen' }) : null
+    if (action === 'upload') return opLink('upload', { parentId: initial.folder?.id ?? '' }).href ?? null
+    if (action === 'create-folder') return opLink('mkdir', { parentId: initial.folder?.id ?? '' }).href ?? null
+    return null
+  }
+
+  const emptySpec = $derived<DriveEmptySpec>(
+    driveEmptyOf({
+      step: picker ? (picker.mode === 'multiple' ? picker.step ?? 'pick' : 'pick') : 'list',
+      mode: picker?.mode ?? 'single',
+      status: listMeta.status,
+      fact: initial.fact,
+      canRead: initial.caps.canRead,
+      canWrite: initial.caps.canWrite,
+      identity: identityKind,
+      page: listMeta.page,
+      itemCount: listMeta.itemCount,
+      totalItems: listMeta.totalItems,
+      hasFilters:
+        Boolean(filters.search) ||
+        filters.type !== 'all' ||
+        filters.scope === 'global' ||
+        Boolean(filters.from) ||
+        Boolean(filters.to),
+      hasSearch: Boolean(filters.search),
+      pickedCount: picker?.picked?.length ?? 0,
+      hiddenCount: picker?.mode === 'multiple' ? (picker.hiddenCount ?? null) : null,
+      isPicker: Boolean(picker),
+    }),
+  )
   const initialListing = $derived(snapshot ? { snapshot, fact: null } : null)
   const scopeLocked = $derived(
     initial.trashed || Boolean(initial.folder && initial.folder.ownerId !== vault.principal),
@@ -287,12 +378,12 @@
 
 <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
   {#if !initial.trashed && snapshot && initial.caps.canRead}
-    <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label="Хлебные крошки">
+    <nav class="flex min-w-0 flex-wrap items-center gap-1 text-sm" aria-label="Хлебные крошки">
       <a class="text-muted-foreground hover:underline" href={picker ? pickerBrowseHref(null) : driveRootRoute.href()}>Диск</a>
       {#each initial.breadcrumbs as crumb (crumb.id)}
-        <span class="text-muted-foreground">/</span>
+        <span class="shrink-0 text-muted-foreground">/</span>
         <a
-          class="min-w-0 max-w-48 truncate hover:underline"
+          class="min-w-0 max-w-full truncate hover:underline"
           title={crumb.name}
           href={picker ? pickerBrowseHref(crumb.id) : driveFolderRoute.href({ folderId: crumb.id })}
         >
@@ -426,6 +517,36 @@
       {/snippet}
     </Listing>
 
+    {#if emptySpec.component === 'empty'}
+      <Empty
+        size="sm"
+        align="start"
+        title={emptySpec.title}
+        description={emptySpec.description}
+        data-testid={`drive-empty-${emptySpec.kind}`}
+      >
+        {#snippet action()}
+          <div class="flex flex-wrap items-center gap-2">
+            {#each emptySpec.actions as action (action)}
+              {@const href = emptyActionHref(action)}
+              {#if href}
+                <Button {href} variant="outline" size="sm">{EMPTY_ACTION_LABEL[action]}</Button>
+              {/if}
+            {/each}
+          </div>
+        {/snippet}
+      </Empty>
+    {:else if emptySpec.component === 'alert'}
+      <Alert
+        variant={emptySpec.reason === 'inconsistent' ? 'warning' : 'destructive'}
+        data-testid="drive-empty-alert"
+      >
+        {emptySpec.reason === 'inconsistent'
+          ? 'Данные списка противоречивы — обновите страницу.'
+          : 'Не удалось загрузить список — повторите попытку.'}
+      </Alert>
+    {/if}
+
     {#if picker && !multi}
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-2">
@@ -466,7 +587,7 @@
     </p>
   {/if}
 
-  <div class="mt-1 flex items-center gap-2">
+  <div class="flex items-center gap-2">
     <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="presentation">
       <div class="h-full bg-primary" style:width={`${percent}%`}></div>
     </div>

@@ -146,13 +146,13 @@
     {/if}
     <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
       {#if onReset}
-        <Button type="button" variant="ghost" onclick={() => void onReset()}>Сбросить</Button>
+        <Button type="button" variant="ghost" class="max-sm:w-full" onclick={() => void onReset()}>Сбросить</Button>
       {:else if resetHref}
-        <Button {...asLink(resetHref)} variant="ghost">Сбросить</Button>
+        <Button {...asLink(resetHref)} variant="ghost" class="max-sm:w-full">Сбросить</Button>
       {:else}
         <span></span>
       {/if}
-      <Button type="submit">Применить</Button>
+      <Button type="submit" class="max-sm:w-full">Применить</Button>
     </div>
   </Form>
 {/if}

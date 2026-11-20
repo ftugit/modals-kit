@@ -22,8 +22,6 @@
     trashed?: boolean
     /** GET-ссылка на байты файла (скачивание — не форма). */
     downloadHref?: string | null
-    /** Компактный вид строки списка. */
-    compact?: boolean
   }
 
   let { node, caps, returnTo, trashed = false, downloadHref = null }: Props = $props()
@@ -70,6 +68,8 @@
         attrs,
         destructive: action.destructive,
         primary: action.primary,
+        pressed: action.toggle ? node.starred : undefined,
+        separatorBefore: action.destructive,
       }
     }),
   )
@@ -80,5 +80,6 @@
   maxVisible={narrow ? driveNodeActionsVisible(375) : driveNodeActionsVisible(1024)}
   mode="count"
   moreLabel="Ещё действия"
+  moreBadge
   data-testid="drive-node-links"
 />

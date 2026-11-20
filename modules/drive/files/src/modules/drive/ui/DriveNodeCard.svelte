@@ -66,7 +66,7 @@
       <dt class="text-muted-foreground">Вид</dt>
       <dd class="min-w-0 break-words">{node.kind === 'folder' ? 'Папка' : (node.contentType ?? 'Файл')}</dd>
       <dt class="text-muted-foreground">Создан</dt>
-      <dd>{new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(node.createdAt)}</dd>
+      <dd class="min-w-0 break-words">{new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(node.createdAt)}</dd>
     </dl>
     <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} />
   </div>
@@ -78,6 +78,6 @@
     <a {href} class="flex min-w-0 flex-1 basis-56 items-center gap-3 no-underline">
       {@render body()}
     </a>
-    <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} compact />
+    <DriveNodeLinks {node} caps={entry.caps} {returnTo} {trashed} {downloadHref} />
   </div>
 {/if}

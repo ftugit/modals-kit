@@ -100,6 +100,37 @@ describe('DriveBrowse SSR', () => {
     expect(body).not.toContain('Переименовать')
   })
 
+  it('пустая папка и пустой поиск дают разные Empty', () => {
+    const base = page(writer)
+    const snapshot = base.snapshot!
+    const empty = {
+      ...base,
+      snapshot: { ...snapshot, totalItems: 0, pages: { 1: [] } },
+    }
+    const folder = render(DriveBrowse, { props: { initial: empty } })
+    expect(folder.body).toContain('Папка пуста')
+    expect(folder.body).toContain('drive-empty-directory')
+
+    const filtered = {
+      ...empty,
+      snapshot: { ...empty.snapshot, extra: { _list: 'root', q: 'нет' } },
+    }
+    const search = render(DriveBrowse, { props: { initial: filtered } })
+    expect(search.body).toContain('Ничего не найдено')
+    expect(search.body).toContain('drive-empty-filtered')
+  })
+
+  it('неизвестный total не выдаётся за пустую папку', () => {
+    const base = page(writer)
+    const unknown = {
+      ...base,
+      snapshot: { ...base.snapshot!, totalItems: null, pages: { 1: [] } },
+    }
+    const { body } = render(DriveBrowse, { props: { initial: unknown } })
+    expect(body).toContain('drive-empty-alert')
+    expect(body).not.toContain('Папка пуста')
+  })
+
   it('редактор видит ссылки операций вместо inline-форм', () => {
     const { body } = render(DriveBrowse, { props: { initial: page(writer) } })
     expect(body).toContain('отчёт.pdf')
