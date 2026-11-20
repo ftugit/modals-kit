@@ -45,6 +45,8 @@
     onChange?: (next: UserConfigSlice) => void
     onDone?: () => void
     variant?: UserSurfaceVariant
+    /** Только тело без Acl/Surface: секция внутри SettingsHost. */
+    embedded?: boolean
     class?: string
     /** Режим шагов: страница — hybrid/url, модалка — local. */
     stepsMode?: 'url' | 'local' | 'hybrid'
@@ -64,6 +66,7 @@
     onChange,
     onDone,
     variant = 'plain',
+    embedded = false,
     class: className,
     stepsMode = 'local',
     sessionsContext = 'page',
@@ -249,28 +252,8 @@
   {/if}
 {/snippet}
 
-<Acl
-  allow="user"
-  authorized={isAuthorized}
-  enabled={isEnabled}
-  backHref={doneHref}
-  {variant}
-  class={className}
->
-  <Surface
-    {variant}
-    class={cn('mx-auto w-full max-w-md', className)}
-    title={slice && !slice.isOwn ? specConfig.foreignTitle : undefined}
-    description={slice && !slice.isOwn ? configTarget : undefined}
-    controls={slice?.isOwn || showStepsNav
-      ? {
-          ...(showStepsNav ? { start: configSteps } : {}),
-          ...(slice?.isOwn ? { end: sessionsEnd } : {}),
-        }
-      : undefined}
-    data-testid="user-config-root"
-  >
-    {#if !slice}
+{#snippet configBody()}
+{#if !slice}
       <div class="flex flex-col gap-3" aria-busy="true" data-testid="user-config-pending">
         <Skeleton class="h-6 w-40" />
         <Skeleton class="h-24 w-full" />
@@ -334,5 +317,33 @@
         {/key}
       {/if}
     {/if}
-  </Surface>
-</Acl>
+{/snippet}
+
+{#if embedded}
+  {@render configBody()}
+{:else}
+  <Acl
+    allow="user"
+    authorized={isAuthorized}
+    enabled={isEnabled}
+    backHref={doneHref}
+    {variant}
+    class={className}
+  >
+    <Surface
+      {variant}
+      class={cn('mx-auto w-full max-w-md', className)}
+      title={slice && !slice.isOwn ? specConfig.foreignTitle : undefined}
+      description={slice && !slice.isOwn ? configTarget : undefined}
+      controls={slice?.isOwn || showStepsNav
+        ? {
+            ...(showStepsNav ? { start: configSteps } : {}),
+            ...(slice?.isOwn ? { end: sessionsEnd } : {}),
+          }
+        : undefined}
+      data-testid="user-config-root"
+    >
+      {@render configBody()}
+    </Surface>
+  </Acl>
+{/if}
