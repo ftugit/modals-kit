@@ -47,7 +47,7 @@
 
 {#snippet body()}
   <span class="flex min-w-0 flex-1 items-center gap-2">
-    <span class="truncate font-medium">{node.name}</span>
+    <span class="min-w-0 truncate font-medium" title={node.name}>{node.name}</span>
     {#if node.starred}<Badge variant="secondary">важное</Badge>{/if}
     {#if node.trashedAt}<Badge variant="outline">в корзине</Badge>{/if}
   </span>
@@ -62,9 +62,9 @@
     <div class="flex items-center gap-2">
       {@render body()}
     </div>
-    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+    <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
       <dt class="text-muted-foreground">Вид</dt>
-      <dd>{node.kind === 'folder' ? 'Папка' : (node.contentType ?? 'Файл')}</dd>
+      <dd class="min-w-0 break-words">{node.kind === 'folder' ? 'Папка' : (node.contentType ?? 'Файл')}</dd>
       <dt class="text-muted-foreground">Создан</dt>
       <dd>{new Intl.DateTimeFormat('ru-RU', { dateStyle: 'long' }).format(node.createdAt)}</dd>
     </dl>

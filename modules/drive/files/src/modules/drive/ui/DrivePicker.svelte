@@ -96,7 +96,7 @@
   })
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col">
+<div class="flex min-h-0 flex-1 flex-col gap-3">
   {#if multiple}
     <nav aria-label="Шаги выбора" class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
       {#if initial.step === 'chosen'}
@@ -141,7 +141,7 @@
   />
 
   {#if multiple}
-    <div class="mt-3 flex flex-wrap items-center justify-between gap-2" data-testid="drive-picker-footer">
+    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="drive-picker-footer">
       <div class="flex flex-wrap items-center gap-2">
         {#if initial.step === 'chosen'}
           {#if pickedCount > 0}

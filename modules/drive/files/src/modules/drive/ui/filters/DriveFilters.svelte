@@ -144,7 +144,7 @@
     {#if rangeError}
       <p class="text-sm text-destructive" role="alert">{rangeError}</p>
     {/if}
-    <div class="flex items-center justify-between gap-3 pt-1">
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
       {#if onReset}
         <Button type="button" variant="ghost" onclick={() => void onReset()}>Сбросить</Button>
       {:else if resetHref}

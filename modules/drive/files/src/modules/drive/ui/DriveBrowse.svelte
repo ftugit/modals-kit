@@ -258,7 +258,8 @@
       {#each initial.breadcrumbs as crumb (crumb.id)}
         <span class="text-muted-foreground">/</span>
         <a
-          class="hover:underline"
+          class="min-w-0 max-w-48 truncate hover:underline"
+          title={crumb.name}
           href={picker ? pickerBrowseHref(crumb.id) : driveFolderRoute.href({ folderId: crumb.id })}
         >
           {crumb.name}
@@ -401,7 +402,7 @@
     </Listing>
 
     {#if picker && !multi}
-      <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-2">
           {#if initial.folder}
             {#if onPick}
