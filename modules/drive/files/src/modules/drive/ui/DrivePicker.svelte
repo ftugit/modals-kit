@@ -16,6 +16,7 @@
   import type { DrivePickerData } from '../types.js'
   import { applyHref, canApplyChosen } from '../picker.js'
   import {
+    EMPTY_DRIVE_PICKER_FILTERS,
     type DrivePickerFilters,
     type DrivePickerState,
     pickerHref,
@@ -58,6 +59,9 @@
   })
 
   const multiple = $derived(initial.mode === 'multiple')
+  const hasOwnFilters = $derived(
+    Boolean(filters.q) || filters.type !== 'all' || Boolean(filters.from) || Boolean(filters.to),
+  )
   const pickedCount = $derived(initial.picked.length)
   const canApply = $derived(
     canApplyChosen({
@@ -109,6 +113,14 @@
         <span class="text-muted-foreground">Выбранные (0)</span>
       {/if}
     </nav>
+  {/if}
+
+  {#if multiple && initial.step === 'chosen' && hasOwnFilters}
+    <div class="mb-2">
+      <Button href={href({ filters: EMPTY_DRIVE_PICKER_FILTERS })} variant="outline" size="sm" data-testid="drive-picker-reset-filters">
+        Сбросить фильтры
+      </Button>
+    </div>
   {/if}
 
   {#if multiple && initial.step === 'chosen' && initial.hiddenCount !== null && initial.hiddenCount > 0}

@@ -91,6 +91,14 @@ describe('pickerHref', () => {
     expect(href).not.toContain('filter_owner')
   })
 
+  it('pick → chosen без маркера сбрасывает pick-фильтры', () => {
+    const filtered = state({ filters: { q: 'счёт', type: 'file', from: null, to: null } })
+    const plain = pickerHref(filtered, { step: 'chosen' })
+    expect(plain).not.toContain('drive.q')
+    const kept = pickerHref({ ...filtered, filterOwner: 'chosen' }, { step: 'chosen' })
+    expect(kept).toContain('drive.q=')
+  })
+
   it('маркер только в pick и только chosen', () => {
     expect(pickerHref(state({ filterOwner: 'chosen' }))).toContain('filter_owner=chosen')
     expect(pickerHref(state({ step: 'chosen', filterOwner: 'chosen' }))).not.toContain('filter_owner')

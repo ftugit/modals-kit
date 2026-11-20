@@ -130,10 +130,16 @@ function idsFitUrl(ids: readonly string[]): boolean {
  * сброс. Контекст не теряется, target вызывающей страницы не меняется.
  */
 export function pickerHref(state: DrivePickerState, patch: DrivePickerPatch = {}): string {
+  // Обычный pick → chosen не наследует pick-фильтры: они принадлежат шагу
+  // выбора. Возврат из chosen (маркер) сохраняет их как собственные.
+  const entersChosen = patch.step === 'chosen' && state.step !== 'chosen'
+  const filters = entersChosen && state.filterOwner !== 'chosen'
+    ? EMPTY_DRIVE_PICKER_FILTERS
+    : (patch.filters ?? state.filters)
   const next = normalizePickerState({
     ...state,
     ...patch,
-    filters: patch.filters ?? state.filters,
+    filters,
   })
   const base = new URL(
     drivePickerHref({
