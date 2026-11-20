@@ -1754,7 +1754,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `[x]` Фильтры шага (`74aba419`): обычный `pick → chosen` сбрасывает pick-фильтры, маркер `filter_owner=chosen` сохраняет их; «Сбросить фильтры» в `chosen`.
 - `[x]` Защита от устаревших ответов (`3decda70`): `driveListKey`/`driveListKeyFromSnapshot`, `signal` до/после `preloadData`, `AbortError`, `drive.list-stale`.
 - `[ ]` Остальное D2: `driveEmptyOf`/`DriveEmptySpec` (§7a.10) и подключение к списку; multiple в модалке (сейчас только страница `/drive/pick`); гидрация отметки в `Checkbox` (сейчас GET-ссылка с `aria-pressed`); полное скрытие `chosen` (`Empty` `chosen-hidden`) отдельным `Empty`-состоянием.
-- `[~]` Браузерная проверка D2 отправлена beam-агенту.
+- `[x]` Браузерная проверка D2 (beam, Chromium): single без шагов и с GET-выбором в `/drive/move?...target_id=`, stale-ключи не попадают в ссылки; multiple `pick` копит `picked`, `chosen` даёт `upicks`+`drive.ids`, `Apply` ведёт в `/drive?ids=`, пустой `chosen` — «Ничего не выбрано» без Apply; консоль чистая.
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
      - `drive.ids` — **производный срез списка** для шага `chosen`: `null` — без ограничения, `[]`/`none` — явно пустой набор, иначе ID в порядке `picked`; передаётся через `overrides.ids` и попадает в `snapshot.extra`. Не является результатом для вызывающего экрана.
