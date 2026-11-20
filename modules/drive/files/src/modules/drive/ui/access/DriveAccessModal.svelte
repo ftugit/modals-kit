@@ -16,7 +16,7 @@
   )
 </script>
 
-<Surface variant="plain" class="flex w-full flex-col p-6">
+<Surface variant="plain" class="flex w-full flex-col p-4 sm:p-6">
   {#if data?.fact}
     <Acl status={data.fact} enabled={data.enabled} backHref={returnTo} variant="plain" />
   {:else if data?.node}

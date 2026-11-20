@@ -10,7 +10,7 @@
   const ldr = useLoader<DriveOperationData>()
 </script>
 
-<Surface variant="plain" class="flex w-full flex-col p-6">
+<Surface variant="plain" class="flex w-full flex-col p-4 sm:p-6">
   {#if ldr.data?.fact}
     <Acl status={ldr.data.fact} enabled={ldr.data.enabled} backHref={driveRootRoute.href()} variant="plain" />
   {:else if ldr.data}
