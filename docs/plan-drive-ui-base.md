@@ -1788,6 +1788,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 
 **D3. Действия, гигиена, мобильный аудит.** — `[-]` в работе.
 - `[x]` `DriveNodeAction[]` и `OverflowMenu` (`96476b2d`, `e2c0ad2e`): дескриптор действий, 2 видимых на узком экране и 5 на широком, `mode="count"`; пункт меню несёт `attrs` модальной ссылки.
+- `[x]` Гигиена и мобильный аудит §9a (`558bf3a0`, `a31b85ce`): `min-w-0` на корнях, крошки/имена с `truncate`+`title`, `break-words`, сетки `grid-cols-1 sm:grid-cols-*`, футеры с переносом, `gap` вместо `mt-3`.
+- `[ ]` Тулбар списка `DriveBrowse.controls` (5 кнопок + quota) ещё не переведён на `OverflowMenu`: на мобильном это горизонтальный скролл `SurfaceBar`.
 - Гигиена: `min-w-0`/`truncate`/`title`, `gap` вместо `mt-*`/`my-4`.
 - Мобильный аудит drive (§9a): `DriveFilters`, `DriveNodeCard`, крошки, detail-`dl`, футер фильтров.
 
