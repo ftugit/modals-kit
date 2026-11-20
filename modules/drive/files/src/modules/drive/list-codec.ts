@@ -104,6 +104,28 @@ export function driveListStateHref(state: DriveListState): string {
   return query ? `${path}?${query}` : path
 }
 
+/**
+ * Ключ принадлежности ответа: identity + активные фильтры + срез + страница.
+ * Не заменяет `reqId` ядра, а ловит чужой/закешированный снапшот.
+ */
+export function driveListKey(state: DriveListState): string {
+  return driveListStateHref(state)
+}
+
+/** Тот же ключ из снапшота: второй формат ключа не заводится. */
+export function driveListKeyFromSnapshot(snapshot: {
+  readonly extra: Readonly<Record<string, string | number | boolean | null>>
+  readonly page: number
+  readonly pageSize: number
+}): string {
+  const extra: Record<string, string> = {}
+  for (const [key, value] of Object.entries(snapshot.extra)) {
+    if (typeof value === 'string') extra[key] = value
+  }
+  const state = driveListStateFromExtra(extra, snapshot.page, snapshot.pageSize)
+  return driveListKey(state)
+}
+
 /** Обратный вход: `snapshot.extra` → состояние (для `fetchDrivePage` и ссылок). */
 export function driveListStateFromExtra(
   extra: Readonly<Record<string, string>>,

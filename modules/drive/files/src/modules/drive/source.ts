@@ -11,7 +11,12 @@
  * ключи пагинатора (`drive`, `drive.size`).
  */
 import { preloadData } from '$app/navigation'
-import { driveListStateFromExtra, encodeDriveListQuery } from './list-codec.js'
+import {
+  driveListKey,
+  driveListKeyFromSnapshot,
+  driveListStateFromExtra,
+  encodeDriveListQuery,
+} from './list-codec.js'
 import type { DriveSort } from '#core/lib/drive/index.js'
 import {
   createUrlAdapter,
@@ -252,35 +257,44 @@ function filtersOf(input: { q?: string; filters?: Readonly<Record<string, string
   return input?.filters ?? {}
 }
 
+function abortError(): Error {
+  const error = new Error('Запрос отменён')
+  error.name = 'AbortError'
+  return error
+}
+
+function loadError(code: string): Error & { code: string } {
+  const error = new Error('Не удалось загрузить список') as Error & { code: string }
+  error.code = code
+  return error
+}
+
 /**
  * Догрузка порции — через тот же `load` списка, что отдал первую порцию.
- * `preloadData` не принимает `AbortSignal`; устаревшие ответы пагинатор
- * отсекает сам по `reqId`.
+ * `preloadData` не принимает `AbortSignal`: сигнал проверяется до и после
+ * ожидания, а принадлежность ответа — по ключу списка (не по счётчику).
  */
 async function fetchDrivePage(
   page: number,
   pageSize: number,
   input?: { q?: string; filters?: Readonly<Record<string, string>> },
+  signal?: AbortSignal,
 ): Promise<PageResponse<DriveListItem>> {
   const filters = filtersOf(input)
-  const state = driveListStateFromExtra(filters, page, pageSize)
-  const query = encodeDriveListQuery(state)
-  if (input?.q) query.set(DRIVE_KEYS.search, input.q)
-  const path = driveIdentityPath(state.identity)
-  const result = await preloadData(`${path}?${query}`)
-  if (result.type !== 'loaded') {
-    const error = new Error('Не удалось загрузить список') as Error & { code: string }
-    error.code = result.type === 'redirect' ? 'auth.expired' : 'load.error'
-    throw error
-  }
+  const decoded = driveListStateFromExtra(filters, page, pageSize)
+  const state = input?.q
+    ? { ...decoded, filters: { ...decoded.filters, search: input.q } }
+    : decoded
+  const expected = driveListKey(state)
+  if (signal?.aborted) throw abortError()
+  const result = await preloadData(expected)
+  if (signal?.aborted) throw abortError()
+  if (result.type !== 'loaded') throw loadError(result.type === 'redirect' ? 'auth.expired' : 'load.error')
   const data = result.data as DriveListRouteData
-  if (data.fact) {
-    const error = new Error('Не удалось загрузить список') as Error & { code: string }
-    error.code = data.fact
-    throw error
-  }
+  if (data.fact) throw loadError(data.fact)
   const snapshot = data.snapshot
-  if (!snapshot) throw new Error('Не удалось загрузить список')
+  if (!snapshot) throw loadError('load.error')
+  if (driveListKeyFromSnapshot(snapshot) !== expected) throw loadError('drive.list-stale')
   return {
     items: snapshot.pages[page] ?? [],
     totalItems: snapshot.totalItems ?? undefined,
@@ -299,7 +313,7 @@ export const driveSource = defineSource<DriveListItem>({
   search: { minLength: 1 },
   filters: [...DRIVE_EXTRAS.filterKeys],
   totals: true,
-  data: (look, input) => fetchDrivePage(look.page, look.pageSize, input),
+  data: (look, input) => fetchDrivePage(look.page, look.pageSize, input, look.signal),
 })
 
 /** Регистрация пагинатора — в том же бандле, что и хост. Идемпотентно. */

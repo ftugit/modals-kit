@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   decodeDriveList,
+  driveListKey,
+  driveListKeyFromSnapshot,
   driveListStateFromExtra,
   driveListStateHref,
   encodeDriveListExtra,
@@ -42,6 +44,20 @@ describe('drive list codec', () => {
     const { state } = decodeDriveList(new URLSearchParams(''), { kind: 'trash' })
     expect(driveListStateHref(state)).toContain('/drive/trash')
     expect(driveListStateHref(state)).not.toContain('?')
+  })
+
+  it('ключ совпадает у состояния и снапшота, ids=[] и null различаются', () => {
+    const { state } = decodeDriveList(new URLSearchParams('drive.q=счёт&drive=2'), { kind: 'trash' })
+    const key = driveListKey(state)
+    expect(key).toContain('/drive/trash')
+    expect(driveListKeyFromSnapshot({
+      extra: { _list: 'trash', q: 'счёт' },
+      page: 2,
+      pageSize: state.pageSize,
+    })).toBe(key)
+    expect(driveListKey(resolveDriveList(state, { ids: [] }).state)).not.toBe(
+      driveListKey(decodeDriveList(new URLSearchParams('drive.q=счёт&drive=2'), { kind: 'trash' }).state),
+    )
   })
 
   it('fromExtra читает _list и коды ключей extra', () => {
