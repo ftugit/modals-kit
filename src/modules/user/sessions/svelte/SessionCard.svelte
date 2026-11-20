@@ -21,8 +21,6 @@
 
   interface Props {
     detail: SessionDetail
-    /** Ошибка прошлой отправки: 'rename-failed' рисуется в карточке. */
-    notice?: 'rename-failed' | null
     /** Момент отрисовки: статус считается без запроса. */
     now?: number
     /** Куда вернуться без JS после успеха/отказа. */
@@ -39,7 +37,7 @@
     uid?: string | null
   }
 
-  let { detail, notice = null, now = Date.now(), backHref = userSessionsRoute.href(), mode = 'page', actionHref, uid = null }: Props = $props()
+  let { detail, now = Date.now(), backHref = userSessionsRoute.href(), mode = 'page', actionHref, uid = null }: Props = $props()
 
   const session = $derived(detail.session)
   const status = $derived(
@@ -68,12 +66,6 @@
 </script>
 
 <div class="flex flex-col gap-4" data-testid="session-card">
-  {#if notice === 'rename-failed'}
-    <p class="text-sm text-destructive" role="alert" data-testid="session-card-notice">
-      Не удалось переименовать устройство.
-    </p>
-  {/if}
-
   <div class="flex flex-wrap items-center gap-2">
     <span class="text-base font-medium">{session.deviceName?.trim() || 'Без имени'}</span>
     {#if session.current}

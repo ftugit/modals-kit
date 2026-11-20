@@ -27,7 +27,7 @@
   {:else if data.detail}
     <div class="rounded-xl border border-border bg-card p-6 text-card-foreground shadow-sm">
       <h1 class="mb-4 text-lg font-semibold leading-tight tracking-tight">Устройство аккаунта</h1>
-      <SessionCard detail={data.detail} notice={data.notice} {backHref} actionHref={renameAction} />
+      <SessionCard detail={data.detail} {backHref} actionHref={renameAction} />
     </div>
   {:else}
     <Acl status="auth.session-unknown" {backHref} />

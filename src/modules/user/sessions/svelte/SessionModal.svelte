@@ -17,7 +17,6 @@
     enabled: boolean
     fact: AuthErrorCode | null
     detail: SessionDetail | null
-    notice: 'rename-failed' | null
   }
 
   const ldr = useLoader<CardLoaderData>()
@@ -42,7 +41,6 @@
   {:else if ldr.data?.detail}
     <SessionCard
       detail={ldr.data.detail}
-      notice={ldr.data.notice}
       {backHref}
       {actionHref}
       {uid}

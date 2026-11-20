@@ -20,7 +20,6 @@ export interface AccountSessionCardData {
   enabled: boolean
   fact: AuthErrorCode | null
   detail: SessionDetail | null
-  notice: 'rename-failed' | null
 }
 
 const throttle = createIpThrottle('user-session-rename', 30, 60_000)
@@ -37,21 +36,20 @@ export async function loadAccountSession(event: RequestEvent<{ id: string; sessi
   event.setHeaders({ 'cache-control': 'private, no-store' })
   const uid = String(event.params.id ?? '')
   const id = String(event.params.sessionId ?? '')
-  const notice = event.url.searchParams.get('notice') === 'rename-failed' ? 'rename-failed' : null
   const u = auth(event)
   if (!u.enabled) {
-    return { uid, enabled: false, fact: 'auth.disabled', detail: null, notice }
+    return { uid, enabled: false, fact: 'auth.disabled', detail: null }
   }
   const r = await u.readSessionDetail(id)
   if (!r.ok) {
-    return { uid, enabled: true, fact: r.fact.code, detail: null, notice }
+    return { uid, enabled: true, fact: r.fact.code, detail: null }
   }
   // Право прочитал `readSessionDetail` по сессии; здесь сверяется только то,
   // что устройство принадлежит аккаунту из адреса.
   if (r.value.session.authId !== uid) {
-    return { uid, enabled: true, fact: 'auth.session-unknown', detail: null, notice }
+    return { uid, enabled: true, fact: 'auth.session-unknown', detail: null }
   }
-  return { uid, enabled: true, fact: null, detail: r.value, notice }
+  return { uid, enabled: true, fact: null, detail: r.value }
 }
 
 export const accountSessionActions = {

@@ -160,11 +160,6 @@ describe('SessionCard', () => {
     expect(body).not.toContain('data-testid="session-card-revoke"')
   })
 
-  test('ошибка переименования показывается текстом, а не молчанием', () => {
-    const { body } = render(SessionCard, { props: { detail, notice: 'rename-failed' } })
-    expect(body).toContain('Не удалось переименовать устройство')
-  })
-
   test('модалка: шаг локальный, ключ носителя не открывает подтверждение', () => {
     addr.url = new URL('http://localhost/users?modal=user.session&session.exit=confirm')
     const { body } = render(SessionCard, { props: { mode: 'modal', detail: other } })

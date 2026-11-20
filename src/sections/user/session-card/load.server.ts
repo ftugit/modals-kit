@@ -16,7 +16,6 @@ export interface SessionCardData {
   enabled: boolean
   fact: AuthErrorCode | null
   detail: SessionDetail | null
-  notice: 'rename-failed' | null
 }
 
 const list = userSessionsRoute.href()
@@ -32,16 +31,15 @@ const error = (code: string, message: string, path?: string): FormError => ({
 
 export async function loadSessionCard(event: RequestEvent<{ id: string }>): Promise<SessionCardData> {
   event.setHeaders({ 'cache-control': 'private, no-store' })
-  const notice = event.url.searchParams.get('notice') === 'rename-failed' ? 'rename-failed' : null
   const u = auth(event)
   if (!u.enabled) {
-    return { enabled: false, fact: 'auth.disabled', detail: null, notice }
+    return { enabled: false, fact: 'auth.disabled', detail: null }
   }
   const r = await u.readSessionDetail(event.params.id)
   if (!r.ok) {
-    return { enabled: true, fact: r.fact.code, detail: null, notice }
+    return { enabled: true, fact: r.fact.code, detail: null }
   }
-  return { enabled: true, fact: null, detail: r.value, notice }
+  return { enabled: true, fact: null, detail: r.value }
 }
 
 export const sessionCardActions = {

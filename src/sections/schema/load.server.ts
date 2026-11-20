@@ -17,8 +17,6 @@ export async function loadSchema({ url }: { url: URL }) {
     // Отчёт открывает ленивый драйвер мимо `gate`: при конфликте это единственный путь.
     screen: await schemaScreen(),
     next: nextOf(url),
-    // Пришли сюда после успешного переноса (без `?next=`) — сказать об этом.
-    justDone: url.searchParams.has('done'),
   }
 }
 
@@ -28,7 +26,7 @@ export const schemaActions = {
     const next = nextOf(event.url)
     // Решать уже нечего (другой экземпляр успел) — это не отказ: просто уходим.
     if (!handled) redirect(303, next ?? '/')
-    if (handled.result.ok) redirect(303, next ?? '/schema?done=1')
+    if (handled.result.ok) redirect(303, next ?? '/schema')
     return fail(handled.status, { result: handled.result } satisfies SchemaActionData)
   },
 }
