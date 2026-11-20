@@ -16,6 +16,11 @@
     destructive?: boolean
     separatorBefore?: boolean
     primary?: boolean
+    /**
+     * Готовые атрибуты ссылки (включая attachments модальных ссылок): пункт
+     * остаётся примитивом, а навигацию/открытие модалки задаёт носитель.
+     */
+    attrs?: object
   }
 </script>
 
@@ -144,6 +149,7 @@
     <div class={fallbackClassList} data-testid={testId ? `${testId}-fallback` : undefined} data-overflow-fallback="">
       {#each fallbackItems as item (item.id)}
         <Button
+          {...item.attrs}
           href={item.href}
           {size}
           {variant}
@@ -162,6 +168,7 @@
   <div class={rowClass} data-testid={testId} data-overflow-menu="">
     {#each split.visible as item (item.id)}
       <Button
+        {...item.attrs}
         href={item.href}
         onclick={item.onClick}
         {size}
@@ -219,6 +226,7 @@
               {/if}
               {#if item.href}
                 <a
+                  {...item.attrs}
                   role="menuitem"
                   href={item.href}
                   aria-disabled={item.disabled ? 'true' : undefined}
