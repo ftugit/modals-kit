@@ -20,7 +20,9 @@ export interface BulkExitTarget {
   doneHref: string
 }
 
-export type BulkExitOutcome = { ok: true; redirect: string } | { ok: false; error?: FormError }
+export type BulkExitOutcome =
+  | { ok: true; current: boolean; requested: number; revoked: number }
+  | { ok: false; error?: FormError }
 
 /** Общий конструктор ошибки формы сессионных роутов: код только из каталога. */
 export function sessionFormError(code: AuthErrorCode, message?: string, path?: string): FormError {
@@ -57,14 +59,7 @@ export async function runBulkExit(
     // показать). Остался в списке — возвращаем на `selfHref`; если набор закрыт
     // не целиком (`requested > revoked`), несём расхождение query-ключами, и
     // список рисует объявление «просили N, закрыто M» (P1-1).
-    if (!current && requested > revoked) {
-      const sep = target.selfHref.includes('?') ? '&' : '?'
-      return {
-        ok: true,
-        redirect: `${target.selfHref}${sep}notice=bulk-exit-partial&requested=${requested}&revoked=${revoked}`,
-      }
-    }
-    return { ok: true, redirect: current ? target.doneHref : target.selfHref }
+    return { ok: true, current, requested, revoked }
   } catch {
     return { ok: false, error: failWith(AUTH_MESSAGES['auth.unavailable']!) }
   }
@@ -74,5 +69,5 @@ export async function runBulkExit(
 export async function runLocalExit(event: RequestEvent): Promise<BulkExitOutcome> {
   const r = await auth(event).logoutLocal()
   if (!r.ok) return { ok: false }
-  return { ok: true, redirect: '/' }
+  return { ok: true, current: true, requested: 1, revoked: 1 }
 }

@@ -64,9 +64,9 @@ export const logoutActions = {
       order: SECURITY_LAYERS,
       throttle: exitThrottle,
       async execute({ commit }: any) {
-        const r = await runLocalExit(event)
+        await runLocalExit(event)
         commit()
-        return { redirect: r.ok ? r.redirect : '/user/logout' }
+        return { redirect: '/' }
       },
     })(event.request, 'action', event)
     redirect(303, handled.result.redirect ?? '/')

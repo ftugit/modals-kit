@@ -33,6 +33,10 @@ export const userSessionsActions = {
       },
     })(event.request, 'action', event)
     if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
+    if (handled.result.ok) {
+      event.locals.formResult = handled.result
+      return { result: handled.result }
+    }
     return fail(handled.status, { result: handled.result })
   },
   others: async (event: RequestEvent) => {
@@ -53,10 +57,16 @@ export const userSessionsActions = {
         )
         if (!r.ok) return fail([r.error ?? sessionFormError('auth.unavailable')])
         commit()
-        return { redirect: r.redirect }
+        if (r.current) return { redirect: '/user/auth' }
+        if (r.requested > r.revoked) return { data: { requested: r.requested, revoked: r.revoked } }
+        return { redirect: list }
       },
     })(event.request, 'action', event)
     if (handled.result.ok && handled.result.redirect) redirect(303, handled.result.redirect)
+    if (handled.result.ok) {
+      event.locals.formResult = handled.result
+      return { result: handled.result }
+    }
     return fail(handled.status, { result: handled.result })
   },
 }

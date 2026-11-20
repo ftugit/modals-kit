@@ -15,6 +15,7 @@
  * про свои устройства.
  */
 import type { RequestEvent } from '@sveltejs/kit'
+import type { Result } from '#core/lib/form/index.js'
 import { auth } from '#modules/user/base/service/gateway.server.js'
 import { userAccountSessionsRoute, userSessionsRoute } from '#modules/user/base/routes.js'
 import type { SessionsListNotice, SessionsRouteData, SessionsState } from '#modules/user/base/model/types.js'
@@ -45,14 +46,13 @@ const dateMs = (raw: string | null): number | null => {
  * объявление рисуется только при реальном расхождении `requested > revoked`,
  * поэтому подделанный адрес с `requested <= revoked` ничего не показывает.
  */
-function noticeOf(sp: URLSearchParams): SessionsListNotice | null {
-  const kind = sp.get('notice')
-  if (kind === 'bulk-exit-partial') {
-    const requested = num(sp.get('requested'), 0, 0, 1_000_000)
-    const revoked = num(sp.get('revoked'), 0, 0, 1_000_000)
-    if (requested > revoked) return { kind: 'bulk-exit-partial', requested, revoked }
-  }
-  return null
+function noticeOfResult(result: Result<unknown> | null | undefined): SessionsListNotice | null {
+  const data = result?.ok ? (result.data as { requested?: unknown; revoked?: unknown } | undefined) : undefined
+  const requested = Number(data?.requested)
+  const revoked = Number(data?.revoked)
+  if (!Number.isFinite(requested) || !Number.isFinite(revoked)) return null
+  if (!(requested > revoked)) return null
+  return { kind: 'bulk-exit-partial', requested, revoked }
 }
 
 /** Адрес списка этого аккаунта: свой — без цели, чужой — путём. */
@@ -77,7 +77,7 @@ export async function loadSessionsRouteData(
 ): Promise<SessionsRouteData> {
   event.setHeaders({ 'cache-control': 'private, no-store' })
   const uid = journal ? null : fixedUid?.trim().toLowerCase() || null
-  const notice = noticeOf(event.url.searchParams)
+  const notice = noticeOfResult(event.locals?.formResult)
   const u = auth(event)
   if (!u.enabled) {
     return {

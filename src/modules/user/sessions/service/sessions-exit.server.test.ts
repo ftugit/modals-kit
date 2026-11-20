@@ -39,33 +39,33 @@ describe('runBulkExit: бросок домена и факты', () => {
   test('успех: текущая закрыта → doneHref, иначе selfHref', async () => {
     mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 1, current: true, requested: 1 } })
     const r = await runBulkExit(event, {}, target)
-    expect(r).toEqual({ ok: true, redirect: '/user/auth' })
+    expect(r).toEqual({ ok: true, current: true, requested: 1, revoked: 1 })
   })
 })
 
-describe('runBulkExit: частичный набор виден в редиректе (P1-1)', () => {
-  test('requested > revoked и текущая жива → selfHref с notice=bulk-exit-partial', async () => {
+describe('runBulkExit: числа исхода отдаются вызывающему (P1-1)', () => {
+  test('requested > revoked и текущая жива → числа в результате', async () => {
     mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 3, current: false, requested: 5 } })
     const r = await runBulkExit(event, {}, target)
-    expect(r).toEqual({ ok: true, redirect: '/user/sessions?notice=bulk-exit-partial&requested=5&revoked=3' })
+    expect(r).toEqual({ ok: true, current: false, requested: 5, revoked: 3 })
   })
 
-  test('набор закрыт целиком → selfHref без объявления', async () => {
+  test('набор закрыт целиком → числа без расхождения', async () => {
     mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 5, current: false, requested: 5 } })
     const r = await runBulkExit(event, {}, target)
-    expect(r).toEqual({ ok: true, redirect: '/user/sessions' })
+    expect(r).toEqual({ ok: true, current: false, requested: 5, revoked: 5 })
   })
 
-  test('текущая закрыта → doneHref даже при расхождении (список уже не показать)', async () => {
+  test('текущая закрыта → current=true даже при расхождении', async () => {
     mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 3, current: true, requested: 5 } })
     const r = await runBulkExit(event, {}, target)
-    expect(r).toEqual({ ok: true, redirect: '/user/auth' })
+    expect(r).toEqual({ ok: true, current: true, requested: 5, revoked: 3 })
   })
 
-  test('selfHref уже с query — разделитель &', async () => {
+  test('числа не зависят от адреса возврата', async () => {
     mocks.revoke.mockResolvedValueOnce({ ok: true, value: { revoked: 1, current: false, requested: 2 } })
     const r = await runBulkExit(event, {}, { selfHref: '/user/sessions?sessions.state=active', doneHref: '/user/auth' })
-    expect(r).toEqual({ ok: true, redirect: '/user/sessions?sessions.state=active&notice=bulk-exit-partial&requested=2&revoked=1' })
+    expect(r).toEqual({ ok: true, current: false, requested: 2, revoked: 1 })
   })
 })
 

@@ -58,7 +58,7 @@ registerComponentForm({
         if (!out.ok) return fail([sessionFormError(out.fact.code)])
       }
       commit()
-      return { data: { step: 'done', variant, revoked: null, requested: null } }
+      return { data: { step: 'done', variant, revoked: r.revoked, requested: r.requested } }
     }
 
     if (ids.length === 0) {
