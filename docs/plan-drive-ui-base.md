@@ -1715,7 +1715,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 
 **A4. `Surface.rail` и модульные настройки.** — `[-]` в работе.
 - `[x]` `Surface.rail` (`b4f9e901`): один DOM, десктоп — колонка, узкий экран — строка с прокруткой; тесты SSR.
-- `[ ]` `SettingsSection` + `settings.ext.ts` + glob, `uid` в контексте, `UserConfig` → `SettingsHost`; «Сессии» — самодостаточный список (§10b).
+- `[x]` Реестр `SettingsSection` (`2edc4c64`): `uid` в контексте, `visible`/`ownOnly`, порядок; тесты.
+- `[ ]` `settings.ext.ts` + glob, `UserConfig` → `SettingsHost` на `Surface.rail`, «Сессии» — самодостаточный список (§10b).
 
 **A5. Base UI, паттерны и проверки arch.**
 - Мобильный аудит base UI: `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок (§9).
