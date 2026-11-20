@@ -1717,7 +1717,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `[x]` `Surface.rail` (`b4f9e901`): один DOM, десктоп — колонка, узкий экран — строка с прокруткой; тесты SSR.
 - `[x]` Реестр `SettingsSection` (`2edc4c64`): `uid` в контексте, `visible`/`ownOnly`, порядок; тесты.
 - `[x]` `SettingsHost` (`6825f5b3`): реестр секций, rail, активный пункт по `user_config_step`, «Аккаунт» через `UserConfig embedded`, `settings.ext.ts` + glob; страницы и модалка переключены.
-- `[~]` Проверка в браузере — отправлена beam-субагенту: страница, шаги, модалка, неизвестный `user_config_step`, консоль.
+- `[x]` Правки по проверке: `settings_section` вместо коллизии с `user_config_step`; `frame` больше не мутирует state во время рендера (SessionsList на клиенте).
 
 **A5. Base UI, паттерны и проверки arch.**
 - Мобильный аудит base UI: `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок (§9).
@@ -2393,7 +2393,7 @@ railWidth?: 'sm' | 'md'   // w-40 | w-56
 - `ctx.uid` берётся у носителя: `/user/config` → `null`, `/user/[id]/config` → id, модалка → проп;
 - `rail` — навигация по пунктам; тело — компонент активного пункта с `ctx`.
 
-**Адрес.** Переиспользуем `user_config_step`: значения — `id` пункта, вложенные — `account.security`/`account.sessions` (как сейчас `security.sessions`). Одноразовый alias `profile → account`, `security → account.security` сохраняет старые ссылки; неизвестный `id` — `Acl`, не молчаливый переход.
+**Адрес.** Два ключа, чтобы не было коллизии: `settings_section` — id пункта первой линии (владелец — хост), `user_config_step` — внутренние шаги секции (`security`, `security.sessions`, …; владелец — компонент секции). Неизвестный `settings_section` → первый пункт; неизвестный `user_config_step` → `Acl`, как и раньше. Старые ссылки без `settings_section` продолжают работать.
 
 ### 10b.6. «Сессии»
 

@@ -2,7 +2,8 @@
   /**
    * Хост настроек: пункты приходят из реестра, навигация — rail внутри Surface.
    * Секция сама решает, что рисовать внутри (шаги, форма, список); хост только
-   * выбирает активный пункт по `user_config_step`.
+   * выбирает активный пункт по `settings_section`; `user_config_step` остаётся
+   * внутренним ключом шагов секции и хосту не принадлежит.
    */
   import { readQuery } from '#core/lib/address/keys.js'
   import { visibleAddress } from '#core/lib/address/sveltekit.js'
@@ -65,7 +66,7 @@
   const sections = $derived(settingsSectionsFor<UserSettingsScreen>(ctx))
 
   const requested = $derived.by(() => {
-    const raw = readQuery(visibleAddress().url.searchParams, 'user_config_step')
+    const raw = readQuery(visibleAddress().url.searchParams, 'settings_section')
     return typeof raw === 'string' ? raw.split('.')[0] : null
   })
 
@@ -87,7 +88,7 @@
 
   function sectionHref(id: string): string {
     const url = new URL(visibleAddress().url)
-    url.searchParams.set('user_config_step', id)
+    url.searchParams.set('settings_section', id)
     return `${url.pathname}${url.search}`
   }
 </script>

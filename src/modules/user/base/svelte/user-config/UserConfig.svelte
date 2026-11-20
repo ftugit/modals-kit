@@ -8,6 +8,7 @@
    * доступные только для чтения (`session.ipLock` у владельца, чужой конфиг
    * под `config.read`), показываются строками `read-only` без включения в форму.
    */
+  import { browser } from '$app/env'
   import { preloadData } from '$app/navigation'
   import { untrack } from 'svelte'
   import { readQuery } from '#core/lib/address/keys.js'
@@ -284,7 +285,10 @@
               onAcl?.(fact as never)
             }}
             frame={(parts) => {
-              sessionsParts = parts
+              // Колбэк зовётся во время рендера дочернего шага: на клиенте
+              // прямая запись в state — unsafe mutation, поэтому откладываем.
+              if (browser) queueMicrotask(() => { sessionsParts = parts })
+              else sessionsParts = parts
               return null
             }}
           />
