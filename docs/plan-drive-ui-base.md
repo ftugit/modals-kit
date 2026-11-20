@@ -1709,10 +1709,10 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - Окно открывается только по `ready` (данные и чанк); при ошибке — карточка retry, без скелетона. Пока не готово, диалог и фон закрыты.
 - hover-prefetch оставлен: он только греет данные и модалку не открывает.
 
-**A3. Базовые примитивы.**
-- `Empty` с расширенным API (§3a).
-- `OverflowMenu` + `MoreHorizontalIcon` (§5).
-- `Attachment`: `kind:'folder'`, `count`, `badges` (§4).
+**A3. Базовые примитивы.** — `[-]` в работе.
+- `[x]` `Empty` (`f7013816`): §3a, экспорт из `core/ui`, README, тесты.
+- `[ ]` `OverflowMenu` + `MoreHorizontalIcon` (§5).
+- `[ ]` `Attachment`: `kind:'folder'`, `count`, `badges` (§4).
 
 **A4. `Surface.rail` и модульные настройки.**
 - `Surface.rail` — необязательный левый rail с одним DOM и мобильной прокруткой (§10b.4).
