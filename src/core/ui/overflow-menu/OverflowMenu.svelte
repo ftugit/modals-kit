@@ -1,0 +1,269 @@
+<script lang="ts" module>
+  import type { Snippet } from 'svelte'
+
+  /** Пункт меню действий. Ссылка остаётся рабочей без JS, `onClick` живёт только с JS. */
+  export interface OverflowMenuItem {
+    id: string
+    label: string
+    href?: string
+    onClick?: (event: MouseEvent) => void
+    icon?: Snippet
+    description?: string
+    shortcut?: string
+    badge?: string
+    group?: string
+    disabled?: boolean
+    destructive?: boolean
+    separatorBefore?: boolean
+    primary?: boolean
+  }
+</script>
+
+<script lang="ts">
+  import { untrack } from 'svelte'
+  import { cn } from '#core/ui/utils.js'
+  import { tryUseModals } from '#core/lib/modals/svelte/index.js'
+  import Button from '../button/Button.svelte'
+  import type { ButtonVariants } from '../button/Button.svelte'
+  import Floating from '../floating/Floating.svelte'
+  import MoreHorizontalIcon from './MoreHorizontalIcon.svelte'
+
+  interface Props {
+    items: readonly OverflowMenuItem[]
+    /** Сколько пунктов видно; функция от ширины поддержана в `mode='fit'` (позже). */
+    maxVisible?: number | ((width: number) => number)
+    /** `count` — по числу; `fit` пока считается как `count` (стартовый режим плана). */
+    mode?: 'count' | 'fit'
+    moreBadge?: boolean
+    moreLabel?: string
+    orientation?: 'horizontal' | 'vertical'
+    size?: 'sm' | 'md'
+    variant?: ButtonVariants['variant']
+    align?: 'start' | 'end'
+    /** Без хоста модалок: `scroll` — строка со скроллом, `wrap` — перенос, `none` — скрыть. */
+    fallback?: 'scroll' | 'wrap' | 'none'
+    fallbackClass?: string
+    sheetOnNarrow?: boolean
+    onOpenChange?: (open: boolean) => void
+    class?: string
+    'data-testid'?: string
+  }
+
+  let {
+    items,
+    maxVisible = 3,
+    mode = 'count',
+    moreBadge = false,
+    moreLabel = 'Ещё действия',
+    orientation = 'horizontal',
+    size = 'sm',
+    variant = 'ghost',
+    align = 'start',
+    fallback = 'scroll',
+    fallbackClass,
+    sheetOnNarrow,
+    onOpenChange,
+    class: cls,
+    'data-testid': testId,
+  }: Props = $props()
+
+  // Хост читается один раз: без него `Floating` не рисует меню, и работает fallback.
+  const hasHost = untrack(() => tryUseModals() !== null)
+
+  const limit = $derived(
+    typeof maxVisible === 'number'
+      ? Math.max(maxVisible, items.filter((item) => item.primary).length)
+      : 3,
+  )
+
+  const split = $derived.by(() => {
+    const visible: OverflowMenuItem[] = []
+    const hidden: OverflowMenuItem[] = []
+    for (const item of items) {
+      if (hidden.length === 0 && (item.primary || visible.length < limit)) visible.push(item)
+      else hidden.push(item)
+    }
+    return { visible, hidden }
+  })
+
+  let open = $state(false)
+  let anchor = $state<HTMLElement | null>(null)
+
+  // Без JS `onClick`-пункты не работают: в fallback остаются только ссылки.
+  const fallbackItems = $derived(items.filter((item) => item.href))
+
+  const rowClass = $derived(
+    cn(
+      'flex min-w-0 items-center gap-1',
+      orientation === 'vertical' ? 'flex-col items-stretch' : 'flex-wrap',
+      align === 'end' && 'justify-end',
+      cls,
+    ),
+  )
+
+  const fallbackClassList = $derived(
+    cn(
+      'flex min-w-0 items-center gap-1',
+      fallback === 'wrap' ? 'flex-wrap' : 'flex-nowrap overflow-x-auto',
+      fallback === 'scroll' && '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+      align === 'end' && 'justify-end',
+      fallbackClass,
+    ),
+  )
+
+  function onMenuKeydown(event: KeyboardEvent) {
+    const nodes = [...((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])'))]
+    if (nodes.length === 0) return
+    const index = nodes.indexOf(document.activeElement as HTMLElement)
+    if (event.key === 'Escape') {
+      open = false
+      anchor?.focus()
+      return
+    }
+    if (event.key === 'Home') {
+      event.preventDefault()
+      nodes[0]?.focus()
+      return
+    }
+    if (event.key === 'End') {
+      event.preventDefault()
+      nodes[nodes.length - 1]?.focus()
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      nodes[(index + 1 + nodes.length) % nodes.length]?.focus()
+      return
+    }
+    if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+      event.preventDefault()
+      nodes[(index - 1 + nodes.length) % nodes.length]?.focus()
+    }
+  }
+</script>
+
+{#if !hasHost}
+  {#if fallback !== 'none' && fallbackItems.length > 0}
+    <div class={fallbackClassList} data-testid={testId ? `${testId}-fallback` : undefined} data-overflow-fallback="">
+      {#each fallbackItems as item (item.id)}
+        <Button
+          href={item.href}
+          {size}
+          {variant}
+          disabled={item.disabled}
+          class={cn('min-w-0', item.destructive && 'text-destructive')}
+          data-testid={testId ? `${testId}-${item.id}` : undefined}
+        >
+          {#if item.icon}{@render item.icon()}{/if}
+          <span class="truncate">{item.label}</span>
+          {#if item.badge}<span class="text-muted-foreground">{item.badge}</span>{/if}
+        </Button>
+      {/each}
+    </div>
+  {/if}
+{:else}
+  <div class={rowClass} data-testid={testId} data-overflow-menu="">
+    {#each split.visible as item (item.id)}
+      <Button
+        href={item.href}
+        onclick={item.onClick}
+        {size}
+        {variant}
+        disabled={item.disabled}
+        class={cn('min-w-0', item.destructive && 'text-destructive')}
+        data-testid={testId ? `${testId}-${item.id}` : undefined}
+      >
+        {#if item.icon}{@render item.icon()}{/if}
+        <span class="truncate">{item.label}</span>
+        {#if item.badge}<span class="text-muted-foreground">{item.badge}</span>{/if}
+      </Button>
+    {/each}
+
+    {#if split.hidden.length > 0}
+      <Floating
+        {open}
+        {anchor}
+        label={moreLabel}
+        popup="menu"
+        {sheetOnNarrow}
+        onOpenChange={(next) => {
+          open = next
+          onOpenChange?.(next)
+        }}
+      >
+        {#snippet trigger(t)}
+          <Button
+            {...t}
+            variant="ghost"
+            size="icon-sm"
+            aria-label={moreLabel}
+            data-testid={testId ? `${testId}-more` : 'overflow-more'}
+          >
+            <MoreHorizontalIcon />
+            {#if moreBadge}<span class="sr-only">{split.hidden.length}</span>{/if}
+          </Button>
+        {/snippet}
+
+        {#snippet render(f)}
+          <div
+            role="menu"
+            tabindex="-1"
+            aria-label={moreLabel}
+            class="flex min-w-40 flex-col p-1"
+            onkeydown={onMenuKeydown}
+            data-testid={testId ? `${testId}-menu` : 'overflow-menu'}
+          >
+            {#each split.hidden as item, i (item.id)}
+              {#if item.group && (i === 0 || split.hidden[i - 1]?.group !== item.group)}
+                <p class="px-2 pt-2 pb-1 text-xs text-muted-foreground">{item.group}</p>
+              {/if}
+              {#if item.separatorBefore && i > 0}
+                <div role="separator" class="my-1 h-px bg-border"></div>
+              {/if}
+              {#if item.href}
+                <a
+                  role="menuitem"
+                  href={item.href}
+                  aria-disabled={item.disabled ? 'true' : undefined}
+                  class={cn(
+                    'flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent',
+                    item.disabled && 'pointer-events-none opacity-50',
+                    item.destructive && 'text-destructive',
+                  )}
+                  onclick={() => f.close()}
+                  data-testid={testId ? `${testId}-${item.id}` : undefined}
+                >
+                  {#if item.icon}{@render item.icon()}{/if}
+                  <span class="min-w-0 flex-1 truncate">{item.label}</span>
+                  {#if item.badge}<span class="text-xs text-muted-foreground">{item.badge}</span>{/if}
+                  {#if item.shortcut}<span class="text-xs text-muted-foreground">{item.shortcut}</span>{/if}
+                </a>
+              {:else}
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-disabled={item.disabled ? 'true' : undefined}
+                  class={cn(
+                    'flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent',
+                    item.disabled && 'pointer-events-none opacity-50',
+                    item.destructive && 'text-destructive',
+                  )}
+                  onclick={(event) => {
+                    if (item.disabled) return
+                    item.onClick?.(event)
+                    f.close()
+                  }}
+                  data-testid={testId ? `${testId}-${item.id}` : undefined}
+                >
+                  {#if item.icon}{@render item.icon()}{/if}
+                  <span class="min-w-0 flex-1 truncate">{item.label}</span>
+                  {#if item.badge}<span class="text-xs text-muted-foreground">{item.badge}</span>{/if}
+                </button>
+              {/if}
+            {/each}
+          </div>
+        {/snippet}
+      </Floating>
+    {/if}
+  </div>
+{/if}
