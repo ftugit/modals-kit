@@ -27,7 +27,7 @@
   } from '../core'
   import { createLoader } from '../loader'
   import { ensureModalComponent } from './component.svelte'
-  import { isStaleChunkError, reloadOnceForStale } from '#core/hooks/stale-build.js'
+  import { isStaleChunkError, reloadOnceForStale } from './stale-build'
   import type { Modals } from '../create'
   import type { ModalRegistry } from '../registry'
   import { entryLabel } from '../types'
@@ -317,7 +317,21 @@
    * `sheetDialog` ниже, которая даёт ему фон, scroll lock и aria-изоляцию.
    * Иначе одинокий Select создавал бы пустую оболочку рядом с собой.
    */
-  const open = $derived(chain.length > 0)
+  // Окно не открывается, пока данные и чанк не готовы: открытая модалка со
+  // скелетоном и была «модалка раньше содержимого». Ошибка окно открывает —
+  // с карточкой ошибки и retry, чтобы отказ не остался без экрана.
+  const contentReady = $derived.by(() => {
+    const entry = chain[chain.length - 1]
+    if (!entry) return true
+    const index = chain.length - 1
+    const resolved = resolveEntry(entry, index, liveScope.lookup)
+    const definition = resolved.definition
+    if (!definition) return true
+    if (!definition.loader && !definition.route && !definition.component) return true
+    const rt = view.runtime[runtimeKey(resolved.name, index)]
+    return rt?.status === 'ready' || rt?.status === 'error'
+  })
+  const open = $derived(chain.length > 0 && contentReady)
   // Zag's delayed return-focus callback can outlive its Svelte effect on an
   // abrupt host unmount. Keep a plain DOM snapshot and restore without reading
   // destroyed reactive state; never steal focus from another live surface.

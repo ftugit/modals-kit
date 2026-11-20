@@ -14,6 +14,7 @@ export type { ModalHandle, ModalStateHandle } from './state.svelte'
 
 export { createReactiveStore } from './store.svelte'
 export { lazy, ensureModalComponent, resolvedModalComponent } from './component.svelte'
+export { isStaleChunkError, reloadOnceForStale } from './stale-build'
 export type { ModalComponentLoader } from './component.svelte'
 export type { ReactiveModalStore } from './store.svelte'
 export { createMediaQuery } from './media.svelte'

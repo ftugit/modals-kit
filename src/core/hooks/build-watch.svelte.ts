@@ -1,6 +1,6 @@
 // Подписка на смену билда: одна на приложение, монтируется в корневом layout.
 import { updated } from '$app/state'
-import { reloadOnceForStale } from './stale-build.js'
+import { reloadOnceForStale } from '#core/lib/modals/svelte/index.js'
 
 /** Новая версия на сервере — принудительная перезагрузка один раз. */
 export function useBuildWatch(): void {
