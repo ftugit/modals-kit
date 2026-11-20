@@ -16,6 +16,8 @@
     destructive?: boolean
     separatorBefore?: boolean
     primary?: boolean
+    /** Переключатель: `aria-pressed` на видимом пункте и в меню. */
+    pressed?: boolean
     /**
      * Готовые атрибуты ссылки (включая attachments модальных ссылок): пункт
      * остаётся примитивом, а навигацию/открытие модалки задаёт носитель.
@@ -154,6 +156,7 @@
           {size}
           {variant}
           disabled={item.disabled}
+          aria-pressed={item.pressed}
           class={cn('min-w-0', item.destructive && 'text-destructive')}
           data-testid={testId ? `${testId}-${item.id}` : undefined}
         >
@@ -172,6 +175,7 @@
         href={item.href}
         onclick={item.onClick}
         {size}
+        aria-pressed={item.pressed}
         {variant}
         disabled={item.disabled}
         class={cn('min-w-0', item.destructive && 'text-destructive')}
@@ -200,7 +204,7 @@
             {...t}
             variant="ghost"
             size="icon-sm"
-            aria-label={moreLabel}
+            aria-label={moreBadge && split.hidden.length > 0 ? `${moreLabel}: скрыто ${split.hidden.length}` : moreLabel}
             data-testid={testId ? `${testId}-more` : 'overflow-more'}
           >
             <MoreHorizontalIcon />
@@ -227,15 +231,19 @@
               {#if item.href}
                 <a
                   {...item.attrs}
-                  role="menuitem"
+                  role={item.pressed === undefined ? 'menuitem' : 'menuitemcheckbox'}
                   href={item.href}
                   aria-disabled={item.disabled ? 'true' : undefined}
+                  aria-checked={item.pressed}
                   class={cn(
-                    'flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent',
+                    'flex min-h-11 min-w-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent sm:min-h-9',
                     item.disabled && 'pointer-events-none opacity-50',
                     item.destructive && 'text-destructive',
                   )}
-                  onclick={() => f.close()}
+                  onclick={() => {
+                    f.close()
+                    anchor?.focus()
+                  }}
                   data-testid={testId ? `${testId}-${item.id}` : undefined}
                 >
                   {#if item.icon}{@render item.icon()}{/if}
@@ -246,10 +254,11 @@
               {:else}
                 <button
                   type="button"
-                  role="menuitem"
+                  role={item.pressed === undefined ? 'menuitem' : 'menuitemcheckbox'}
                   aria-disabled={item.disabled ? 'true' : undefined}
+                  aria-checked={item.pressed}
                   class={cn(
-                    'flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent',
+                    'flex min-h-11 min-w-0 items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent sm:min-h-9',
                     item.disabled && 'pointer-events-none opacity-50',
                     item.destructive && 'text-destructive',
                   )}
@@ -257,6 +266,7 @@
                     if (item.disabled) return
                     item.onClick?.(event)
                     f.close()
+                    anchor?.focus()
                   }}
                   data-testid={testId ? `${testId}-${item.id}` : undefined}
                 >
