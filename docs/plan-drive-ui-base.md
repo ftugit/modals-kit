@@ -1793,6 +1793,10 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `[x]` Тулбар списка на `OverflowMenu` (`d6b3ee6e`): mkdir/upload primary, dav/trash — пункты; 2 видимых на узком экране, 4 на широком; «Важное» — кнопка с `aria-current`, квота — `Badge`.
 - `[x]` Правки аудита D3 (`52a50a44`, `f2e070c7`): `pressed`/`menuitemcheckbox` для звезды, разделитель перед destructive, `moreBadge`, фокус на триггер, тап-цели `min-h-11 sm:min-h-9`, убран мёртвый `compact`, добита гигиена (mt/mb, второй `dd`, крошки, DAV-даты, кнопки фильтров).
 - `[~]` Принятое отклонение: `OverflowMenu.mode="fit"` и `maxVisible`-функция не реализованы; `DriveNodeLinks` меняет `maxVisible` через `matchMedia` после гидрации (мерцание на мобильном, не ошибка гидрации).
+- `[x]` Браузерная проверка D3 (deepseek-v4.1-flash; beam недоступен: omniroute 401, opencode-go/beam-free — country restriction): тулбар 375/1280, пустые состояния, пикер, star через видимую кнопку — подтверждены.
+- `[x]` Найден и исправлен блокер: триггер `OverflowMenu` не открывал меню (`{...t}` вместо явных `onclick`/`aria-*`) — `d600177a`.
+- `[ ]` После star-модалки строка не обновляется до перезагрузки (сервер меняет состояние, `aria-pressed` остаётся прежним) — `invalidatePaginator` не обновляет текущую выдачу.
+- `[ ]` Холодная загрузка `/drive/<folderId>` и `/drive/trash` рисует корень: identity списка теряется при гидрации (SSR и переход кликом корректны, URL получает `drive._list`).
 - Гигиена: `min-w-0`/`truncate`/`title`, `gap` вместо `mt-*`/`my-4`.
 - Мобильный аудит drive (§9a): `DriveFilters`, `DriveNodeCard`, крошки, detail-`dl`, футер фильтров.
 
