@@ -1722,7 +1722,8 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 **A5. Base UI, паттерны и проверки arch.** — `[-]` в работе.
 - `[x]` Мобильные правки base UI: `SurfaceBar` (скроллбар ряда, README приведён к коду), `SearchBar` (без `mb-3`, адаптивная ширина), `Badge` (`max-w-full min-w-0`), `PageNav` (номера скроллятся, `mt-2` убран), `FileAttachment` strip (скрытый скроллбар), `PaginatorSettings` (`p-3 sm:p-4`), модальные `p-4 sm:p-6`.
 - `[x]` `EntryCard` (`392ad98c`) и `Item` family (`cd5068d1`) по §10.2.1–10.2.2, тесты SSR.
-- `[ ]` `DescriptionList` (§10.2.3), `FormMessage` (§10.2.4), замены §10.3, полный прогон arch.
+- `[x]` `DescriptionList` (§10.2.3) и `FormMessage` (§10.2.4) — `d1ea164c`, тесты SSR.
+- `[~]` Сверка §10.3 и полный прогон arch — отправлены beam-субагенту (проверка без правок).
 - `[ ]` Полный прогон проверок arch.
 - Мобильный аудит base UI: `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок (§9).
 - `Item` family, `DescriptionList`, `FormMessage`, `EntryCard` + замены §10.3 в arch (§10).
