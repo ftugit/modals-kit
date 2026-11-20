@@ -1713,9 +1713,9 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `Empty` (§3a), `OverflowMenu` + `MoreHorizontalIcon` (§5), `Attachment` folder/count/badges (§4).
 - Проверки: `vitest` по `core/ui/{empty,overflow-menu,attachment}` — 17 тестов; `check` — baseline 64, ни одной в новых файлах.
 
-**A4. `Surface.rail` и модульные настройки.**
-- `Surface.rail` — необязательный левый rail с одним DOM и мобильной прокруткой (§10b.4).
-- `SettingsSection` + `settings.ext.ts` + glob, `uid` в контексте, `UserConfig` → `SettingsHost`; «Сессии» — самодостаточный список (§10b).
+**A4. `Surface.rail` и модульные настройки.** — `[-]` в работе.
+- `[x]` `Surface.rail` (`b4f9e901`): один DOM, десктоп — колонка, узкий экран — строка с прокруткой; тесты SSR.
+- `[ ]` `SettingsSection` + `settings.ext.ts` + glob, `uid` в контексте, `UserConfig` → `SettingsHost`; «Сессии» — самодостаточный список (§10b).
 
 **A5. Base UI, паттерны и проверки arch.**
 - Мобильный аудит base UI: `SurfaceBar`, `SearchBar`, `PageNav`, `Badge`, `FileAttachment`, `Floating`, `PaginatorSettings`, классы модалок (§9).
