@@ -71,7 +71,7 @@
     `Apply`; пустой `chosen` — `Empty`.
   - `picked`/`upicks`/`mode`/`from`/`param`/`filter_owner` — контекст пикера и в
     адрес `from` не добавляются. Предел `picked` в URL — 100, строка — 4000;
-    сервисный `drive.ids` сохраняет legacy-потолок 200.
+    предел везде один — 100: URL, сервис и SQL `IN`; больше — 400, не 500.
 - **Доступ**: share принимает набор `subjects` (multiselect + `user.picker`,
   ручной UUID как fallback), batch атомарен; `/drive/access` показывает имена
   получателей из `DriveShareView.label`.

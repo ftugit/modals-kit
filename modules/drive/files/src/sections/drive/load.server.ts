@@ -30,6 +30,7 @@ import { driveStarredRoute } from '#modules/drive/routes.js'
 import { driveStorageGate } from './operations.server.js'
 import {
   DRIVE_KEYS,
+  DRIVE_IDS_MAX,
   DRIVE_PAGE_DEFAULT,
   DRIVE_PAGE_PARAM,
   DRIVE_PAGE_SIZES,
@@ -180,6 +181,12 @@ export async function loadDriveList(
   if (identity.kind !== 'starred') {
     const old = event.url.searchParams.get(DRIVE_KEYS.starred)
     if (old === '1' || old === 'true') redirect(307, driveStarredRoute.href())
+  }
+
+  const idsUrl = parseDriveIdsUrl(event.url.searchParams.get(DRIVE_KEYS.ids))
+  if (idsUrl.overflow) throw error(400, 'drive.ids-too-long')
+  if (overrides.ids && overrides.ids.length > DRIVE_IDS_MAX) {
+    throw error(400, 'drive.ids-too-long')
   }
 
   const decoded = decodeDriveList(event.url.searchParams, identity)
