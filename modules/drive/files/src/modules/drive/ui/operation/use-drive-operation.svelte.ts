@@ -1,4 +1,4 @@
-import { goto } from '$app/navigation'
+import { goto, invalidateAll } from '$app/navigation'
 import type { BoundForm } from '#core/lib/form/svelte/index.js'
 import { invalidatePaginator } from '#core/lib/paginate/index.js'
 import { tryUseModals } from '#core/lib/modals/svelte/index.js'
@@ -38,6 +38,9 @@ export function useDriveOperation(input: {
     const success = driveSuccess({ success: spec.success, inModal, redirect })
 
     void invalidatePaginator(DRIVE_NAME)
+    // Снапшот маршрута тоже устарел: без перечитывания строка (звезда,
+    // переименование) остаётся прежней до полной перезагрузки.
+    void invalidateAll()
     if (m && inModal) {
       for (const name of LOADERS) m.modals.invalidateLoader(name)
     }
