@@ -29,8 +29,8 @@
   // маршрута (`?/schema`). У проекта транспорта по умолчанию нет намеренно:
   // адрес отправки принадлежит форме, а не конфигу.
   const form = bind(forms, schemaForm(snapshot, untrack(() => token)), {
-    action: '?/schema',
-    transport: kitActionTransport('?/schema'),
+    action: '/schema?/schema',
+    transport: kitActionTransport('/schema?/schema'),
     continuation: untrack(() => seed),
   })
   const manual = snapshot.steps.filter((s) => !s.field)

@@ -11,13 +11,15 @@
   import Common from '#core/ui/form/Common.svelte'
   import Field from '#core/ui/form/Field.svelte'
   import { schemaUnlockForm } from '#core/hooks/db-schema.js'
+  import { kitActionTransport } from '#core/hooks/component-form/transport.js'
   import type { SchemaActionData } from './types.js'
 
   let { data, form }: { data: Awaited<ReturnType<typeof loadSchema>>; form: SchemaActionData | null } = $props()
 
   const seed = $derived((form as { result?: Result } | null)?.result ?? null)
   const unlock = bind(forms, schemaUnlockForm(), {
-    action: '?/unlock',
+    action: '/schema?/unlock',
+    transport: kitActionTransport('/schema?/unlock'),
     continuation: untrack(() => form?.result),
   })
 

@@ -16,7 +16,7 @@ import { createFormHandler, type Handled } from '#core/lib/form/server.js'
 import type { RequestEvent } from '@sveltejs/kit'
 import { schemaAdmin, schemaStepTask } from '#core/server/db.server.js'
 import { currentReport } from '#core/hooks/task-stream.server.js'
-import { createIpThrottle, type ClientAddressSource } from '#core/server/client-ip.server.js'
+import type { ClientAddressSource } from '#core/server/client-ip.server.js'
 import { invalidateLiveCache } from '#core/server/live-cache.server.js'
 import { SECURITY_LAYERS } from '#core/server/form-security.server.js'
 import {
@@ -62,8 +62,8 @@ const error = (code: string, message: string, path?: string, at = 0): FormError 
  * @param from кодировка ответа: `action` — Kit-экшен, `fetch` — JSON.
  * @returns `Handled` либо `null`, если решать уже нечего (другой экземпляр успел).
  */
-const schemaResolveThrottle = createIpThrottle('db-schema', 10, 60_000)
-const schemaUnlockThrottle = createIpThrottle('db-schema-unlock', 10, 60_000)
+// Никакого БД-кэша в этих экшенах: при `schema_pending` он отвечает 503, и
+// экран нельзя было бы ни открыть, ни разрешить. Защита — секрет в форме.
 
 /**
  * Доступ к отчёту: секрет спрашивается ДО показа схемы. Успех кладёт короткую
@@ -74,7 +74,6 @@ export async function handleSchemaUnlock(event: RequestEvent) {
   return createFormHandler<{ message: string }, ClientAddressSource>({
     description: schemaUnlockForm(),
     order: SECURITY_LAYERS,
-    throttle: schemaUnlockThrottle,
     async execute({ values, commit, fail }) {
       const token = String(values.token ?? '')
       if (!(await schemaAdmin.verify(token))) {
@@ -103,7 +102,6 @@ export async function handleSchemaResolve(
   return createFormHandler<{ message: string }, ClientAddressSource>({
     description: schemaForm(screen),
     order: SECURITY_LAYERS,
-    throttle: schemaResolveThrottle,
     async execute({ values, commit, fail }) {
       const { decisions, problems } = decisionsFrom(
         values as Record<string, unknown>,
