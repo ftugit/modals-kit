@@ -1754,7 +1754,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - `[x]` Фильтры шага (`74aba419`): обычный `pick → chosen` сбрасывает pick-фильтры, маркер `filter_owner=chosen` сохраняет их; «Сбросить фильтры» в `chosen`.
 - `[x]` Защита от устаревших ответов (`3decda70`): `driveListKey`/`driveListKeyFromSnapshot`, `signal` до/после `preloadData`, `AbortError`, `drive.list-stale`.
 - `[x]` Таксономия пустых состояний (`52a50a44`): `DriveEmptySpec`/`driveEmptyOf` (§7a.10), 9 unit-тестов, `Empty`/`Alert` в `DriveBrowse`, SSR-тесты пустой папки, фильтра и неизвестного total.
-- `[ ]` Остальное D2: multiple в модалке (сейчас только страница `/drive/pick`); гидрация отметки в `Checkbox` (сейчас GET-ссылка с `aria-pressed`); `mode="fit"` в `OverflowMenu` (отложен).
+- `[~]` Принятые отклонения D2: multiple в модалке (нет вызывающего: move/copy только single); гидрация отметки в `Checkbox` (GET-ссылка с `aria-pressed` работает и без JS); `OverflowMenu.mode="fit"` (улучшение ядра, не блокирует drive).
 - `[x]` Браузерная проверка D2 (beam, Chromium): single без шагов и с GET-выбором в `/drive/move?...target_id=`, stale-ключи не попадают в ссылки; multiple `pick` копит `picked`, `chosen` даёт `upicks`+`drive.ids`, `Apply` ведёт в `/drive?ids=`, пустой `chosen` — «Ничего не выбрано» без Apply; консоль чистая.
    - **0.5. Разделение `picked` / `drive.ids` / `param`.** Зафиксировать три разных состояния и не смешивать их в одном поле:
      - `picked` — **UI-выбор multiple**: что отмечено в пикере, счётчик и чекбоксы; в модалке локальное, на странице — `?picked=`; предел 100. В `single` накопительного `picked` нет (один `id`/корень уходит в `param`). Само по себе не фильтрует список.
@@ -1803,7 +1803,7 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 **D4. Карточки, модалки и проверки.** — `[-]` в работе.
 - `[x]` `DriveEntry` на `EntryCard`, модалки drive — `p-4 sm:p-6` (`5a399c8e`).
 - `[x]` detail-`DriveNodeCard` на `Item`, `DriveDavTokensStep` и `DriveFiltersPage` на `EntryCard` (`d1878ad7`).
-- `[ ]` Строка списка → `Attachment` + `Item` (не начато).
+- `[x]` Строка списка на `Attachment` + `Item` (`25f130e9`): имя с `title`, размер/дата, бейджи, действия вне ссылки; один `drive-row` на узел.
 - `[x]` SSR/no-JS и `data-testid` покрыты тестами drive (22 файла, 111 тестов), клавиатура меню — `OverflowMenu`. `test:classes` заблокирован средой: `node tooling/classes-audit.mjs` падает `RunnerError` в vite module-runner (не связано с правками).
 - Модалки drive: `min-h-0 flex-1` + `p-4 sm:p-6`, ветка `card`/`plain`.
 - Проверки drive: SSR/no-JS, `data-testid`, клавиатура, адаптивность, `test:classes`.
