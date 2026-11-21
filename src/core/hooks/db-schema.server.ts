@@ -13,6 +13,7 @@
 import { decisionsFrom, type Choice } from '#core/lib/db/sync/index.js'
 import type { FormError } from '#core/lib/form/index.js'
 import { createFormHandler, type Handled } from '#core/lib/form/server.js'
+import type { RequestEvent } from '@sveltejs/kit'
 import { schemaAdmin, schemaStepTask } from '#core/server/db.server.js'
 import { currentReport } from '#core/hooks/task-stream.server.js'
 import { createIpThrottle, type ClientAddressSource } from '#core/server/client-ip.server.js'
@@ -21,7 +22,10 @@ import { SECURITY_LAYERS } from '#core/server/form-security.server.js'
 import {
   decisionFields,
   schemaForm,
+  schemaUnlockForm,
   screenFrom,
+  SCHEMA_UNLOCK_COOKIE,
+  SCHEMA_UNLOCK_TTL_SECONDS,
   type SchemaScreen,
 } from './db-schema.js'
 
@@ -59,6 +63,35 @@ const error = (code: string, message: string, path?: string, at = 0): FormError 
  * @returns `Handled` либо `null`, если решать уже нечего (другой экземпляр успел).
  */
 const schemaResolveThrottle = createIpThrottle('db-schema', 10, 60_000)
+const schemaUnlockThrottle = createIpThrottle('db-schema-unlock', 10, 60_000)
+
+/**
+ * Доступ к отчёту: секрет спрашивается ДО показа схемы. Успех кладёт короткую
+ * httpOnly-куку (30 минут) и уводит на тот же `/schema`; кука живёт только на
+ * сервере и в форму решений не попадает.
+ */
+export async function handleSchemaUnlock(event: RequestEvent) {
+  return createFormHandler<{ message: string }, ClientAddressSource>({
+    description: schemaUnlockForm(),
+    order: SECURITY_LAYERS,
+    throttle: schemaUnlockThrottle,
+    async execute({ values, commit, fail }) {
+      const token = String(values.token ?? '')
+      if (!(await schemaAdmin.verify(token))) {
+        return fail([error('schema.token', 'Секрет не подошёл.')])
+      }
+      commit()
+      event.cookies.set(SCHEMA_UNLOCK_COOKIE, token, {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: event.url.protocol === 'https:',
+        maxAge: SCHEMA_UNLOCK_TTL_SECONDS,
+      })
+      return { redirect: '/schema' }
+    },
+  })(event.request, 'action', event)
+}
 
 export async function handleSchemaResolve(
   request: Request,

@@ -30,6 +30,8 @@ export interface SchemaAdmin {
   readonly enabled: boolean;
   /** Что ждёт решения сейчас (автоматические шаги при этом применяются — они безопасны). */
   status(): Promise<SchemaReport>;
+  /** Сверка секрета без обращения к БД: гейт доступа к отчёту. */
+  verify(given: unknown): Promise<boolean>;
   /** Выполнить решения. Секрет сверяется до любого обращения к БД. */
   resolve(
     token: unknown,
@@ -75,6 +77,11 @@ export function createSchemaAdmin(options: {
     enabled: !!token,
     async status() {
       return schema.sync(await driver());
+    },
+    async verify(given) {
+      if (!token) return false;
+      if (typeof given !== "string" || !given) return false;
+      return sameSecret(given, token);
     },
     async resolve(given, decisions, options = {}) {
       if (!token)

@@ -21,14 +21,14 @@
   import { kitActionTransport } from '#core/hooks/component-form/transport.js'
   import { schemaForm, type SchemaScreen } from '#core/hooks/db-schema.js'
 
-  let { screen, seed = null }: { screen: SchemaScreen; seed?: Result | null } = $props()
+  let { screen, token = '', seed = null }: { screen: SchemaScreen; token?: string; seed?: Result | null } = $props()
 
   // Экран — снимок отчёта на момент загрузки: новое решение = новая загрузка страницы.
   const snapshot = untrack(() => screen)
   // Транспорт — тот же адрес, что у нативного `action`: именованный экшен
   // маршрута (`?/schema`). У проекта транспорта по умолчанию нет намеренно:
   // адрес отправки принадлежит форме, а не конфигу.
-  const form = bind(forms, schemaForm(snapshot), {
+  const form = bind(forms, schemaForm(snapshot, untrack(() => token)), {
     action: '?/schema',
     transport: kitActionTransport('?/schema'),
     continuation: untrack(() => seed),

@@ -32,6 +32,22 @@ export interface StepView {
   blocking: boolean
 }
 
+/** Форма доступа: секрет спрашивается до отчёта, а не после решений. */
+export function schemaUnlockForm() {
+  return defineForm({
+    id: SCHEMA_UNLOCK_FORM_ID,
+    revision: 1,
+    actions: [{ id: 'submit', label: 'Открыть отчёт', validate: 'full' }],
+    fields: {
+      token: field.password({
+        label: 'Секрет DB_ADMIN_TOKEN',
+        help: 'Отчёт и решения доступны только с этим секретом.',
+        validate: [v.required()],
+      }),
+    },
+  })
+}
+
 /** Экран переноса: включена ли кнопка и что именно ждёт решения. */
 export interface SchemaScreen {
   /** На сервере задан `DB_ADMIN_TOKEN`: кнопка «Выполнить» включена. */
@@ -40,6 +56,10 @@ export interface SchemaScreen {
 }
 
 export const SCHEMA_FORM_ID = 'db_schema_resolve'
+export const SCHEMA_UNLOCK_FORM_ID = 'db_schema_unlock'
+/** Короткая сессия доступа к отчёту: токен спрашивается до показа схемы. */
+export const SCHEMA_UNLOCK_COOKIE = 'schema_unlock'
+export const SCHEMA_UNLOCK_TTL_SECONDS = 1800
 
 /** `"public"."post"` → `post`; чужая схема остаётся в имени. */
 const tableName = (t: string) => t.replace(/^"public"\./, '').replaceAll('"', '')
@@ -180,7 +200,7 @@ export function decisionFields(screen: SchemaScreen): Record<string, string> {
  * @param screen экран из `screenFrom`.
  * @returns описание `#core/lib/form`.
  */
-export function schemaForm(screen: SchemaScreen) {
+export function schemaForm(screen: SchemaScreen, token = '') {
   const fields: Record<string, ReturnType<typeof field.radio>> = {}
   for (const step of screen.steps)
     if (step.field)
@@ -199,6 +219,7 @@ export function schemaForm(screen: SchemaScreen) {
       ...fields,
       token: field.password({
         label: 'Секрет DB_ADMIN_TOKEN',
+        defaultValue: token,
         validate: [v.required()],
       }),
     },

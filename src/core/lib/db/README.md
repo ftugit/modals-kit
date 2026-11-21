@@ -858,6 +858,7 @@ import { createSchemaAdmin } from '#core/lib/db/sync/index.js'
 
 const admin = createSchemaAdmin({ schema, driver: () => openRaw(), token: env.DB_ADMIN_TOKEN })
 await admin.status()                      // SchemaReport: что ждёт решения
+await admin.verify(token)                 // сверка секрета без БД (гейт доступа)
 await admin.resolve(token, decisions)     // секрет сверяется ДО обращения к БД
 ```
 
@@ -873,8 +874,9 @@ await admin.resolve(token, decisions)     // секрет сверяется Д�
 отвергается до БД.
 
 Приложение показывает это экраном `/schema` (`src/core/ui/db-schema/SchemaPending.svelte`,
-слова и описание формы — `#core/hooks/db-schema.ts`): кнопка «Выполнить» спрашивает
-`DB_ADMIN_TOKEN`; без переменной кнопки нет, экран объясняет, что задать. Любая страница с БД
+слова и описание формы — `#core/hooks/db-schema.ts`): `DB_ADMIN_TOKEN` спрашивается
+ДО показа отчёта — успешная проверка кладёт короткую httpOnly-куку (`schema_unlock`,
+30 минут), и только тогда `load` читает схему; без переменной экран объясняет, что задать. Любая страница с БД
 при `schema_pending` ведёт туда же (`?next=` возвращает назад), а страница ошибок показывает
 ссылку на перенос вместо тупика.
 
