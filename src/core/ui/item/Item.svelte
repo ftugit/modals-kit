@@ -36,7 +36,6 @@
 
 <svelte:element
   this={as}
-  role={as === 'li' ? undefined : 'listitem'}
   aria-selected={selected ? 'true' : undefined}
   class={cn(
     'flex min-w-0 flex-wrap items-center gap-3 text-card-foreground',

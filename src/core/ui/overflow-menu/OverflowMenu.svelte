@@ -222,7 +222,7 @@
           {size}
           {variant}
           disabled={item.disabled}
-          aria-pressed={item.pressed}
+          aria-pressed={item.href ? undefined : item.pressed}
           class={cn('min-w-0', item.destructive && 'text-destructive')}
           data-testid={testId ? `${testId}-${item.id}` : undefined}
         >
@@ -241,7 +241,7 @@
         href={item.href}
         onclick={item.onClick}
         {size}
-        aria-pressed={item.pressed}
+        aria-pressed={item.href ? undefined : item.pressed}
         {variant}
         disabled={item.disabled}
         class={cn('min-w-0', item.destructive && 'text-destructive')}
@@ -311,7 +311,7 @@
                   aria-disabled={item.disabled ? 'true' : undefined}
                   aria-checked={item.pressed}
                   class={cn(
-                    'flex min-h-11 min-w-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent sm:min-h-9',
+                    'flex min-h-11 min-w-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:min-h-9',
                     item.disabled && 'pointer-events-none opacity-50',
                     item.destructive && 'text-destructive',
                   )}
@@ -341,7 +341,7 @@
                   aria-disabled={item.disabled ? 'true' : undefined}
                   aria-checked={item.pressed}
                   class={cn(
-                    'flex min-h-11 min-w-0 items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent sm:min-h-9',
+                    'flex min-h-11 min-w-0 items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm outline-none hover:bg-accent focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:min-h-9',
                     item.disabled && 'pointer-events-none opacity-50',
                     item.destructive && 'text-destructive',
                   )}

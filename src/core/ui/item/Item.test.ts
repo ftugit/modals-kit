@@ -18,10 +18,17 @@ describe('Item family', () => {
     })
     expect(out).toContain('data-slot="item"')
     expect(out).toContain('data-variant="outline"')
-    expect(out).toContain('role="listitem"')
+    // listitem без родителя role=list — нарушение ARIA; роль задаёт носитель.
+    expect(out).not.toContain('role="listitem"')
     expect(out).toContain('data-testid="row"')
     expect(out).toContain('<span>media</span>')
     expect(out).toContain('data-slot="item-actions"')
+  })
+
+  it('as=li остаётся семантическим элементом списка', () => {
+    const { body: out } = render(Item, { props: { as: 'li', children: html('<span>x</span>') } })
+    expect(out).toContain('<li')
+    expect(out).not.toContain('role="listitem"')
   })
 
   it('selected добавляет aria-selected и акцент', () => {
