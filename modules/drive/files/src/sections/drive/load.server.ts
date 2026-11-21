@@ -94,12 +94,15 @@ async function driveUserLabels(
   uids: readonly string[],
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>()
-  if (uids.length === 0) return out
+  // В `subjects` приходит пользовательский ввод: не-UUID не должен доезжать до
+  // `listSeedUsers` (драйвер отвечает DbFailure и роняет страницу в 500).
+  const ids = [...new Set(uids.filter((uid) => UUID.test(uid)))]
+  if (ids.length === 0) return out
   const result = await auth(event).listSeedUsers({
-    ids: [...uids],
+    ids,
     nickname: true,
     page: 1,
-    pageSize: Math.min(100, uids.length),
+    pageSize: Math.min(100, ids.length),
   })
   if (!result.ok) return out
   for (const user of result.value.items) out.set(user.id, user.nickname ?? user.id)

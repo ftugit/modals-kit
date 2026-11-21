@@ -383,7 +383,7 @@
       {#each initial.breadcrumbs as crumb (crumb.id)}
         <span class="shrink-0 text-muted-foreground">/</span>
         <a
-          class="min-w-0 max-w-full truncate hover:underline"
+          class="min-w-0 max-w-full break-words hover:underline sm:max-w-48 sm:truncate"
           title={crumb.name}
           href={picker ? pickerBrowseHref(crumb.id) : driveFolderRoute.href({ folderId: crumb.id })}
         >
@@ -446,7 +446,7 @@
           moreLabel="Ещё действия списка"
           data-testid="drive-controls"
         />
-        <Badge variant="outline" data-testid="drive-quota">
+        <Badge variant="outline" class="max-sm:hidden" data-testid="drive-quota">
           {formatBytes(quota.used)} из {formatBytes(quota.limit)}
         </Badge>
         {#if !initial.trashed && !picker}
@@ -470,7 +470,7 @@
                 href={toggle(item.node.id)}
                 size="sm"
                 variant={pickedSet.has(item.node.id) ? 'default' : 'outline'}
-                aria-pressed={pickedSet.has(item.node.id)}
+                data-pressed={pickedSet.has(item.node.id) ? 'true' : undefined}
                 data-testid="drive-pick-toggle"
               >{pickedSet.has(item.node.id) ? 'Отмечено' : 'Отметить'}</Button>
             {/if}

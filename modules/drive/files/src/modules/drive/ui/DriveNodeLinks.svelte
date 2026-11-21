@@ -43,7 +43,7 @@
   let narrow = $state(false)
   $effect(() => {
     if (typeof window === 'undefined') return
-    const query = window.matchMedia('(max-width: 639px)')
+    const query = window.matchMedia('(max-width: 1023px)')
     narrow = query.matches
     const onChange = (event: MediaQueryListEvent) => (narrow = event.matches)
     query.addEventListener('change', onChange)

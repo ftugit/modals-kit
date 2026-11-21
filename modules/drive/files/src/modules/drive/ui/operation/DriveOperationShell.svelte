@@ -35,6 +35,27 @@
   // описании формы, а не в разметке операции: без них POST теряет адрес
   // возврата и узел. Рисуем их здесь, чтобы каждая операция не повторяла список.
   const hiddenFields = $derived(form.description.fields.filter((field) => field.input === 'hidden'))
+
+  // Ошибка может быть привязана к скрытому полю (`node_id`, `target_id`):
+  // `HiddenField` текст не рисует, и 422 выглядел молчанием. Показываем
+  // общий блок, если своих общих ошибок у формы нет.
+  const errorList = $derived.by(() => {
+    if (form.common.length > 0) return form.common
+    const result = form.state.result
+    if (!result || result.ok) return form.common
+    const hiddenNames = new Set(hiddenFields.map((field) => field.name))
+    const onHidden = result.errors.some(
+      (error) => error.path !== undefined && hiddenNames.has(String(error.path)),
+    )
+    return onHidden
+      ? [{
+          id: 'drive:hidden-field',
+          code: 'drive.hidden-field',
+          message: 'Проверьте данные операции: ошибка относится к скрытому полю.',
+          origin: 'core' as const,
+        }]
+      : form.common
+  })
 </script>
 
 <Form
@@ -49,7 +70,7 @@
     <p class="break-words text-sm text-muted-foreground">{description}</p>
   </div>
 
-  <Common errors={form.common} title="Не получилось выполнить операцию" />
+  <Common errors={errorList} title="Не получилось выполнить операцию" />
 
   {#each hiddenFields as hidden (hidden.name)}
     <Field of={form.field(hidden.name)!} />
