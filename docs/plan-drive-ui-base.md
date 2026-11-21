@@ -2375,6 +2375,21 @@ interface FormMessageProps extends Omit<HTMLAttributes<HTMLParagraphElement>, 'c
 
 ---
 
+### 10.6. Возвраты: единый `BackLink`
+
+**Статус: `[ ]` — сначала инвентаризация, потом код.** Требование из inbox №3: собрать
+**все** «назад / к списку / закрыть / отмена» в drive и соседних модулях (user,
+storage-servers, settings), для каждого указать `href`, режим истории (`push`/`replace`/
+`history`) и поведение внутри модалки.
+
+- Сейчас `DriveBackLink` есть только в drive (`DriveOperationShell`, `DriveDavIssue`);
+  `user`, `storage-servers`, фильтры и DAV-страница делают возвраты вручную (`Button`/`<a>`),
+  часть — без модального поведения.
+- Цель: один примитив `#core/ui/back-link` (`href`, `label`, `mode: auto|history|href`):
+  в модалке — `close()`, на странице — история при своём referrer, иначе `href`;
+  SSR-ссылка работает без JS. `DriveBackLink` становится тонкой обёрткой или удаляется.
+- Инвентаризация (таблица «страница/модалка → контрол → href → режим → модалка») —
+  обязательный первый шаг; без неё код не менять.
 ## 10b. Настройки: модульные пункты (реестр + `Surface.rail`)
 
 ### 10b.1. Принцип
