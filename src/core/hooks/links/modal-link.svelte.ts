@@ -215,7 +215,11 @@ export function useModalLink() {
     if (owner.signal.aborted) return
     loading.delete(el)
     if (!r.ok) {
+      // Данные/чанк не доехали: молчаливый клик запрещён. Открываем запись —
+      // хост увидит ошибку загрузчика и покажет карточку повтора.
       st.status = 'error'
+      st.openedAt = now.wouldOpen.length - 1
+      m.modals.open(now.name, { params: now.params, stack: now.stack, ...now.overrides })
       return
     }
     now = latest.get(el)!
