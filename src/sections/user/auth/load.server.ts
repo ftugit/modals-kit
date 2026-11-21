@@ -1,6 +1,6 @@
 // Section: авторизация (`/user/auth`) — load вынесен из route.
-import type { RequestEvent } from '@sveltejs/kit'
-import { auth } from '#modules/user/base/service/gateway.server.js'
+import { redirect, type RequestEvent } from '@sveltejs/kit'
+import { auth, readVault } from '#modules/user/base/service/gateway.server.js'
 import { createUserConfig, resolveAuthStep } from '#modules/user/base/index.js'
 import type { UserAuthRouteData } from './types.js'
 import { userAuthRoute } from '#modules/user/base/routes.js'
@@ -19,6 +19,16 @@ export async function loadUserAuth(event: RequestEvent): Promise<UserAuthRouteDa
     registerSeed = (await generateKeyPair()).secret
   }
   const u = auth(event)
+  // Живой `auth_tmp` при удалённой/отозванной строке сессии — не «уже вошёл»:
+  // защищённые страницы уже говорят `session_expired`, а форма входа отвечала
+  // `guest_only`. Снимаем мёртвые куки и перечитываем адрес как гость.
+  if (await readVault(event.cookies)) {
+    const who = await u.actor()
+    if (!who.ok && who.fact.code === 'auth.session-unknown') {
+      await u.logoutLocal()
+      redirect(303, `${event.url.pathname}${event.url.search}`)
+    }
+  }
   const challenge = u.enabled ? await u.issueChallenge() : null
 
   return {
