@@ -208,7 +208,8 @@ export function schemaForm(screen: SchemaScreen, token = '') {
         label: step.title,
         help: step.where,
         options: step.options,
-        defaultValue: step.options[0]?.value,
+        // Без дефолта: «Не трогать сейчас» — не решение, и предвыбранный
+        // вариант создавал ложное ощущение заполненной формы.
         validate: [v.required()],
       })
   return defineForm({

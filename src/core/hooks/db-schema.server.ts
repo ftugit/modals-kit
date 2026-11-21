@@ -13,7 +13,7 @@
 import { decisionsFrom, type Choice } from '#core/lib/db/sync/index.js'
 import type { FormError } from '#core/lib/form/index.js'
 import { createFormHandler, type Handled } from '#core/lib/form/server.js'
-import type { RequestEvent } from '@sveltejs/kit'
+import { error as httpError, type RequestEvent } from '@sveltejs/kit'
 import { schemaAdmin, schemaStepTask } from '#core/server/db.server.js'
 import { currentReport } from '#core/hooks/task-stream.server.js'
 import type { ClientAddressSource } from '#core/server/client-ip.server.js'
@@ -93,10 +93,13 @@ export async function handleSchemaUnlock(event: RequestEvent) {
 }
 
 export async function handleSchemaResolve(
-  request: Request,
+  event: RequestEvent,
   from: 'action' | 'fetch',
-  event?: ClientAddressSource,
 ): Promise<Handled | null> {
+  // Секрет проверяется ДО чтения схемы: прямой POST на ?/schema не должен
+  // применять авто-шаги в обход экрана доступа.
+  const unlocked = event.cookies.get(SCHEMA_UNLOCK_COOKIE) ?? ''
+  if (!(await schemaAdmin.verify(unlocked))) throw httpError(403, 'schema.locked')
   const screen = await schemaScreen()
   if (!screen) return null
   return createFormHandler<{ message: string }, ClientAddressSource>({
@@ -115,7 +118,12 @@ export async function handleSchemaResolve(
           ...problems.map((message, i) => error('schema.stale', message, undefined, i + 1)),
         ])
       if (!Object.keys(decisions).length)
-        return fail([error('schema.nothing', 'Выберите, что сделать хотя бы с одним шагом')])
+        return fail([
+        error(
+          'schema.nothing',
+          'Выберите хотя бы одно действие, отличное от «Не трогать сейчас»',
+        ),
+      ])
       // Ход переноса — строками ответа, если клиент их просил (`taskResponse`).
       const report = currentReport()
       const out = await schemaAdmin.resolve(values.token, decisions as Record<string, Choice>, {
@@ -131,5 +139,5 @@ export async function handleSchemaResolve(
       invalidateLiveCache()
       return { data: { message: 'Перенос выполнен' } }
     },
-  })(request, from, event)
+  })(event.request, from, event)
 }

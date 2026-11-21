@@ -25,12 +25,14 @@ export async function loadSchema(event: RequestEvent) {
   if (!(await schemaAdmin.verify(token))) {
     return { locked: 'token' as const, screen: null, next, token: '' }
   }
+  // Отчёт открывает ленивый драйвер мимо `gate`: при конфликте это единственный путь.
+  const screen = await schemaScreen()
   return {
     locked: null,
-    // Отчёт открывает ленивый драйвер мимо `gate`: при конфликте это единственный путь.
-    screen: await schemaScreen(),
+    screen,
     next,
-    token,
+    // Токен нужен только форме решений; без экрана в гидрацию не попадает.
+    token: screen ? token : '',
   }
 }
 
@@ -41,7 +43,7 @@ export const schemaActions = {
     return fail(handled.status, { result: handled.result } satisfies SchemaActionData)
   },
   schema: async (event: RequestEvent) => {
-    const handled = await handleSchemaResolve(event.request, 'action', event)
+    const handled = await handleSchemaResolve(event, 'action')
     const next = nextOf(event.url)
     // Решать уже нечего (другой экземпляр успел) — это не отказ: просто уходим.
     if (!handled) redirect(303, next ?? '/')
