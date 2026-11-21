@@ -44,10 +44,15 @@
     const result = form.state.result
     if (!result || result.ok) return form.common
     const hiddenNames = new Set(hiddenFields.map((field) => field.name))
-    const onHidden = result.errors.some(
-      (error) => error.path !== undefined && hiddenNames.has(String(error.path)),
+    const knownNames = new Set(form.description.fields.map((field) => field.name))
+    // Ошибка может прийти с путём, которого в форме нет вовсе (сервер вернул
+    // `name` для операции без поля имени): такой текст тоже обязан быть виден.
+    const unreachable = result.errors.some(
+      (error) =>
+        error.path !== undefined &&
+        (hiddenNames.has(String(error.path)) || !knownNames.has(String(error.path))),
     )
-    return onHidden
+    return unreachable
       ? [{
           id: 'drive:hidden-field',
           code: 'drive.hidden-field',
