@@ -48,7 +48,7 @@
   {/if}
 
   {#if end}
-    <div class={cn(zone, 'ml-auto justify-end')} data-surface-zone="end">
+    <div class={cn(zone, 'ml-auto justify-end max-sm:w-full max-sm:flex-wrap max-sm:justify-start')} data-surface-zone="end">
       {@render end()}
     </div>
   {/if}
