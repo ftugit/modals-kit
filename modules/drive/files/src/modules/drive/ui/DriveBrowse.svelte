@@ -21,7 +21,7 @@
     setExtra,
   } from '#core/lib/paginate/index.js'
   import { useSlotPaginatorScope } from '#core/hooks/modal-paginator.svelte.js'
-  import { Badge, Button } from '#core/ui/index.js'
+  import { Alert, Badge, Button, Empty, OverflowMenu, type OverflowMenuItem } from '#core/ui/index.js'
   import { formatBytes, type DriveSort } from '#core/lib/drive/index.js'
   import { vault } from '#modules/user/base/svelte/vault.svelte.js'
   import type { DriveListItem, DriveListRouteData } from '../types.js'
@@ -48,6 +48,8 @@
   } from '../routes.js'
   import { driveFilterLabels, driveFilterText, driveFilterValues, type DriveFilterValues } from '../filters-form.js'
   import { driveMessage } from '../messages.js'
+  import { driveEmptyOf, type DriveEmptyAction, type DriveEmptySpec } from '../drive-empty.js'
+  import { EMPTY_DRIVE_PICKER_FILTERS } from '../picker-url.js'
   import { driveOperationHref, type DriveOperationName, type DriveOperationParams } from '../operations.js'
   import DriveFilters from './filters/DriveFilters.svelte'
   import DriveNodeCard from './DriveNodeCard.svelte'
@@ -76,10 +78,23 @@
       readonly param: string
       readonly kind: 'any' | 'folder'
       readonly folderId: string | null
+      readonly mode?: 'single' | 'multiple'
+      readonly step?: 'pick' | 'chosen'
+      readonly picked?: readonly string[]
+      readonly hiddenCount?: number | null
+      readonly href?: (patch: {
+        folderId?: string | null
+        picked?: readonly string[]
+        step?: 'pick' | 'chosen'
+        filters?: import('../picker-url.js').DrivePickerFilters
+        filterOwner?: 'chosen' | null
+      }) => string
     } | null
     /** В модалке выбор отдаётся вызывающему экрану, а не переходом. */
     onPick?: ((id: string | null, label: string) => void) | null
     onCancel?: (() => void) | null
+    /** Ссылка отметки строки в `multiple`; `null` — режим без набора. */
+    toggle?: ((id: string) => string) | null
   }
 
   let {
@@ -92,7 +107,11 @@
     picker = null,
     onPick = null,
     onCancel = null,
+    toggle = null,
   }: Props = $props()
+
+  const multi = $derived(picker?.mode === 'multiple')
+  const pickedSet = $derived(new Set(picker?.picked ?? []))
 
   // Sidebar-фильтры живут в том же сторе, что и список: на странице это
   // scoped/клиентский стор, в модалке — слот `useSlotPaginatorScope`.
@@ -124,6 +143,7 @@
   let appliedValues = $state<DriveFilterValues | null>(valuesOf(untrack(() => initial)))
   let appliedExtra = $state<Record<string, unknown> | null>(null)
   let appliedKey = $state('')
+  let live = $state<{ status: 'init' | 'loading' | 'idle' | 'error'; itemCount: number; page: number; totalItems: number | null } | null>(null)
 
   $effect(() => {
     if (!filterStore) return
@@ -136,6 +156,12 @@
       appliedValues = next
       appliedExtra = (state.extra ?? {}) as Record<string, unknown>
       appliedKey = [next.ord, next.type, next.scope, next.size, next.from_date, next.to_date].join('|')
+      live = {
+        status: state.status,
+        itemCount: Object.values(state.pages ?? {}).reduce((sum, page) => sum + page.length, 0),
+        page: state.page,
+        totalItems: state.totalItems,
+      }
     }
     sync()
     const unsub = filterStore.subscribe?.(DRIVE_NAME, sync)
@@ -198,6 +224,81 @@
     to: appliedValues?.to_date || null,
   })
   const ids = $derived(parseDriveIds(text('ids') || null))
+
+  const listMeta = $derived.by(() => {
+    if (live) return live
+    const snap = initial.snapshot
+    if (!snap) return { status: 'init' as const, itemCount: 0, page: 1, totalItems: null }
+    return {
+      status: snap.status,
+      itemCount: Object.values(snap.pages ?? {}).reduce((sum, page) => sum + page.length, 0),
+      page: snap.page,
+      totalItems: snap.totalItems,
+    }
+  })
+
+  const identityKind = $derived<'root' | 'folder' | 'trash' | 'starred'>(
+    initial.trashed
+      ? 'trash'
+      : initial.identity === 'starred'
+        ? 'starred'
+        : initial.identity.startsWith('folder:')
+          ? 'folder'
+          : 'root',
+  )
+
+  const EMPTY_ACTION_LABEL: Record<DriveEmptyAction, string> = {
+    upload: 'Загрузить файл',
+    'create-folder': 'Создать папку',
+    'reset-filters': 'Сбросить фильтры',
+    'clear-search': 'Очистить поиск',
+    'to-pick': 'К выбору',
+    'clear-picked': 'Снять весь выбор',
+    'previous-level': 'На уровень выше',
+    'first-page': 'К первой странице',
+    'to-drive': 'К диску',
+    retry: 'Повторить',
+  }
+
+  const emptyActionHref = (action: DriveEmptyAction): string | null => {
+    if (action === 'retry') return listFrom
+    if (action === 'to-drive') return driveRootRoute.href()
+    if (action === 'first-page') return driveListHref(initial.pathname, filters, 1, ids)
+    if (action === 'reset-filters' || action === 'clear-search') {
+      return picker?.href
+        ? picker.href({ filters: EMPTY_DRIVE_PICKER_FILTERS })
+        : driveListHref(initial.pathname, { ...filters, search: null, type: 'all', scope: 'folder', from: null, to: null }, 1, ids)
+    }
+    if (action === 'to-pick') return picker?.href ? picker.href({ step: 'pick', filterOwner: 'chosen' }) : null
+    if (action === 'upload') return opLink('upload', { parentId: initial.folder?.id ?? '' }).href ?? null
+    if (action === 'create-folder') return opLink('mkdir', { parentId: initial.folder?.id ?? '' }).href ?? null
+    return null
+  }
+
+  const emptySpec = $derived<DriveEmptySpec>(
+    driveEmptyOf({
+      step: picker ? (picker.mode === 'multiple' ? picker.step ?? 'pick' : 'pick') : 'list',
+      mode: picker?.mode ?? 'single',
+      status: listMeta.status,
+      fact: initial.fact,
+      canRead: initial.caps.canRead,
+      canWrite: initial.caps.canWrite,
+      identity: identityKind,
+      page: listMeta.page,
+      itemCount: listMeta.itemCount,
+      totalItems: listMeta.totalItems,
+      hasFilters:
+        Boolean(filters.search) ||
+        filters.type !== 'all' ||
+        filters.scope === 'global' ||
+        Boolean(filters.from) ||
+        Boolean(filters.to),
+      hasSearch: Boolean(filters.search),
+      pickedCount: picker?.picked?.length ?? 0,
+      hiddenCount: picker?.mode === 'multiple' ? (picker.hiddenCount ?? null) : null,
+      isPicker: Boolean(picker),
+    }),
+  )
   const initialListing = $derived(snapshot ? { snapshot, fact: null } : null)
   const scopeLocked = $derived(
     initial.trashed || Boolean(initial.folder && initial.folder.ownerId !== vault.principal),
@@ -231,8 +332,43 @@
     return query ? `${url.pathname}?${query}` : url.pathname
   }
 
+  // Тулбар: 2 пункта на узком экране, 4 на широком; активное «Важное»
+  // остаётся кнопкой с aria-current, а не пунктом меню.
+  let narrow = $state(false)
+  $effect(() => {
+    if (typeof window === 'undefined') return
+    const query = window.matchMedia('(max-width: 639px)')
+    narrow = query.matches
+    const onChange = (event: MediaQueryListEvent) => (narrow = event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  })
+
+  const toolbarItems = $derived.by<OverflowMenuItem[]>(() => {
+    const items: OverflowMenuItem[] = []
+    if (!initial.trashed && !picker) {
+      if (initial.caps.canWrite) {
+        const parentId = initial.folder?.id ?? ''
+        const mkdir = opLink('mkdir', { parentId })
+        const upload = opLink('upload', { parentId })
+        items.push(
+          { id: 'mkdir', label: 'Создать папку', href: mkdir.href ?? undefined, attrs: mkdir, primary: true },
+          { id: 'upload', label: 'Загрузить', href: upload.href ?? undefined, attrs: upload, primary: true },
+        )
+      }
+      const dav = asLink('/user/config/dav')
+      const trash = asLink(driveTrashRoute.href())
+      items.push(
+        { id: 'dav', label: 'Подключить по WebDAV', href: dav.href ?? undefined, attrs: dav },
+        { id: 'trash', label: 'Корзина', href: trash.href ?? undefined, attrs: trash },
+      )
+    }
+    return items
+  })
+
   const pickerBrowseHref = (id: string | null): string => {
     if (!picker) return driveRootRoute.href()
+    if (picker.href) return picker.href({ folderId: id })
     const query = new URLSearchParams({ from: picker.from, param: picker.param })
     if (picker.kind === 'folder') query.set('kind', 'folder')
     if (id) query.set('folder', id)
@@ -240,24 +376,15 @@
   }
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col gap-3">
-  {#if initial.notice}
-    <p
-      class="rounded-lg border border-border bg-muted/50 p-3 text-sm"
-      role="status"
-      data-testid="drive-notice"
-    >
-      {driveMessage(initial.notice)}
-    </p>
-  {/if}
-
+<div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
   {#if !initial.trashed && snapshot && initial.caps.canRead}
-    <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label="Хлебные крошки">
+    <nav class="flex min-w-0 flex-wrap items-center gap-1 text-sm" aria-label="Хлебные крошки">
       <a class="text-muted-foreground hover:underline" href={picker ? pickerBrowseHref(null) : driveRootRoute.href()}>Диск</a>
       {#each initial.breadcrumbs as crumb (crumb.id)}
-        <span class="text-muted-foreground">/</span>
+        <span class="shrink-0 text-muted-foreground">/</span>
         <a
-          class="hover:underline"
+          class="min-w-0 max-w-full break-words hover:underline sm:max-w-48 sm:truncate"
+          title={crumb.name}
           href={picker ? pickerBrowseHref(crumb.id) : driveFolderRoute.href({ folderId: crumb.id })}
         >
           {crumb.name}
@@ -312,19 +439,14 @@
       {/snippet}
 
       {#snippet controls()}
-        {#if initial.caps.canWrite && !initial.trashed && !picker}
-          <Button {...opLink('mkdir', { parentId: initial.folder?.id ?? '' })} size="sm">
-            Создать папку
-          </Button>
-          <Button
-            {...opLink('upload', { parentId: initial.folder?.id ?? '' })}
-            variant="outline"
-            size="sm"
-          >
-            Загрузить
-          </Button>
-        {/if}
-        <Badge variant="outline" data-testid="drive-quota">
+        <OverflowMenu
+          items={toolbarItems}
+          maxVisible={narrow ? 2 : 4}
+          mode="count"
+          moreLabel="Ещё действия списка"
+          data-testid="drive-controls"
+        />
+        <Badge variant="outline" class="max-sm:hidden" data-testid="drive-quota">
           {formatBytes(quota.used)} из {formatBytes(quota.limit)}
         </Badge>
         {#if !initial.trashed && !picker}
@@ -334,10 +456,6 @@
             size="sm"
             aria-current={initial.identity === 'starred' ? 'page' : undefined}
           >Важное</Button>
-          <Button {...asLink('/user/config/dav')} variant="outline" size="sm">
-            Подключить по WebDAV
-          </Button>
-          <Button {...asLink(driveTrashRoute.href())} variant="ghost" size="sm">Корзина</Button>
         {/if}
         {#if onDone}
           <Button type="button" variant="ghost" size="sm" onclick={() => onDone?.()}>Закрыть</Button>
@@ -347,6 +465,15 @@
       {#snippet row(item, ctx)}
         {#if picker}
           <div class="flex flex-wrap items-center gap-2" data-testid="drive-picker-row">
+            {#if multi && toggle}
+              <Button
+                href={toggle(item.node.id)}
+                size="sm"
+                variant={pickedSet.has(item.node.id) ? 'default' : 'outline'}
+                data-pressed={pickedSet.has(item.node.id) ? 'true' : undefined}
+                data-testid="drive-pick-toggle"
+              >{pickedSet.has(item.node.id) ? 'Отмечено' : 'Отметить'}</Button>
+            {/if}
             {#if item.node.kind === 'folder'}
               <a class="min-w-0 flex-1 truncate font-medium hover:underline" href={pickerBrowseHref(item.node.id)}>
                 {item.node.name}
@@ -357,7 +484,7 @@
             <span class="text-xs text-muted-foreground">
               {item.node.kind === 'folder' ? 'папка' : formatBytes(item.node.size)}
             </span>
-            {#if item.node.kind === 'folder' || picker.kind === 'any'}
+            {#if !multi && (item.node.kind === 'folder' || picker.kind === 'any')}
               {#if onPick}
                 <Button
                   type="button"
@@ -375,7 +502,7 @@
                операций не могут жить внутри `<a>` (ListingRow обернул бы всё). -->
           <div
             class="flex flex-wrap items-center gap-2 rounded-md px-1 py-1"
-            data-testid="drive-row"
+            data-testid="drive-row-wrap"
             data-id={item.id}
             data-selected={ctx.selected || undefined}
           >
@@ -390,8 +517,38 @@
       {/snippet}
     </Listing>
 
-    {#if picker}
-      <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+    {#if emptySpec.component === 'empty'}
+      <Empty
+        size="sm"
+        align="start"
+        title={emptySpec.title}
+        description={emptySpec.description}
+        data-testid={`drive-empty-${emptySpec.kind}`}
+      >
+        {#snippet action()}
+          <div class="flex flex-wrap items-center gap-2">
+            {#each emptySpec.actions as action (action)}
+              {@const href = emptyActionHref(action)}
+              {#if href}
+                <Button {href} variant="outline" size="sm">{EMPTY_ACTION_LABEL[action]}</Button>
+              {/if}
+            {/each}
+          </div>
+        {/snippet}
+      </Empty>
+    {:else if emptySpec.component === 'alert'}
+      <Alert
+        variant={emptySpec.reason === 'inconsistent' ? 'warning' : 'destructive'}
+        data-testid="drive-empty-alert"
+      >
+        {emptySpec.reason === 'inconsistent'
+          ? 'Данные списка противоречивы — обновите страницу.'
+          : 'Не удалось загрузить список — повторите попытку.'}
+      </Alert>
+    {/if}
+
+    {#if picker && !multi}
+      <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-2">
           {#if initial.folder}
             {#if onPick}
@@ -430,7 +587,7 @@
     </p>
   {/if}
 
-  <div class="mt-1 flex items-center gap-2">
+  <div class="flex items-center gap-2">
     <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-muted" role="presentation">
       <div class="h-full bg-primary" style:width={`${percent}%`}></div>
     </div>

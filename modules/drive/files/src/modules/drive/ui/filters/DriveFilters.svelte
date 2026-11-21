@@ -109,7 +109,7 @@
     form={bound}
     onsubmit={submit}
     hiddenFields={bound.hidden()}
-    class="flex flex-col gap-4"
+    class="flex min-w-0 flex-col gap-4"
     data-testid="drive-filters-form"
   >
     <div hidden aria-hidden="true">
@@ -118,11 +118,11 @@
       <Field of={bound.field('from')!} />
     </div>
     <Common errors={bound.common} />
-    <div class="flex flex-wrap gap-3">
-      <div class="min-w-0 flex-1 basis-44">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div class="min-w-0">
         <Field of={bound.field('ord')!} />
       </div>
-      <div class="min-w-0 flex-1 basis-44">
+      <div class="min-w-0">
         <Field of={bound.field('size')!} />
       </div>
     </div>
@@ -133,26 +133,26 @@
         «Весь диск» доступен только в своей живой папке.
       </p>
     {/if}
-    <div class="flex flex-wrap gap-3">
-      <div class="min-w-0 flex-1 basis-44">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div class="min-w-0">
         <Field of={bound.field('from_date')!} />
       </div>
-      <div class="min-w-0 flex-1 basis-44">
+      <div class="min-w-0">
         <Field of={bound.field('to_date')!} />
       </div>
     </div>
     {#if rangeError}
       <p class="text-sm text-destructive" role="alert">{rangeError}</p>
     {/if}
-    <div class="flex items-center justify-between gap-3 pt-1">
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-1">
       {#if onReset}
-        <Button type="button" variant="ghost" onclick={() => void onReset()}>Сбросить</Button>
+        <Button type="button" variant="ghost" class="max-sm:w-full" onclick={() => void onReset()}>Сбросить</Button>
       {:else if resetHref}
-        <Button {...asLink(resetHref)} variant="ghost">Сбросить</Button>
+        <Button {...asLink(resetHref)} variant="ghost" class="max-sm:w-full">Сбросить</Button>
       {:else}
         <span></span>
       {/if}
-      <Button type="submit">Применить</Button>
+      <Button type="submit" class="max-sm:w-full">Применить</Button>
     </div>
   </Form>
 {/if}

@@ -64,8 +64,6 @@ export interface DrivePageData {
   readonly node: DriveNodeView | null
   /** Выданные доступы — только тому, кто вправе делиться. */
   readonly shares: readonly DriveShareView[]
-  /** Код прошлого действия из `?notice=`: показывается над списком. */
-  readonly notice: string | null
   /** Выбор папки из пикера для строки `nodeId`. */
   readonly pick: DrivePick | null
   /** Активные фильтры и порция списка. */
@@ -98,7 +96,6 @@ export interface DriveDavTokensData {
   /** Открытый пароль, показанный после выдачи ровно один раз. */
   readonly issued: string | null
   readonly fact: AuthErrorCode | null
-  readonly notice: string | null
 }
 
 /** Данные страницы узла (`/drive/node/[id]`) и модалки `drive.node`. */
@@ -121,6 +118,18 @@ export interface DrivePickerData {
   /** Что можно выбрать: любой узел или только папки (перенос/копия). */
   readonly kind: 'any' | 'folder'
   readonly folderId: string | null
+  /** Режим выбора: один узел или набор. */
+  readonly mode: 'single' | 'multiple'
+  /** Шаг пикера: `chosen` существует только в `multiple`; в `single` всегда `pick`. */
+  readonly step: 'pick' | 'chosen'
+  /** Отмеченные в `multiple`; в `single` всегда пусто. */
+  readonly picked: readonly string[]
+  /** totalItems среза `drive.ids` (visiblePicked); `null` — неизвестен. */
+  readonly totalItems: number | null
+  /** `picked.length - totalItems`; `null` — неизвестен или не вычислим. */
+  readonly hiddenCount: number | null
+  /** Маркер принадлежности фильтров шагу `chosen`; только `multiple`. */
+  readonly filterOwner: 'chosen' | null
 }
 
 /**
@@ -162,7 +171,6 @@ export interface DriveListRouteData {
   readonly quota: DriveQuotaView
   readonly breadcrumbs: readonly DriveBreadcrumb[]
   readonly trashed: boolean
-  readonly notice: string | null
   readonly pick: DrivePick | null
 }
 

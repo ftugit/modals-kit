@@ -11,7 +11,7 @@
   import { drivePickerHref } from '../../routes.js'
   import { driveMoveForm } from '../../forms/index.js'
   import DriveOperationShell from '../operation/DriveOperationShell.svelte'
-  import { drivePickerChannel, type DriveTargetPicked } from '../operation/picker-channel.js'
+  import { drivePickerChannel, isSingleDriveTarget } from '../operation/picker-channel.js'
   import { useDriveOperation } from '../operation/use-drive-operation.svelte.js'
 
   interface Props {
@@ -40,13 +40,13 @@
     }),
   )
   const pickerHref = $derived(
-    drivePickerHref({ from, param: 'target_id', kind: 'folder', folder: targetId }),
+    drivePickerHref({ from, param: 'target_id', kind: 'folder', mode: 'single', folder: targetId }),
   )
   const pickerLink = $derived(
     asModalLink
       ? asModalLink(
           'drive.picker',
-          { from, param: 'target_id', kind: 'folder', folder: targetId },
+          { from, param: 'target_id', kind: 'folder', mode: 'single', folder: targetId },
           { href: pickerHref },
         )
       : asLink(pickerHref),
@@ -54,8 +54,8 @@
 
   let lastSeq = 0
   $effect(() => {
-    const raw = m?.view.sharedData[drivePickerChannel('target_id')] as DriveTargetPicked | undefined
-    if (!raw || raw.seq <= lastSeq) return
+    const raw = m?.view.sharedData[drivePickerChannel('target_id')]
+    if (!isSingleDriveTarget(raw) || raw.seq <= lastSeq) return
     lastSeq = raw.seq
     bound.f.target_id.onInput(raw.id ?? '')
     targetLabel = raw.label
@@ -72,7 +72,7 @@
 >
   <div class="flex flex-col gap-1.5">
     <span class="text-sm font-medium">Куда перенести</span>
-    <p class="text-sm text-muted-foreground" data-testid="drive-target-label">{targetLabel}</p>
+    <p class="min-w-0 break-words text-sm text-muted-foreground" data-testid="drive-target-label">{targetLabel}</p>
     <div>
       <Button {...pickerLink} variant="outline" size="sm">Выбрать папку</Button>
     </div>

@@ -43,10 +43,10 @@
     new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short' }).format(share.createdAt)
 </script>
 
-<div class="flex flex-col gap-4" data-testid="drive-access">
+<div class="flex min-w-0 flex-col gap-4" data-testid="drive-access">
   <div class="flex flex-wrap items-start justify-between gap-2">
-    <div>
-      <h2 class="text-base font-semibold leading-tight">
+    <div class="min-w-0">
+      <h2 class="break-words text-base font-semibold leading-tight">
         Доступы{data.node ? `: ${data.node.name}` : ''}
       </h2>
       <p class="text-sm text-muted-foreground">

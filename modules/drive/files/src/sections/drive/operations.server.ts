@@ -244,7 +244,8 @@ export async function runDriveOperation(
         secretKey: AUTH_SEAL_SECRET ?? '',
       })
       // Секрет живёт только в этом POST-ответе: ни URL, ни снапшот его не несут.
-      event.setHeaders({ 'cache-control': 'private, no-store' })
+      // `cache-control` ставит load ответной страницы: второй setHeaders в
+      // action давал `header_already_set` и 200 с текстом 500.
       return done(result, back, result.ok ? { token: result.value.token, label: result.value.label } : {})
     }
 

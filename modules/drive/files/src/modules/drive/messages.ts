@@ -42,7 +42,7 @@ export const DRIVE_MESSAGES: Record<string, string> = {
   'drive.share-self': 'Себе доступ выдавать не нужно — вы владелец',
   'drive.trashed': 'Элемент уже в корзине',
   'drive.not-trashed': 'Элемент не в корзине — удалить навсегда можно только оттуда',
-  'drive.storage-unavailable': 'Хранилище файлов недоступно — попробуйте позже',
+  'drive.storage-unavailable': 'Хранилище недоступно: возможно, закончилось место или сервер не отвечает',
   'drive.storage-readonly': 'Хранилище файлов не принимает записи',
   'drive.upload-empty': 'Файл пустой — загружать нечего',
   'drive.upload-too-large': 'Файл больше допустимых 64 МБ',
@@ -61,7 +61,6 @@ export const DRIVE_MESSAGES: Record<string, string> = {
   // Обход и конкурентные записи.
   'drive.traversal-limit': 'Диск слишком велик для этой операции — обход остановлен',
   'drive.conflict': 'Элемент изменился параллельно — повторите операцию',
-  'drive.notice-done': 'Операция выполнена',
 }
 
 /** Строка словаря по коду; неизвестный код показывается как есть. */

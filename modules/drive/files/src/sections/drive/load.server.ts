@@ -6,7 +6,7 @@
  * сервис; здесь только гейт входа и форма ответа. Ответ всегда
  * `private, no-store`: имена файлов — личные данные.
  */
-import { redirect, type RequestEvent } from '@sveltejs/kit'
+import { error, redirect, type RequestEvent } from '@sveltejs/kit'
 import { AUTH_SEAL_SECRET } from '$app/env/private'
 import { localPath } from '#core/lib/address/index.js'
 import {
@@ -30,18 +30,29 @@ import { driveStarredRoute } from '#modules/drive/routes.js'
 import { driveStorageGate } from './operations.server.js'
 import {
   DRIVE_KEYS,
+  DRIVE_IDS_MAX,
   DRIVE_PAGE_DEFAULT,
+  DRIVE_PAGE_PARAM,
   DRIVE_PAGE_SIZES,
   driveDateRange,
-  driveFilterExtras,
   driveIdentityExtra,
   driveIdentityPath,
   driveSnapshot,
   parseDriveFilters,
   parseDriveIdentity,
   parseDriveIds,
+  DRIVE_IDENTITY_KEY,
+  DRIVE_LIST_ROOT,
   type DriveListIdentity,
 } from '#modules/drive/source.js'
+import { decodeDriveList, encodeDriveListExtra, resolveDriveList } from '#modules/drive/list-codec.js'
+import {
+  parseDriveIdsUrl,
+  parseFilterOwner,
+  parsePickerMode,
+  parsePickerStep,
+  pickerFrom,
+} from '#modules/drive/picker-url.js'
 import type {
   DriveFiltersPageData,
   DriveListItem,
@@ -77,25 +88,21 @@ async function actorOf(event: RequestEvent): Promise<{ enabled: boolean; actor: 
 
 const toItem = (entry: DriveEntry): DriveListItem => ({ ...entry, id: entry.node.id })
 
-function shownNotice(event: RequestEvent): string | null {
-  const value = event.url.searchParams.get('notice')
-  if (!value) return null
-  // Неизвестный код не показываем как успех: словарь — единственный источник.
-  return driveMessage(value) === value ? null : value
-}
-
 /** Имена получателей доступа: без права/строки остаётся uid, экран не падает. */
 async function driveUserLabels(
   event: RequestEvent,
   uids: readonly string[],
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>()
-  if (uids.length === 0) return out
+  // В `subjects` приходит пользовательский ввод: не-UUID не должен доезжать до
+  // `listSeedUsers` (драйвер отвечает DbFailure и роняет страницу в 500).
+  const ids = [...new Set(uids.filter((uid) => UUID.test(uid)))]
+  if (ids.length === 0) return out
   const result = await auth(event).listSeedUsers({
-    ids: [...uids],
+    ids,
     nickname: true,
     page: 1,
-    pageSize: Math.min(100, uids.length),
+    pageSize: Math.min(100, ids.length),
   })
   if (!result.ok) return out
   for (const user of result.value.items) out.set(user.id, user.nickname ?? user.id)
@@ -138,7 +145,6 @@ function emptyList(
     quota: EMPTY_QUOTA,
     breadcrumbs: [],
     trashed: identity.kind === 'trash',
-    notice: null,
     pick: null,
     ...patch,
   }
@@ -149,9 +155,28 @@ export async function loadDriveList(
   event: RequestEvent,
   identity: DriveListIdentity,
   /** Ограничение пикера: применяется сервером до totals и нарезки страницы. */
-  overrides: { kind?: 'file' | 'folder' } = {},
+  overrides: { kind?: 'file' | 'folder'; ids?: readonly string[] } = {},
 ): Promise<DriveListRouteData> {
   event.setHeaders({ 'cache-control': 'private, no-store' })
+
+  // Identity списка — часть адреса, а не только снапшота: пагинатор читает
+  // `drive._list` из query, и при холодной загрузке `/drive/<id>` без него
+  // принимает корень за умолчание и затирает папку. Приводим адрес к
+  // каноническому виду до рендера.
+  const identityExtra = driveIdentityExtra(identity)
+  const identityKey = `${DRIVE_PAGE_PARAM}.${DRIVE_IDENTITY_KEY}`
+  const urlIdentity = event.url.searchParams.get(identityKey)
+  if (identityExtra !== DRIVE_LIST_ROOT && urlIdentity !== identityExtra) {
+    const url = new URL(event.url)
+    url.searchParams.set(identityKey, identityExtra)
+    redirect(307, `${url.pathname}${url.search}`)
+  }
+  if (identityExtra === DRIVE_LIST_ROOT && urlIdentity !== null) {
+    const url = new URL(event.url)
+    url.searchParams.delete(identityKey)
+    redirect(307, `${url.pathname}${url.search}`)
+  }
+
   const gate = await actorOf(event)
   if (!gate.actor) return emptyList(identity, { enabled: gate.enabled, fact: gate.fact })
 
@@ -161,11 +186,18 @@ export async function loadDriveList(
     if (old === '1' || old === 'true') redirect(307, driveStarredRoute.href())
   }
 
-  const filters = parseDriveFilters(event.url.searchParams)
-  const ids = parseDriveIds(event.url.searchParams.get(DRIVE_KEYS.ids))
+  const idsUrl = parseDriveIdsUrl(event.url.searchParams.get(DRIVE_KEYS.ids))
+  if (idsUrl.overflow) throw error(400, 'drive.ids-too-long')
+  if (overrides.ids && overrides.ids.length > DRIVE_IDS_MAX) {
+    throw error(400, 'drive.ids-too-long')
+  }
+
+  const decoded = decodeDriveList(event.url.searchParams, identity)
+  const state = resolveDriveList(decoded.state, overrides.ids !== undefined ? { ids: overrides.ids } : {}).state
+  const filters = { ...state.filters, pageSize: state.pageSize }
+  const ids = state.ids
   const range = driveDateRange(filters)
-  const pageRaw = Number(event.url.searchParams.get(DRIVE_KEYS.page) ?? '1')
-  const page = Number.isFinite(pageRaw) ? Math.max(1, Math.trunc(pageRaw)) : 1
+  const page = state.page
 
   const result = await loadDrivePage(db, gate.actor, {
     folderId: identity.kind === 'folder' ? identity.id : null,
@@ -183,12 +215,12 @@ export async function loadDriveList(
     pageSize: filters.pageSize,
   })
   if (!result.ok) {
-    return emptyList(identity, { fact: 'auth.forbidden', notice: shownNotice(event) })
+    return emptyList(identity, { fact: 'auth.forbidden' })
   }
 
   const data = result.value
   const items = data.items.map(toItem)
-  const extra = driveFilterExtras(filters, ids)
+  const extra = encodeDriveListExtra(state)
   return {
     ...emptyList(identity),
     snapshot: driveSnapshot(
@@ -209,7 +241,6 @@ export async function loadDriveList(
     quota: data.quota,
     breadcrumbs: data.breadcrumbs,
     trashed: data.trashed,
-    notice: shownNotice(event),
     pick: pickOf(event),
   }
 }
@@ -270,15 +301,35 @@ export async function loadDrivePicker(event: RequestEvent): Promise<DrivePickerD
   const identity: DriveListIdentity =
     folderId && UUID.test(folderId) ? { kind: 'folder', id: folderId } : { kind: 'root' }
   const kind = event.url.searchParams.get('kind') === 'folder' ? 'folder' : 'any'
-  const list = await loadDriveList(event, identity, kind === 'folder' ? { kind } : {})
-  const from = localPath(event.url.searchParams.get('from')) ?? '/drive'
+  const mode = parsePickerMode(event.url.searchParams.get('mode'))
+  const step = mode === 'multiple' ? parsePickerStep(event.url.searchParams.get('upicks')) : 'pick'
+  const filterOwner = mode === 'multiple' ? parseFilterOwner(event.url.searchParams.get('filter_owner')) : null
+  const pickedUrl = mode === 'multiple' ? parseDriveIdsUrl(event.url.searchParams.get('picked')) : { ids: [], overflow: false }
+  const idsUrl = mode === 'multiple' ? parseDriveIdsUrl(event.url.searchParams.get(DRIVE_KEYS.ids)) : { ids: [], overflow: false }
+  if (pickedUrl.overflow) throw error(400, 'drive.picked-too-long')
+  if (idsUrl.overflow) throw error(400, 'drive.ids-too-long')
+  const picked = step === 'chosen' ? (idsUrl.ids ?? []) : (pickedUrl.ids ?? [])
+  const list = await loadDriveList(event, identity, {
+    ...(kind === 'folder' ? { kind } : {}),
+    ...(step === 'chosen' ? { ids: picked } : {}),
+  })
+  const from = pickerFrom(event.url.searchParams.get('from'))
   const rawParam = event.url.searchParams.get('param') ?? ''
+  const total = list.snapshot?.totalItems
+  const totalItems = typeof total === 'number' && Number.isFinite(total) && total >= 0 ? total : null
+  const hiddenCount = totalItems === null ? null : picked.length - totalItems
   return {
     list,
     from,
     param: PICKER_PARAM.test(rawParam) ? rawParam : 'id',
     kind,
     folderId,
+    mode,
+    step,
+    picked,
+    totalItems,
+    hiddenCount,
+    filterOwner,
   }
 }
 

@@ -57,13 +57,13 @@
 </script>
 
 {#if ldr.data?.fact}
-  <Surface variant="plain" class="w-full p-6">
+  <Surface variant="plain" class="w-full p-4 sm:p-6">
     <Acl status={ldr.data.fact} enabled={ldr.data.enabled} backHref={from} variant="plain" />
   </Surface>
 {:else}
   <Surface
     variant="plain"
-    class="w-full p-6"
+    class="w-full p-4 sm:p-6"
     title="Фильтры списка"
     description="Параметры выборки и сортировки файлов и папок."
   >

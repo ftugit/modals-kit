@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   DRIVE_IDS_MAX,
   DRIVE_IDS_NONE,
-  DRIVE_NOTICE_DONE,
   DRIVE_PAGE_DEFAULT,
   driveDateRange,
   driveFilterExtras,
@@ -10,7 +9,6 @@ import {
   driveIdentityExtra,
   driveIdentityPath,
   driveListHref,
-  driveNoticeHref,
   driveSnapshot,
   parseDriveFilters,
   parseDriveIdentity,
@@ -114,15 +112,6 @@ describe('срез выбранных id и личность списка', () =
     expect(driveIdentityPath({ kind: 'starred' })).toBe('/drive/starred')
     expect(driveIdentityExtra({ kind: 'starred' })).toBe('starred')
     expect(driveIdentityExtra({ kind: 'root' })).toBe('root')
-  })
-
-  it('notice — только код словаря, остальные ключи сохраняются', () => {
-    expect(driveNoticeHref('/drive/trash?drive=2')).toBe(
-      `/drive/trash?drive=2&notice=${encodeURIComponent(DRIVE_NOTICE_DONE)}`,
-    )
-    expect(driveNoticeHref('/drive?notice=old')).toBe(
-      `/drive?notice=${encodeURIComponent(DRIVE_NOTICE_DONE)}`,
-    )
   })
 
   it('адрес пикера проверяет from, param, kind и folder', () => {

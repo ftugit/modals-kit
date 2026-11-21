@@ -35,21 +35,47 @@
   // описании формы, а не в разметке операции: без них POST теряет адрес
   // возврата и узел. Рисуем их здесь, чтобы каждая операция не повторяла список.
   const hiddenFields = $derived(form.description.fields.filter((field) => field.input === 'hidden'))
+
+  // Ошибка может быть привязана к скрытому полю (`node_id`, `target_id`):
+  // `HiddenField` текст не рисует, и 422 выглядел молчанием. Показываем
+  // общий блок, если своих общих ошибок у формы нет.
+  const errorList = $derived.by(() => {
+    if (form.common.length > 0) return form.common
+    const result = form.state.result
+    if (!result || result.ok) return form.common
+    const hiddenNames = new Set(hiddenFields.map((field) => field.name))
+    const knownNames = new Set(form.description.fields.map((field) => field.name))
+    // Ошибка может прийти с путём, которого в форме нет вовсе (сервер вернул
+    // `name` для операции без поля имени): такой текст тоже обязан быть виден.
+    const unreachable = result.errors.some(
+      (error) =>
+        error.path !== undefined &&
+        (hiddenNames.has(String(error.path)) || !knownNames.has(String(error.path))),
+    )
+    return unreachable
+      ? [{
+          id: 'drive:hidden-field',
+          code: 'drive.hidden-field',
+          message: 'Проверьте данные операции: ошибка относится к скрытому полю.',
+          origin: 'core' as const,
+        }]
+      : form.common
+  })
 </script>
 
 <Form
   id={form.description.id}
   form={form}
   hiddenFields={form.hidden()}
-  class="flex w-full flex-col gap-3 text-left"
+  class="flex w-full min-w-0 flex-col gap-3 text-left"
   data-testid={`drive-op-${op}`}
 >
-  <div class="flex flex-col gap-1">
-    <h2 class="text-base font-semibold leading-tight">{title}</h2>
-    <p class="text-sm text-muted-foreground">{description}</p>
+  <div class="flex min-w-0 flex-col gap-1">
+    <h2 class="break-words text-base font-semibold leading-tight">{title}</h2>
+    <p class="break-words text-sm text-muted-foreground">{description}</p>
   </div>
 
-  <Common errors={form.common} title="Не получилось выполнить операцию" />
+  <Common errors={errorList} title="Не получилось выполнить операцию" />
 
   {#each hiddenFields as hidden (hidden.name)}
     <Field of={form.field(hidden.name)!} />

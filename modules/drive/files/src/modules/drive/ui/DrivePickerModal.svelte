@@ -4,7 +4,11 @@
   import Acl from '#modules/user/base/svelte/Acl.svelte'
   import type { DrivePickerData } from '../types.js'
   import DrivePicker from './DrivePicker.svelte'
-  import { drivePickerChannel, type DriveTargetPicked } from './operation/picker-channel.js'
+  import {
+    drivePickerChannel,
+    nextDrivePickSeq,
+    type DriveTargetPicked,
+  } from './operation/picker-channel.js'
 
   const m = useModals()
   const ldr = useLoader<DrivePickerData>()
@@ -12,7 +16,22 @@
 
   function pick(id: string | null, label: string) {
     if (!data) return
-    const payload: DriveTargetPicked = { seq: Date.now(), id, label }
+    const payload: DriveTargetPicked = { seq: nextDrivePickSeq(), mode: 'single', id, label }
+    m.modals.store.merge('sharedData', { [drivePickerChannel(data.param)]: payload })
+    m.modals.invalidateLoader('drive.picker')
+    m.modals.close()
+  }
+
+  function picked(ids: readonly string[], labels: readonly string[]) {
+    if (!data || data.mode !== 'multiple') return
+    const payload: DriveTargetPicked = {
+      seq: nextDrivePickSeq(),
+      mode: 'multiple',
+      id: null,
+      label: '',
+      ids,
+      labels,
+    }
     m.modals.store.merge('sharedData', { [drivePickerChannel(data.param)]: payload })
     m.modals.invalidateLoader('drive.picker')
     m.modals.close()
@@ -22,5 +41,5 @@
 {#if data?.list.fact}
   <Acl status={data.list.fact} enabled={data.list.enabled} backHref={data.from} variant="plain" />
 {:else if data}
-  <DrivePicker initial={data} onPick={pick} onCancel={() => m.modals.close()} />
+  <DrivePicker initial={data} onPick={pick} onPicked={picked} onCancel={() => m.modals.close()} />
 {/if}

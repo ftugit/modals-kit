@@ -13,7 +13,7 @@
   const data = $derived(ldr.data)
 </script>
 
-<Surface variant="plain" class="flex min-h-0 flex-1 flex-col w-full p-6">
+<Surface variant="plain" class="flex min-h-0 flex-1 flex-col w-full p-4 sm:p-6">
   {#if data?.fact}
     <Acl status={data.fact} enabled={data.enabled} backHref="/" variant="plain" />
   {:else if data?.node}

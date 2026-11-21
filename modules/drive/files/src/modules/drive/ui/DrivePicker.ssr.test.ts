@@ -79,7 +79,6 @@ function list(items: DriveListItem[]): DriveListRouteData {
     quota: { used: 1024, limit: 1024 ** 3, remaining: 1024 ** 3 - 1024 },
     breadcrumbs: [],
     trashed: false,
-    notice: null,
     pick: null,
   }
 }
@@ -90,6 +89,59 @@ const picker = (kind: 'any' | 'folder', items: DriveListItem[]): DrivePickerData
   param: kind === 'folder' ? 'target_id' : 'id',
   kind,
   folderId: null,
+  mode: 'single',
+  step: 'pick',
+  picked: [],
+  totalItems: items.length,
+  hiddenCount: 0,
+  filterOwner: null,
+})
+
+const multiple = (patch: Partial<DrivePickerData> = {}): DrivePickerData => ({
+  ...picker('any', [entry(FILE, 'file', 'отчёт.pdf'), entry(FOLDER, 'folder', 'Документы')]),
+  param: 'ids',
+  mode: 'multiple',
+  step: 'pick',
+  picked: [],
+  totalItems: 2,
+  hiddenCount: 0,
+  ...patch,
+})
+
+describe('DrivePicker multiple', () => {
+  it('pick: ссылка шага, отметки и сброс, без Apply', () => {
+    const { body } = render(DrivePicker, { props: { initial: multiple({ picked: [FILE] }) } })
+    expect(body).toContain('mode=multiple')
+    expect(body).toContain('upicks=chosen')
+    expect(body).toContain('drive-pick-toggle')
+    expect(body).not.toContain('drive-picker-apply')
+    expect(body).toContain('Выбор файлов и папок')
+  })
+
+  it('chosen: Apply ведёт в from с param, набор в drive.ids', () => {
+    const { body } = render(DrivePicker, {
+      props: { initial: multiple({ step: 'chosen', picked: [FILE], hiddenCount: 0 }) },
+    })
+    expect(body).toContain('drive-picker-apply')
+    expect(body).toContain('ids=')
+    expect(body).toContain('upicks=chosen')
+  })
+
+  it('скрытые выбранные блокируют Apply', () => {
+    const { body } = render(DrivePicker, {
+      props: { initial: multiple({ step: 'chosen', picked: [FILE], hiddenCount: 1, totalItems: 0 }) },
+    })
+    expect(body).toContain('drive-picker-hidden')
+    expect(body).toContain('aria-disabled="true"')
+  })
+
+  it('пустой chosen — Empty, без Apply', () => {
+    const { body } = render(DrivePicker, {
+      props: { initial: multiple({ step: 'chosen', picked: [], totalItems: 0 }) },
+    })
+    expect(body).toContain('Ничего не выбрано')
+    expect(body).not.toContain('drive-picker-apply')
+  })
 })
 
 describe('DrivePicker SSR', () => {

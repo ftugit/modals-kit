@@ -33,7 +33,7 @@
       : '—'
 </script>
 
-<section class="flex flex-col gap-4" data-testid="drive-dav-tokens">
+<section class="flex min-w-0 flex-col gap-4" data-testid="drive-dav-tokens">
   <div class="flex flex-wrap items-center justify-between gap-2">
     <p class="text-sm text-muted-foreground">
       Пароль показывается один раз: в базе хранится только HMAC.
@@ -46,13 +46,13 @@
   </div>
 
   {#if initial.davEnabled}
-    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg border border-border p-3 text-sm">
+    <dl class="grid grid-cols-1 gap-x-3 gap-y-1 rounded-lg border border-border p-3 text-sm sm:grid-cols-[auto_1fr]">
       <dt class="text-muted-foreground">Адрес</dt>
-      <dd class="font-mono text-xs">/api/dav/</dd>
+      <dd class="min-w-0 break-all font-mono text-xs">/api/dav/</dd>
       <dt class="text-muted-foreground">Логин</dt>
       <dd>любой</dd>
       <dt class="text-muted-foreground">Пароль</dt>
-      <dd>пароль приложения из списка ниже</dd>
+      <dd class="min-w-0 break-words">пароль приложения из списка ниже</dd>
     </dl>
   {/if}
 
@@ -71,8 +71,8 @@
                 <Badge variant="outline">отозван</Badge>
               {/if}
             </span>
-            <span class="font-mono text-xs text-muted-foreground">dv1_{token.prefix}_…</span>
-            <span class="text-xs text-muted-foreground">
+            <span class="min-w-0 break-all font-mono text-xs text-muted-foreground">dv1_{token.prefix}_…</span>
+            <span class="min-w-0 break-words text-xs text-muted-foreground">
               Создан {format(token.createdAt)} · использован {format(token.lastUsedAt)}
             </span>
           </div>
