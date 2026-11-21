@@ -31,6 +31,7 @@ import { driveStorageGate } from './operations.server.js'
 import {
   DRIVE_KEYS,
   DRIVE_PAGE_DEFAULT,
+  DRIVE_PAGE_PARAM,
   DRIVE_PAGE_SIZES,
   driveDateRange,
   driveIdentityExtra,
@@ -39,6 +40,8 @@ import {
   parseDriveFilters,
   parseDriveIdentity,
   parseDriveIds,
+  DRIVE_IDENTITY_KEY,
+  DRIVE_LIST_ROOT,
   type DriveListIdentity,
 } from '#modules/drive/source.js'
 import { decodeDriveList, encodeDriveListExtra, resolveDriveList } from '#modules/drive/list-codec.js'
@@ -151,6 +154,25 @@ export async function loadDriveList(
   overrides: { kind?: 'file' | 'folder'; ids?: readonly string[] } = {},
 ): Promise<DriveListRouteData> {
   event.setHeaders({ 'cache-control': 'private, no-store' })
+
+  // Identity списка — часть адреса, а не только снапшота: пагинатор читает
+  // `drive._list` из query, и при холодной загрузке `/drive/<id>` без него
+  // принимает корень за умолчание и затирает папку. Приводим адрес к
+  // каноническому виду до рендера.
+  const identityExtra = driveIdentityExtra(identity)
+  const identityKey = `${DRIVE_PAGE_PARAM}.${DRIVE_IDENTITY_KEY}`
+  const urlIdentity = event.url.searchParams.get(identityKey)
+  if (identityExtra !== DRIVE_LIST_ROOT && urlIdentity !== identityExtra) {
+    const url = new URL(event.url)
+    url.searchParams.set(identityKey, identityExtra)
+    redirect(307, `${url.pathname}${url.search}`)
+  }
+  if (identityExtra === DRIVE_LIST_ROOT && urlIdentity !== null) {
+    const url = new URL(event.url)
+    url.searchParams.delete(identityKey)
+    redirect(307, `${url.pathname}${url.search}`)
+  }
+
   const gate = await actorOf(event)
   if (!gate.actor) return emptyList(identity, { enabled: gate.enabled, fact: gate.fact })
 
