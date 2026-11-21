@@ -133,3 +133,80 @@ describe('OverflowMenu: пункт модальной ссылки', () => {
     }
   })
 })
+
+describe('OverflowMenu: клавиатура', () => {
+  afterEach(() => {
+    document.body.replaceChildren()
+  })
+
+  async function openByClick(floating: HostFloatingApi) {
+    const app = await mountHarness(floating, items)
+    document.querySelector<HTMLElement>('[data-testid="probe-more"]')?.click()
+    flushSync()
+    await tick()
+    flushSync()
+    return app
+  }
+
+  it('фокус входит в контейнер role=menu при открытии', async () => {
+    const host = floatingDouble()
+    const app = await openByClick(host.floating)
+    try {
+      expect(document.activeElement?.getAttribute('role')).toBe('menu')
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('probe-menu')
+    } finally {
+      await unmount(app)
+    }
+  })
+
+  it('стрелки на триггере открывают меню и фокусируют крайний пункт', async () => {
+    for (const [key, expected] of [
+      ['ArrowDown', 'probe-modal'],
+      ['ArrowUp', 'probe-plain2'],
+    ] as const) {
+      const host = floatingDouble()
+      const app = await mountHarness(host.floating, items)
+      try {
+        const trigger = document.querySelector<HTMLElement>('[data-testid="probe-more"]')!
+        trigger.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+        flushSync()
+        await tick()
+        flushSync()
+        expect(host.calls).toContain('open')
+        expect(document.querySelector('[role="menu"]')).not.toBeNull()
+        expect(document.activeElement?.getAttribute('data-testid')).toBe(expected)
+      } finally {
+        await unmount(app)
+      }
+    }
+  })
+
+  it('Home/End и стрелки внутри меню двигают фокус, Escape возвращает его на триггер', async () => {
+    const host = floatingDouble()
+    const app = await openByClick(host.floating)
+    try {
+      const menu = document.querySelector<HTMLElement>('[role="menu"]')!
+      const press = (key: string) => {
+        menu.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+        flushSync()
+      }
+      const active = () => document.activeElement?.getAttribute('data-testid')
+
+      press('ArrowDown')
+      expect(active()).toBe('probe-modal')
+      press('End')
+      expect(active()).toBe('probe-plain2')
+      press('Home')
+      expect(active()).toBe('probe-modal')
+      press('ArrowUp')
+      expect(active()).toBe('probe-plain2')
+
+      press('Escape')
+      expect(host.calls.filter((call) => call.startsWith('close:'))).toHaveLength(1)
+      expect(document.querySelector('[role="menu"]')).toBeNull()
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('probe-more')
+    } finally {
+      await unmount(app)
+    }
+  })
+})

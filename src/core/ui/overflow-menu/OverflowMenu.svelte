@@ -93,6 +93,40 @@
   let open = $state(false)
   let anchor = $state<HTMLElement | null>(null)
 
+  // Фокус при открытии: контейнер меню, либо первый/последний пункт со стрелки на триггере.
+  let menuEl = $state<HTMLElement | null>(null)
+  let pendingFocus: 'container' | 'first' | 'last' = 'container'
+
+  function setOpen(next: boolean) {
+    open = next
+    onOpenChange?.(next)
+  }
+
+  function focusItems(el: HTMLElement, mode: 'first' | 'last') {
+    const nodes = [...el.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])')]
+    ;(mode === 'first' ? nodes[0] : nodes[nodes.length - 1])?.focus({ preventScroll: true })
+  }
+
+  $effect(() => {
+    const el = menuEl
+    if (!open || !el) return
+    const mode = pendingFocus
+    pendingFocus = 'container'
+    if (mode === 'container') el.focus({ preventScroll: true })
+    else focusItems(el, mode)
+  })
+
+  function onTriggerKeydown(event: KeyboardEvent) {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    const mode = event.key === 'ArrowDown' ? 'first' : 'last'
+    if (open && menuEl) focusItems(menuEl, mode)
+    else {
+      pendingFocus = mode
+      setOpen(true)
+    }
+  }
+
   // Без JS `onClick`-пункты не работают: в fallback остаются только ссылки.
   const fallbackItems = $derived(items.filter((item) => item.href))
 
@@ -115,15 +149,16 @@
     ),
   )
 
-  function onMenuKeydown(event: KeyboardEvent) {
-    const nodes = [...((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])'))]
-    if (nodes.length === 0) return
-    const index = nodes.indexOf(document.activeElement as HTMLElement)
+  function onMenuKeydown(event: KeyboardEvent, close: () => void) {
     if (event.key === 'Escape') {
-      open = false
+      event.preventDefault()
+      close()
       anchor?.focus()
       return
     }
+    const nodes = [...((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])'))]
+    if (nodes.length === 0) return
+    const index = nodes.indexOf(document.activeElement as HTMLElement)
     if (event.key === 'Home') {
       event.preventDefault()
       nodes[0]?.focus()
@@ -136,12 +171,12 @@
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
       event.preventDefault()
-      nodes[(index + 1 + nodes.length) % nodes.length]?.focus()
+      nodes[index === -1 ? 0 : (index + 1) % nodes.length]?.focus()
       return
     }
     if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
       event.preventDefault()
-      nodes[(index - 1 + nodes.length) % nodes.length]?.focus()
+      nodes[index === -1 ? nodes.length - 1 : (index - 1 + nodes.length) % nodes.length]?.focus()
     }
   }
 
@@ -225,15 +260,19 @@
         label={moreLabel}
         popup="menu"
         {sheetOnNarrow}
-        onOpenChange={(next) => {
-          open = next
-          onOpenChange?.(next)
-        }}
+        onOpenChange={setOpen}
       >
         {#snippet trigger(t)}
           <Button
-            ref={t.ref}
-            onclick={t.toggle}
+            ref={(el) => {
+              t.ref(el)
+              anchor = el
+            }}
+            onclick={(event) => {
+              pendingFocus = 'container'
+              t.toggle(event)
+            }}
+            onkeydown={onTriggerKeydown}
             aria-expanded={t.expanded ? 'true' : 'false'}
             aria-controls={t.controls}
             aria-haspopup={t.popup}
@@ -253,7 +292,8 @@
             tabindex="-1"
             aria-label={moreLabel}
             class="flex min-w-40 flex-col p-1"
-            onkeydown={onMenuKeydown}
+            onkeydown={(event) => onMenuKeydown(event, f.close)}
+            bind:this={menuEl}
             data-testid={testId ? `${testId}-menu` : 'overflow-menu'}
           >
             {#each split.hidden as item, i (item.id)}
