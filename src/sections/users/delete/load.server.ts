@@ -44,6 +44,10 @@ export async function loadUsersDelete(event: RequestEvent): Promise<AccountsDele
   const idsForm = slice ? [] : ids
 
   const u = auth(event)
+  // Гость видит Acl, а не готовую форму: `enabled` описывает наличие входа,
+  // а не наличие сессии.
+  const viewer = u.enabled ? await u.actor() : null
+  const guestFact = u.enabled && viewer && !viewer.ok ? viewer.fact.code : null
   const actor = await u.actor()
   const canDelete =
     actor.ok && actor.value.permissions.some((p) => p === 'admin' || p === 'server')
@@ -62,6 +66,6 @@ export async function loadUsersDelete(event: RequestEvent): Promise<AccountsDele
     sliceFields: slice ? sliceFields : null,
     count,
     holdSeconds: await config.get('holdSeconds'),
-    fact: u.enabled ? null : 'auth.disabled',
+    fact: guestFact ?? (u.enabled ? null : 'auth.disabled'),
   }
 }

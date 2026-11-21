@@ -16,6 +16,10 @@ export async function loadSessionDelete(event: RequestEvent): Promise<SessionDel
     event.url.searchParams.get('ids'),
   )
   const u = auth(event)
+  // Гость видит Acl, а не готовую форму: `enabled` описывает наличие входа,
+  // а не наличие сессии.
+  const viewer = u.enabled ? await u.actor() : null
+  const guestFact = u.enabled && viewer && !viewer.ok ? viewer.fact.code : null
 
   return {
     contextUid: null,
@@ -24,7 +28,7 @@ export async function loadSessionDelete(event: RequestEvent): Promise<SessionDel
     variant: parseSessionDeleteVariant(event.url.searchParams.get('variant')),
     enabled: u.enabled,
     holdSeconds: await config.get('holdSeconds'),
-    fact: u.enabled ? null : 'auth.disabled',
+    fact: guestFact ?? (u.enabled ? null : 'auth.disabled'),
     sliceFields: parseSessionDeleteSlice(event.url.searchParams),
   }
 }

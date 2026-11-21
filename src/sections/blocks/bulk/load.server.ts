@@ -54,6 +54,10 @@ export async function loadBlocksBulk(event: RequestEvent): Promise<BlocksBulkRou
   const idsForm = slice ? [] : ids
 
   const u = auth(event)
+  // Гость видит Acl, а не готовую форму: `enabled` описывает наличие входа,
+  // а не наличие сессии.
+  const viewer = u.enabled ? await u.actor() : null
+  const guestFact = u.enabled && viewer && !viewer.ok ? viewer.fact.code : null
   const actor = await u.actor()
   const perms = actor.ok ? actor.value.permissions : []
   const canLift = canEditBlockReason(perms)
@@ -74,6 +78,6 @@ export async function loadBlocksBulk(event: RequestEvent): Promise<BlocksBulkRou
     sliceFields: slice ? sliceFields : null,
     count,
     holdSeconds: await config.get('holdSeconds'),
-    fact: u.enabled ? null : 'auth.disabled',
+    fact: guestFact ?? (u.enabled ? null : 'auth.disabled'),
   }
 }
