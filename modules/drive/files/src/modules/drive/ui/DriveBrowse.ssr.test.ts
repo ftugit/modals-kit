@@ -51,6 +51,27 @@ const item = (canWrite: boolean): DriveListItem => ({
   caps: { canRead: true, canWrite, canShare: canWrite },
 })
 
+const folderItem = (): DriveListItem => ({
+  id: CRUMB,
+  node: {
+    id: CRUMB,
+    ownerId: OWNER,
+    parentId: null,
+    kind: 'folder',
+    name: 'Проекты',
+    fileId: null,
+    size: 0,
+    contentType: null,
+    hash: null,
+    starred: false,
+    trashedAt: null,
+    trashedFrom: null,
+    createdAt: new Date('2026-01-01T10:00:00Z'),
+    updatedAt: new Date('2026-01-03T10:00:00Z'),
+  },
+  caps: { canRead: true, canWrite: true, canShare: true },
+})
+
 function page(caps: DriveCapabilities): DriveListRouteData {
   const entry = item(caps.canWrite)
   const snapshot: PaginatorState<DriveListItem> = {
@@ -86,6 +107,23 @@ function page(caps: DriveCapabilities): DriveListRouteData {
   }
 }
 
+function withNodes(
+  nodes: DriveListItem[],
+  caps: DriveCapabilities,
+  patch: Partial<DriveListRouteData> = {},
+): DriveListRouteData {
+  const base = page(caps)
+  return {
+    ...base,
+    ...patch,
+    snapshot: {
+      ...base.snapshot!,
+      totalItems: nodes.length,
+      pages: { 1: nodes },
+    },
+  }
+}
+
 const reader: DriveCapabilities = { canRead: true, canWrite: false, canShare: false }
 const writer: DriveCapabilities = { canRead: true, canWrite: true, canShare: true }
 
@@ -104,6 +142,52 @@ describe('DriveBrowse SSR', () => {
     expect(body).toContain('drive-readonly')
     expect(body).not.toContain('В корзину')
     expect(body).not.toContain('Переименовать')
+  })
+
+  it('строка — Attachment внутри Item: имя, размер и дата видимы', () => {
+    const { body } = render(DriveBrowse, { props: { initial: page(writer) } })
+    const updated = new Intl.DateTimeFormat('ru-RU', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(new Date('2026-01-02T10:00:00Z'))
+    expect(body).toContain('data-slot="item"')
+    expect(body).toContain('data-slot="attachment"')
+    expect(body).toContain('data-layout="row"')
+    expect(body).toContain('title="отчёт.pdf"')
+    expect(body).toContain('отчёт.pdf')
+    expect(body).toContain('2 КБ')
+    expect(body).toContain(updated)
+  })
+
+  it('бейджи «важное» и «в корзине» сохраняются в строке', () => {
+    const source = item(true)
+    const trashed = {
+      ...source,
+      node: { ...source.node, trashedAt: new Date('2026-01-04T10:00:00Z') },
+    }
+    const { body } = render(DriveBrowse, {
+      props: { initial: withNodes([trashed], writer, { trashed: true }) },
+    })
+    expect(body).toContain('важное')
+    expect(body).toContain('в корзине')
+  })
+
+  it('папка в строке ведёт в папку, а число drive-row равно числу узлов', () => {
+    const nodes = [item(true), folderItem()]
+    const { body } = render(DriveBrowse, { props: { initial: withNodes(nodes, writer) } })
+    expect(body.match(/data-testid="drive-row"/g)).toHaveLength(nodes.length)
+    expect(body.match(/data-testid="drive-row-wrap"/g)).toHaveLength(nodes.length)
+    expect(body).toContain('Проекты')
+    expect(body).toContain(`href="/drive/${CRUMB}"`)
+    expect(body).toContain('Папка')
+  })
+
+  it('действия строки лежат вне ссылки на имя', () => {
+    const { body } = render(DriveBrowse, { props: { initial: page(writer) } })
+    const linkEnd = body.indexOf('</a>', body.indexOf('отчёт.pdf'))
+    expect(linkEnd).toBeGreaterThan(-1)
+    expect(body).toContain('data-testid="drive-node-links-fallback"')
+    expect(body.indexOf('data-slot="item-actions"')).toBeGreaterThan(linkEnd)
   })
 
   it('пустая папка и пустой поиск дают разные Empty', () => {
