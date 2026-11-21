@@ -1800,7 +1800,17 @@ export function driveEmptyOf(i: DriveEmptyInput): DriveEmptySpec {
 - Гигиена: `min-w-0`/`truncate`/`title`, `gap` вместо `mt-*`/`my-4`.
 - Мобильный аудит drive (§9a): `DriveFilters`, `DriveNodeCard`, крошки, detail-`dl`, футер фильтров.
 
-**D4. Карточки, модалки и проверки.** — `[-]` в работе.
+**D4. Карточки, модалки и проверки.** — `[x]` done.
+
+### Приёмка (2026-11-21)
+
+- `mobile-admin`: 320/375/768/1280/1440 — без горизонтального скролла; B1 (квота перекрывала «Загрузить»), M1 (имя 55px на 768), M2 (крошки) исправлены и перепроверены.
+- `intruder`: 101 `drive.ids` давал 500 — предел сведён к 100 и 400 (`717f9ab5`); остальные атаки чисто.
+- `storage-lab`: 12 МиБ через WS разрезан 10+2 МиБ, download sha256 совпал, Range 206, `storage.quota-exceeded`, место возвращается.
+- `nojs-admin`/`nojs-guest`: Acl на 13 страницах операций (`f43b4941`), DAV-заголовок и subjects (`0f99f6c2`), ошибки вне формы (`f72e0e9d`), гостевые session/delete (`60f53754`).
+- `a11y-warden`: aria-pressed на ссылках, role=listitem, focus-ring меню (`d55a2e97`).
+- `watchdog`: 88 инцидентов, перезапуск канарейки 10.56 с.
+- `network-flake`: slow 3G/offline/abort — ретраи конечны; сбой чанка модалки открывает карточку повтора (`6fc0cf17`).
 - `[x]` `DriveEntry` на `EntryCard`, модалки drive — `p-4 sm:p-6` (`5a399c8e`).
 - `[x]` detail-`DriveNodeCard` на `Item`, `DriveDavTokensStep` и `DriveFiltersPage` на `EntryCard` (`d1878ad7`).
 - `[x]` Строка списка на `Attachment` + `Item` (`25f130e9`): имя с `title`, размер/дата, бейджи, действия вне ссылки; один `drive-row` на узел.
