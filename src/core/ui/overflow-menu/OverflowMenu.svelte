@@ -144,6 +144,37 @@
       nodes[(index - 1 + nodes.length) % nodes.length]?.focus()
     }
   }
+
+  /**
+   * Пункт с asModalLink живёт вложением: пока идёт загрузка, снимать его
+   * с DOM нельзя — cleanup вложения отменит открытие модалки. Закрываем меню,
+   * когда вложение само сообщит исход через data-state (open/error).
+   */
+  function closeWhenModalLinkSettles(el: HTMLElement, close: () => void) {
+    let settled = false
+    let observer: MutationObserver | undefined
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      observer?.disconnect()
+      close()
+    }
+    const check = () => {
+      if (!el.isConnected) {
+        observer?.disconnect()
+        return
+      }
+      const state = el.getAttribute('data-state')
+      if (state === 'open' || state === 'error') finish()
+    }
+
+    if (typeof MutationObserver !== 'undefined') {
+      observer = new MutationObserver(check)
+      observer.observe(el, { attributes: true, attributeFilter: ['data-state'] })
+    }
+    check()
+  }
 </script>
 
 {#if !hasHost}
@@ -244,7 +275,15 @@
                     item.disabled && 'pointer-events-none opacity-50',
                     item.destructive && 'text-destructive',
                   )}
-                  onclick={() => {
+                  onclick={(event) => {
+                    const el = event.currentTarget as HTMLElement
+                    if (el.hasAttribute('data-modal-link')) {
+                      // Вложение asModalLink отменяет загрузку, если снять ссылку
+                      // с DOM до её завершения. Ждём исход от самого вложения и
+                      // только потом снимаем меню. Фокус держит открывшаяся модалка.
+                      closeWhenModalLinkSettles(el, f.close)
+                      return
+                    }
                     f.close()
                     anchor?.focus()
                   }}
