@@ -249,7 +249,7 @@
 >
   <Surface
     {variant}
-    class={cn('mx-auto w-full max-w-2xl', className)}
+    class={cn('mx-auto w-full max-w-2xl p-4 sm:p-6', className)}
     title="Серверы хранилища приложения"
     description={storageHint}
     controls={slice ? modeBadge : undefined}
