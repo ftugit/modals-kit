@@ -90,6 +90,12 @@ const reader: DriveCapabilities = { canRead: true, canWrite: false, canShare: fa
 const writer: DriveCapabilities = { canRead: true, canWrite: true, canShare: true }
 
 describe('DriveBrowse SSR', () => {
+  it('ряд помечен один раз: оболочка — drive-row-wrap, строка — drive-row', () => {
+    const { body } = render(DriveBrowse, { props: { initial: page(writer) } })
+    expect(body.match(/data-testid="drive-row"/g)).toHaveLength(1)
+    expect(body.match(/data-testid="drive-row-wrap"/g)).toHaveLength(1)
+  })
+
   it('читатель видит файл, крошки и квоту, но не действия записи', () => {
     const { body } = render(DriveBrowse, { props: { initial: page(reader) } })
     expect(body).toContain('отчёт.pdf')

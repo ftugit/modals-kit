@@ -502,7 +502,7 @@
                операций не могут жить внутри `<a>` (ListingRow обернул бы всё). -->
           <div
             class="flex flex-wrap items-center gap-2 rounded-md px-1 py-1"
-            data-testid="drive-row"
+            data-testid="drive-row-wrap"
             data-id={item.id}
             data-selected={ctx.selected || undefined}
           >
